@@ -1,0 +1,12 @@
+{
+    "restartable": "rs",
+    "verbose": true,
+    "watch": [
+        "src"
+    ],
+    "ext": "js,yaml",
+    "ignore": [
+    ],
+    "delay": "3",
+    "execMap": {}
+}
