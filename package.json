@@ -1,0 +1,34 @@
+{
+  "name": "tlms_esd",
+  "version": "0.0.1",
+  "description": "管道泄漏紧急关断系统",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "modbus-serial": "^8.0.1",
+    "pm2": "^4.5.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.1",
+    "iconv-lite": "^0.6.3",
+    "nodes7": "^0.3.18",
+    "rimraf": "^3.0.2",
+    "rollup": "^2.79.1",
+    "yaml": "^2.1.1"
+  },
+  "directories": {
+    "conf": "example",
+    "lib": "lib"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "modbusTCP",
+    "PLC",
+    "S7"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@9.1.2+sha512.127dc83b9ea10c32be65d22a8efb4a65fb952e8fefbdfded39bdc3c97efc32d31b48b00420df2c1187ace28c921c902f0cb5a134a4d032b8b5295cbfa2c681e2"
+}
