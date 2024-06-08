@@ -1,0 +1,196 @@
+files:
+- SC/AI.scl
+- SC/PLCTags.sdf
+
+## 线
+lines:
+- comment: 孤罗东线
+  id: 791
+  name: GLD
+  controller: JSC
+  sections: [GJ, JD]
+  mb_unit_id: 2
+
+
+## 段
+sections:
+- comment: 孤岛-集贤段
+  id: 79
+  name: GJ
+  begin_nodes: [GD9, KX]
+  end_nodes: [JX7]
+  flow_diff_AH: 30.0
+  flow_diff_AH_delay: 3000
+  flow_diff_WH: 20.0
+  flow_diff_WH_delay: 3000
+  action_time: 60000
+  mb_unit_id: 6
+- comment: 集贤-东营段
+  id: 91
+  name: JD
+  begin_nodes: [JX1, SC]
+  end_nodes: [DY9]
+  flow_diff_AH: 30.0
+  flow_diff_AH_delay: 3000
+  flow_diff_WH: 20.0
+  flow_diff_WH_delay: 3000
+  action_time: 60000
+  mb_unit_id: 7
+
+
+## 节点
+actuators:
+
+- comment: 孤岛孤罗东出站
+  id: 8079
+  name: GD9
+  IP: 192.168.27.29
+  modbus_port: 502
+  device_id: 1
+  mb_unit_id: 79
+  pumps:
+  - I1.1, Q0.0
+  - I1.2, Q0.1
+  - I1.3, Q0.2
+  - I1.4, Q0.3
+  pressure_AH: 2.8
+  pressure_WH: 2.6
+  pressure_AI: IW100
+  temperature_AI: IW102
+  pressure_SD: true
+  flows:
+  - ID1000
+  - ID1004
+  - ID1008
+  - ID1012
+  - ID1016
+  connections:
+  - id: 1
+    type: modbus_tcp_server
+    local_tsap_id: 502
+    remote: JSC
+    remote_id: 26
+
+- comment: 垦西交油点
+  id: 8111
+  name: KX
+  IP: 192.168.27.211
+  modbus_port: 502
+  device_id: 1
+  mb_unit_id: 211
+  pressure_span: 2.5
+  pressure_AI: IW98
+  temperature_AI: IW96
+  flows:
+  - ID1000
+  - ID1004
+  connections:
+  - id: 1
+    type: modbus_tcp_server
+    local_tsap_id: 502
+    remote: JSC
+    remote_id: 28
+
+- comment: 集贤进站
+  id: 8097
+  name: JX7
+  IP: 192.168.29.27
+  modbus_port: 502
+  device_id: 1
+  mb_unit_id: 97
+  pressure_span: 0.6
+  pressure_AI: IW100
+  temperature_AI: IW102
+  flows:
+  - ID1000
+  - ID1004
+  - ID1008
+  - ID1012
+  - ID1016
+  connections:
+  - id: 1
+    type: modbus_tcp_server
+    local_tsap_id: 502
+    remote: JSC
+    remote_id: 30
+
+- comment: 集贤出站
+  id: 8091
+  name: JX1
+  IP: 192.168.29.21
+  modbus_port: 502
+  device_id: 1
+  mb_unit_id: 91
+  pumps:
+  - I1.1, Q0.0
+  - I1.2, Q0.1
+  - I1.3, Q0.2
+  - I1.4, Q0.3
+  pressure_span: 6.0
+  pressure_AH: 4.0
+  pressure_WH: 3.8
+  pressure_AI: IW100
+  temperature_AI: IW102
+  pressure_SD: true
+  flows:
+  - ID1000
+  - ID1004
+  - ID1008
+  - ID1012
+  - ID1016
+  connections:
+  - id: 1
+    type: modbus_tcp_server
+    local_tsap_id: 502
+    remote: JSC
+    remote_id: 32
+
+- comment: 胜采交油点
+  id: 8110
+  name: SC
+  IP: 192.168.201.210
+  modbus_port: 502
+  device_id: 1
+  mb_unit_id: 210
+  pressure_AI: IW98    # 仅占位，该站特殊，有多个压力
+  temperature_AI: IW96 # 仅占位，该站特殊，有多个温度
+  pressure_span: 6.0
+  flows:
+  - ID1000
+  - ID1004
+  - ID1008
+  - ID1012
+  - ID1016
+  connections:
+  - id: 1
+    type: modbus_tcp_server
+    local_tsap_id: 502
+    remote: JSC
+    remote_id: 34
+
+- comment: 东营孤永东线进站
+  id: 8019
+  name: DY9
+  IP: 192.168.221.29
+  modbus_port: 502
+  device_id: 1
+  mb_unit_id: 19
+  pressure_zero_raw: 5530
+  pressure_underflow: 5000
+  temperature_zero_raw: 5530
+  temperature_underflow: 5000
+  pressure_span: 1.6
+  pressure_AI: IW64
+  temperature_AI: IW66
+  flows:
+  - ID1000
+  - ID1004
+  - ID1008
+  - ID1012
+  - ID1016
+  connections:
+  - id: 1
+    type: modbus_tcp_server
+    local_tsap_id: 502
+    remote: JSC
+    remote_id: 36
