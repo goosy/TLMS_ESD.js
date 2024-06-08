@@ -1,4 +1,4 @@
-import { MTClient } from "./drivers/modbusTCP.js";
+import { MTClient, createMTServer, gen_mb_map } from "./drivers/modbusTCP.js";
 import { TData } from "./data_type/TData.js";
 import { NODE } from "./data_type/TNode.js";
 
@@ -14,3 +14,12 @@ GD8.setIO(
     GD_conn,
     { addr: 0, length: GD8.size >> 4 }
 );
+
+const mb_map = gen_mb_map({
+    78: GD8,
+});
+
+const server = createMTServer('0.0.0.0', 502, mb_map);
+server.on("close", () => {
+    console.log("connection closed!");
+});
