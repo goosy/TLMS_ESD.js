@@ -1,6 +1,8 @@
 import { EventEmitter } from 'node:events';
 import Modbus, { ServerTCP } from "modbus-serial";
 
+const mb_server_map = {};
+
 export class MTClient extends Modbus {
 
     #started = false;
@@ -87,51 +89,61 @@ export class MTClient extends Modbus {
  * @param {string} host the ip of the TCP Port - required.
  * @param {number} port the Port number - default 502.
  */
-export function createMTServer(host = "0.0.0.0", port = 502, mb_map) {
+export function createMTServer(host = "0.0.0.0", port = 502) {
     const read_word = (addr, unitID) => {
-        const { buffer, start, end } = mb_map[unitID] ?? {};
+        const buff_list = mb_server_map[unitID] ?? [];
         const byte_offset = addr * 2;
-        if (buffer && addr >= start && (addr << 4) < end) {
-            return buffer.readUInt16BE(byte_offset);
-        } else {
-            console.error(`Invalid input or holdingaddress: ${addr}`);
+        const bits_index = addr << 4;
+        for (const { buffer, start, end } of buff_list) {
+            if (buffer && bits_index >= start && bits_index < end) {
+                return buffer.readUInt16BE(byte_offset);
+            }
         }
+        // console.error(`Invalid input or holdingaddress: ${addr} for unit ${unitID}`);
     };
     const vector = {
-        getCoil: (addr, unitID) => {
-            const { buffer, start, end } = mb_map[unitID] ?? {};
-            const byte_offset = addr >> 3;
-            const bit_offset = addr % 8;
-            const bit_number = 1 << bit_offset;
-            if (buffer && addr >= start && addr < end) {
-                return (buffer.readUInt8(byte_offset) & bit_number) > 0;
-            } else {
-                console.error(`Invalid coil address: ${addr}`);
-            }
-        },
         getInputRegister: read_word,
         getHoldingRegister: read_word,
 
-        setCoil: (addr, value, unitID) => {
-            const { buffer, start, end } = mb_map[unitID] ?? {};
+        getCoil: (addr, unitID) => {
+            const buff_list = mb_server_map[unitID] ?? [];
             const byte_offset = addr >> 3;
             const bit_offset = addr % 8;
             const bit_number = 1 << bit_offset;
-            if (buffer && addr >= start && addr < end) {
-                let byte = buffer.readUInt8(byte_offset);
-                if (value) byte = byte | bit_number;
-                else byte = byte & ~bit_number;
-                buffer.writeUInt8(byte, byte_offset);
+            for (const { buffer, start, end } of buff_list) {
+                if (buffer && addr >= start && addr < end) {
+                    return (buffer.readUInt8(byte_offset) & bit_number) > 0;
+                }
             }
+            // console.error(`Invalid coil address: ${addr} for unit ${unitID}`);
+        },
+
+        setCoil: (addr, value, unitID) => {
+            const buff_list = mb_server_map[unitID] ?? [];
+            const byte_offset = addr >> 3;
+            const bit_offset = addr % 8;
+            const bit_number = 1 << bit_offset;
+            for (const { buffer, start, end } of buff_list) {
+                if (buffer && addr >= start && addr < end) {
+                    let byte = buffer.readUInt8(byte_offset);
+                    if (value) byte = byte | bit_number;
+                    else byte = byte & ~bit_number;
+                    buffer.writeUInt8(byte, byte_offset);
+                    return;
+                }
+            }
+            // console.error(`Invalid coil address: ${addr} for unit ${unitID}`);
         },
         setRegister: (addr, value, unitID) => {
-            const { buffer, start, end } = mb_map[unitID] ?? {};
+            const buff_list = mb_server_map[unitID] ?? [];
             const byte_offset = addr * 2;
-            if (buffer && addr >= start && (addr << 4) < end) {
-                buffer.writeUInt16BE(value, byte_offset);
-            } else {
-                console.error(`Invalid coil address: ${addr}`);
+            const bits_index = addr << 4;
+            for (const { buffer, start, end } of buff_list) {
+                if (buffer && bits_index >= start && bits_index < end) {
+                    buffer.writeUInt16BE(value, byte_offset);
+                }
             }
+            // console.error(`Invalid coil address: ${addr} for unit ${unitID}`);
         }
     }
 
@@ -141,17 +153,15 @@ export function createMTServer(host = "0.0.0.0", port = 502, mb_map) {
         // Handle socket error if needed, can be ignored
         console.error(err);
     });
+
     return server;
 }
 
-export function gen_mb_map(device_map) {
-    const map = {};
-    for (const [unitID, tdata] of Object.entries(device_map)) {
-        map[unitID] = {
-            buffer: tdata.buffer,
-            start: 0,
-            end: tdata.size,
-        };
-    }
-    return map;
+export function attach_to_server(unitID, tdata, start = 0) {
+    mb_server_map[unitID] ??= [];
+    mb_server_map[unitID].push({
+        buffer: tdata.buffer,
+        start,
+        end: tdata.size + start,
+    });
 }

@@ -1,25 +1,86 @@
-import { MTClient, createMTServer, gen_mb_map } from "./drivers/modbusTCP.js";
+import { MTClient, createMTServer, attach_to_server } from "./drivers/modbusTCP.js";
 import { TData } from "./data_type/TData.js";
+import { SECTION } from "./data_type/TSection.js";
+import { LINE } from "./data_type/TLine.js";
 import { NODE } from "./data_type/TNode.js";
+import { COMMAND } from "./data_type/TCmd.js";
+import {
+    read_config,
+    cfg_lines,
+} from './config.js';
 
-const GD8 = new TData(NODE);
-GD8.on("change", (tagname, old_value, new_value) => {
-    console.log(`${tagname}: ${old_value} -> ${new_value}`);
-});
-GD8.replace_buffer(Buffer.from([0x8e, 0x1f, 0x17, 0x00, 0x00, 0x00]));
-console.log(GD8.buffer);
-console.log(GD8.size);
-const GD_conn = new MTClient("192.168.89.189", 502);
-GD8.setIO(
-    GD_conn,
-    { addr: 0, length: GD8.size >> 4 }
-);
+const
+    lines = [],
+    sections = [],
+    actuators = [],
+    controllers = [];
 
-const mb_map = gen_mb_map({
-    78: GD8,
-});
+export async function run() {
+    const work_path = process.cwd();
+    await read_config(work_path);
 
-const server = createMTServer('0.0.0.0', 502, mb_map);
+    for (const cfg_line of cfg_lines) {
+        const data = new TData(LINE);
+        data.set("line_ID", cfg_line.id);
+        attach_to_server(cfg_line.mb_unit_id, data);
+        const line = { data };
+        lines.push(line);
+        line.sections = [];
+        for (const cfg_section of cfg_line.sections) {
+            const data = new TData(SECTION);
+            // tsection.set("section_id", section.id);
+            data.set("warning_flow_diff", cfg_section.warning_flow_diff);
+            data.set("warning_flow_delay", cfg_section.warning_flow_delay);
+            data.set("alarm_flow_diff", cfg_section.alarm_flow_diff);
+            data.set("alarm_flow_delay", cfg_section.alarm_flow_delay);
+            data.set("action_time", cfg_section.action_time);
+            attach_to_server(cfg_section.mb_unit_id, data);
+            const section = { data };
+            line.sections.push(section);
+            sections.push(section);
+            section.begin_nodes = [];
+            for (const cfg_node of cfg_section.begin_nodes) {
+                const data = new TData(NODE);
+                data.set("node_ID", cfg_node.id);
+                attach_to_server(cfg_node.mb_unit_id, data);
+                const conn = new MTClient(cfg_node.IP, cfg_node.modbus_port);
+                data.setIO(
+                    conn,
+                    { addr: 0, length: data.size >> 4 }
+                );
+                const command = new TData(COMMAND);
+                command.set("node_ID", cfg_node.id);
+                attach_to_server(cfg_node.mb_unit_id, command, 200);
+
+                const actuator = { data, command };
+                section.begin_nodes.push(actuator);
+                actuators.push(actuator);
+            }
+            section.end_nodes = [];
+            for (const cfg_node of cfg_section.end_nodes) {
+                const data = new TData(NODE);
+                data.set("node_ID", cfg_node.id);
+                attach_to_server(cfg_node.mb_unit_id, data);
+                const conn = new MTClient(cfg_node.IP, cfg_node.modbus_port);
+                data.setIO(
+                    conn,
+                    { start: 0, length: data.size >> 4 }
+                );
+                const command = new TData(COMMAND);
+                command.set("node_ID", cfg_node.id);
+                attach_to_server(cfg_node.mb_unit_id, command, 200);
+
+                const actuator = { data, command };
+                section.end_nodes.push(actuator);
+                actuators.push(actuator);
+            }
+        }
+    }
+}
+
+process.chdir('./example');
+await run();
+const server = createMTServer('0.0.0.0', 502);
 server.on("close", () => {
     console.log("connection closed!");
 });
