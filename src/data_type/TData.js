@@ -27,8 +27,8 @@ export class TData extends EventEmitter {
      *
      * @param {Buffer} buffer - The buffer to replace the internal buffer with.
      */
-    replace_buffer(buffer) {
-        buffer.copy(this.#buffer);
+    replace_buffer(buffer, start = 0) {
+        buffer.copy(this.#buffer, start);
         for (const [tagname, old_value] of Object.entries(this.#values)) {
             const new_value = this.#getters[tagname]();
             if (old_value !== new_value) this.emit("change", tagname, old_value, new_value);
@@ -39,7 +39,7 @@ export class TData extends EventEmitter {
         driver.start();
         driver.on("tick", async () => {
             const buffer = await driver.read(options);
-            this.replace_buffer(buffer);
+            this.replace_buffer(buffer, options.start);
         });
     }
 

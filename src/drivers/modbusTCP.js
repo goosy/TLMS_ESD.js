@@ -77,7 +77,7 @@ export class MTClient extends Modbus {
 
     async read(area) {
         try {
-            const ret = await this.readHoldingRegisters(area.addr, area.length)
+            const ret = await this.readHoldingRegisters(area.start, area.length)
             return ret.buffer;
         } catch (err) {
             console.log(err);

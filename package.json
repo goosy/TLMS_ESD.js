@@ -23,9 +23,13 @@
     "lib": "lib"
   },
   "scripts": {
-    "dev": "node ./src/index.js",
-    "watch": "nodemon ./src/index.js",
+    "start": "node ./cli.js",
+    "dev": "node ./dev.js",
+    "watch": "nodemon ./dev.js",
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "bin": {
+    "esdc": "./cli.js"
   },
   "keywords": [
     "modbusTCP",

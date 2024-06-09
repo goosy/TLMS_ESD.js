@@ -44,8 +44,8 @@ actuators:
 - comment: 孤岛孤罗东出站
   id: 8079
   name: GD9
-  IP: 192.168.27.29
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 506
   device_id: 1
   mb_unit_id: 79
   pumps:
@@ -74,8 +74,8 @@ actuators:
 - comment: 垦西交油点
   id: 8111
   name: KX
-  IP: 192.168.27.211
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 507
   device_id: 1
   mb_unit_id: 211
   pressure_span: 2.5
@@ -94,8 +94,8 @@ actuators:
 - comment: 集贤进站
   id: 8097
   name: JX7
-  IP: 192.168.29.27
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 508
   device_id: 1
   mb_unit_id: 97
   pressure_span: 0.6
@@ -117,8 +117,8 @@ actuators:
 - comment: 集贤出站
   id: 8091
   name: JX1
-  IP: 192.168.29.21
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 509
   device_id: 1
   mb_unit_id: 91
   pumps:
@@ -148,8 +148,8 @@ actuators:
 - comment: 胜采交油点
   id: 8110
   name: SC
-  IP: 192.168.201.210
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 510
   device_id: 1
   mb_unit_id: 210
   pressure_AI: IW98    # 仅占位，该站特殊，有多个压力
@@ -171,8 +171,8 @@ actuators:
 - comment: 东营孤永东线进站
   id: 8019
   name: DY9
-  IP: 192.168.221.29
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 511
   device_id: 1
   mb_unit_id: 19
   pressure_zero_raw: 5530

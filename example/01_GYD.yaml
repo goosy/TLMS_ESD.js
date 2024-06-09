@@ -42,7 +42,7 @@ actuators:
 - comment: 孤岛孤永东出站
   id: 8078
   name: GD8
-  IP: 192.168.27.28
+  IP: 192.168.8.201
   modbus_port: 502
   device_id: 1
   mb_unit_id: 78
@@ -73,8 +73,8 @@ actuators:
 - comment: 永安进站
   id: 8087
   name: YA7
-  IP: 192.168.28.27
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 503
   device_id: 1
   mb_unit_id: 87
   pressure_span: 10.0
@@ -96,8 +96,8 @@ actuators:
 - comment: 永安出站
   id: 8081
   name: YA1
-  IP: 192.168.28.20
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 504
   device_id: 1
   mb_unit_id: 81
   pumps:
@@ -126,8 +126,8 @@ actuators:
 - comment: 东营孤永东线进站
   id: 8018
   name: DY8
-  IP: 192.168.221.28
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 505
   device_id: 1
   mb_unit_id: 18
   pressure_zero_raw: 5530

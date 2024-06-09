@@ -5,7 +5,7 @@ controllers:
 
 - comment: main controller
   name: JSC
-  IP: 192.168.25.80
+  IP: 192.168.8.200
   connections:
   - id: 16
     type: modbus_tcp_client

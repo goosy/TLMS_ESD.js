@@ -41,8 +41,8 @@ actuators:
 - comment: 东营东辛线出站
   id: 8012
   name: DY2
-  IP: 192.168.221.27
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 512
   device_id: 1
   mb_unit_id: 12
   pumps:
@@ -77,8 +77,8 @@ actuators:
 - comment: 广饶进站
   id: 8021
   name: GR1
-  IP: 192.168.22.21
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 513
   device_id: 1
   mb_unit_id: 21
   pressure_AI: IW96
@@ -100,8 +100,8 @@ actuators:
 - comment: 广饶出站
   id: 8023
   name: GR3
-  IP: 192.168.22.23
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 514
   device_id: 1
   mb_unit_id: 23
   pumps:
@@ -130,8 +130,8 @@ actuators:
 - comment: 临淄进站
   id: 8032
   name: LZ
-  IP: 192.168.23.22
-  modbus_port: 502
+  IP: 192.168.8.201
+  modbus_port: 515
   device_id: 1
   mb_unit_id: 32
   pressure_AI: IW96

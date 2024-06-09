@@ -46,7 +46,7 @@ export async function run() {
                 const conn = new MTClient(cfg_node.IP, cfg_node.modbus_port);
                 data.setIO(
                     conn,
-                    { addr: 0, length: data.size >> 4 }
+                    { start: 0, length: data.size >> 4 }
                 );
                 const command = new TData(COMMAND);
                 command.set("node_ID", cfg_node.id);
@@ -76,11 +76,8 @@ export async function run() {
             }
         }
     }
+    const server = createMTServer('0.0.0.0', 502);
+    server.on("close", () => {
+        console.log("connection closed!");
+    });
 }
-
-process.chdir('./example');
-await run();
-const server = createMTServer('0.0.0.0', 502);
-server.on("close", () => {
-    console.log("connection closed!");
-});
