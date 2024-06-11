@@ -6,7 +6,6 @@ lines:
   name: GYD
   controller: JSC
   sections: [GY, YD]
-  mb_unit_id: 1
 
 
 ## 段
@@ -22,7 +21,6 @@ sections:
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
   action_time: 60000
-  mb_unit_id: 4
 - comment: 永安-东营段
   id: 81
   name: YD
@@ -33,7 +31,6 @@ sections:
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
   action_time: 90000
-  mb_unit_id: 5
 
 
 ## 节点
@@ -43,9 +40,6 @@ actuators:
   id: 8078
   name: GD8
   IP: 192.168.8.201
-  modbus_port: 502
-  device_id: 1
-  mb_unit_id: 78
   pumps:
   - I1.1, Q0.0
   - I1.2, Q0.1
@@ -66,7 +60,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 502
     remote: JSC
     remote_id: 16
 
@@ -74,9 +69,6 @@ actuators:
   id: 8087
   name: YA7
   IP: 192.168.8.201
-  modbus_port: 503
-  device_id: 1
-  mb_unit_id: 87
   pressure_span: 10.0
   pressure_AI: IW100
   temperature_AI: IW102
@@ -89,7 +81,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 503
     remote: JSC
     remote_id: 18
 
@@ -97,9 +90,6 @@ actuators:
   id: 8081
   name: YA1
   IP: 192.168.8.201
-  modbus_port: 504
-  device_id: 1
-  mb_unit_id: 81
   pumps:
   - I1.1, Q0.0
   - I1.2, Q0.1
@@ -119,7 +109,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 504
     remote: JSC
     remote_id: 20
 
@@ -127,9 +118,6 @@ actuators:
   id: 8018
   name: DY8
   IP: 192.168.8.201
-  modbus_port: 505
-  device_id: 1
-  mb_unit_id: 18
   pressure_zero_raw: 5530
   pressure_underflow: 5000
   temperature_zero_raw: 5530
@@ -146,6 +134,7 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 505
     remote: JSC
     remote_id: 22

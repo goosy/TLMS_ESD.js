@@ -1,6 +1,6 @@
 {
   "name": "tlms_esd",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "管道泄漏紧急关断系统",
   "type": "module",
   "main": "index.js",
@@ -12,6 +12,7 @@
     "eslint": "^8.57.0",
     "globby": "^13.2.2",
     "iconv-lite": "^0.6.3",
+    "mri": "^1.2.0",
     "nodemon": "^3.1.3",
     "nodes7": "^0.3.18",
     "rimraf": "^3.0.2",
@@ -24,8 +25,8 @@
   },
   "scripts": {
     "start": "node ./cli.js",
-    "dev": "node ./dev.js",
-    "watch": "nodemon ./dev.js",
+    "dev": "node ./dev.js JSC",
+    "watch": "nodemon ./dev.js JSC",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "bin": {

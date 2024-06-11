@@ -2,7 +2,7 @@ export const NODE = {
     name: "NODE",
     length: 1184,
     items: [
-        { name: "node_ID", type: "UInt", offset: 0, length: 16, init_value: 0 }, // 节点ID
+        { name: "ID", type: "UInt", offset: 0, length: 16, init_value: 0 }, // 节点ID
         { name: "comm_OK", type: "Bool", offset: 16, length: 1, init_value: true }, // 用于维护节点通讯状态
         { name: "work_OK", type: "Bool", offset: 17, length: 1, init_value: true }, // 用于维护节点工作状态
         { name: "pump_run", type: "Bool", offset: 18, length: 1, init_value: false }, // 本节点有泵运行

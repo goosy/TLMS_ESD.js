@@ -7,7 +7,9 @@ export const cfg_lines = [],
     cfg_sections = [],
     cfg_actuators = [],
     cfg_connections = {},
-    cfg_controllers = {};
+    cfg_controllers = [];
+
+const controllers = {};
 
 function add_conf(doc) {
     const {
@@ -19,6 +21,7 @@ function add_conf(doc) {
 
     for (const _controller of _controllers) {
         const controller = { ..._controller };
+        controllers[controller.name] = controller;
         const conns = controller.connections;
         cfg_connections[controller.name] = conns;
         const local_ip = controller.IP.split('.');
@@ -31,7 +34,7 @@ function add_conf(doc) {
     }
     for (const _actuator of _actuators) {
         const actuator = { ..._actuator };
-        assert(typeof actuator.id === "number" && actuator.node_ID !== 0, `node:${actuator.name} ID 必须是一个非零数字`);
+        assert(typeof actuator.id === "number" && actuator.ID !== 0, `node:${actuator.name} ID 必须是一个非零数字`);
 
         const pumps = actuator.pumps;
         if (pumps) {
@@ -72,15 +75,12 @@ function add_conf(doc) {
         cfg_sections['ID' + ID] = section;
         cfg_sections.push(section);
     }
-    for (const line of _lines) {
-        const name = line.name;
-        const ID = line.id;
-        const ctrl_name = line.controller;
-        cfg_controllers[ctrl_name] ??= [];
-        cfg_controllers[ctrl_name].push(line);
-        cfg_lines[name] = line;
-        cfg_lines['ID' + ID] = line;
-        cfg_lines.push(line);
+    for (const _line of _lines) {
+        const name = _line.name;
+        const ID = _line.id;
+        cfg_lines[name] = _line;
+        cfg_lines['ID' + ID] = _line;
+        cfg_lines.push(_line);
     }
 }
 
@@ -105,7 +105,7 @@ export async function read_config(work_path) {
             if (conn.remote) {
                 const rconn = cfg_connections[conn.remote + '_' + conn.remote_id];
                 conn.remote_ip = rconn.local_ip;
-                conn.remote_tsap_id = rconn.local_tsap_id;
+                conn.remote_tsap_id = rconn.port;
             }
         }
     }
@@ -116,6 +116,14 @@ export async function read_config(work_path) {
         section.nodes.forEach(node => node.section = section);
     }
     for (const line of cfg_lines) {
+        const c_name = line.controller;
+        const controller = controllers[c_name];
+        controller.lines ??= [];
+        controller.lines.push(line);
+        line.controller = controller;
+        cfg_controllers[c_name] = controller;
+        cfg_controllers.push(controller);
+
         line.sections = line.sections.map(name => {
             const section = cfg_sections[name];
             section.line = line;
