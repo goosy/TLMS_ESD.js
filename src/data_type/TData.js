@@ -64,8 +64,9 @@ export class TData extends EventEmitter {
         const area_start = buff_info.start;
         if (buff_info.pollable) driver.on("tick", async () => {
             const buffer = await driver.read(buff_info);
-            this.replace_buffer(buffer, area_start);
+            this.emit("data", buffer);
         });
+        // @todo debouncing it
         if (buff_info.writewritable) this.on("change", async (tagname) => {
             const info = this.get_tag_info(tagname);
             assert(info != null);

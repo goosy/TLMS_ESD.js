@@ -5,7 +5,6 @@ lines:
   name: DXL
   controller: JSC
   sections: [DG, GL]
-  mb_unit_id: 3
 
 
 ## 段
@@ -21,7 +20,6 @@ sections:
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
   action_time: 60000
-  mb_unit_id: 8
 - comment: 广饶-临淄段
   id: 23
   name: GL
@@ -32,7 +30,6 @@ sections:
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
   action_time: 60000
-  mb_unit_id: 9
 
 
 ## 节点
@@ -42,9 +39,6 @@ actuators:
   id: 8012
   name: DY2
   IP: 192.168.8.201
-  modbus_port: 512
-  device_id: 1
-  mb_unit_id: 12
   pumps:
   - I1.0
   - I1.1
@@ -70,7 +64,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 512
     remote: JSC
     remote_id: 40
 
@@ -78,9 +73,6 @@ actuators:
   id: 8021
   name: GR1
   IP: 192.168.8.201
-  modbus_port: 513
-  device_id: 1
-  mb_unit_id: 21
   pressure_AI: IW96
   temperature_AI: IW98
   pressure_span: 2.0
@@ -93,7 +85,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 513
     remote: JSC
     remote_id: 46
 
@@ -101,9 +94,6 @@ actuators:
   id: 8023
   name: GR3
   IP: 192.168.8.201
-  modbus_port: 514
-  device_id: 1
-  mb_unit_id: 23
   pumps:
   - I0.6, Q0.0
   - I0.7, Q0.1
@@ -123,7 +113,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 514
     remote: JSC
     remote_id: 48
 
@@ -131,9 +122,6 @@ actuators:
   id: 8032
   name: LZ
   IP: 192.168.8.201
-  modbus_port: 515
-  device_id: 1
-  mb_unit_id: 32
   pressure_AI: IW96
   pressure_span: 2.0
   temperature_AI: IW98
@@ -146,6 +134,7 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 515
     remote: JSC
     remote_id: 50

@@ -9,7 +9,7 @@ export const SECTION = {
         { name: "alarm_flow_diff", type: "Real", offset: 80, length: 32, init_value: 50 }, // 流量差报警上限值（动作）
         { name: "alarm_flow_delay", type: "DInt", offset: 112, length: 32, init_value: 10000 }, // 流量报警容错时间（单位毫秒）
         { name: "action_time", type: "DInt", offset: 144, length: 32, init_value: 60000 }, // 联锁动作时间（单位毫秒）
-        { name: "section_ID", type: "UInt", offset: 176, length: 16, init_value: 0 }, // 段号
+        { name: "ID", type: "UInt", offset: 176, length: 16, init_value: 0 }, // 段号
         { name: "comm_OK", type: "Bool", offset: 192, length: 1, init_value: false }, // 本段所有节点通讯正常
         { name: "work_OK", type: "Bool", offset: 193, length: 1, init_value: false }, // 本段所有节点工作正常
         { name: "pre_stop_notice", type: "Bool", offset: 194, length: 1, init_value: false }, // 本段准备停泵

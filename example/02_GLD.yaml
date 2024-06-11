@@ -9,7 +9,6 @@ lines:
   name: GLD
   controller: JSC
   sections: [GJ, JD]
-  mb_unit_id: 2
 
 
 ## 段
@@ -24,7 +23,6 @@ sections:
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
   action_time: 60000
-  mb_unit_id: 6
 - comment: 集贤-东营段
   id: 91
   name: JD
@@ -35,7 +33,6 @@ sections:
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
   action_time: 60000
-  mb_unit_id: 7
 
 
 ## 节点
@@ -45,9 +42,6 @@ actuators:
   id: 8079
   name: GD9
   IP: 192.168.8.201
-  modbus_port: 506
-  device_id: 1
-  mb_unit_id: 79
   pumps:
   - I1.1, Q0.0
   - I1.2, Q0.1
@@ -67,7 +61,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 506
     remote: JSC
     remote_id: 26
 
@@ -75,9 +70,6 @@ actuators:
   id: 8111
   name: KX
   IP: 192.168.8.201
-  modbus_port: 507
-  device_id: 1
-  mb_unit_id: 211
   pressure_span: 2.5
   pressure_AI: IW98
   temperature_AI: IW96
@@ -87,7 +79,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 507
     remote: JSC
     remote_id: 28
 
@@ -95,9 +88,6 @@ actuators:
   id: 8097
   name: JX7
   IP: 192.168.8.201
-  modbus_port: 508
-  device_id: 1
-  mb_unit_id: 97
   pressure_span: 0.6
   pressure_AI: IW100
   temperature_AI: IW102
@@ -110,7 +100,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 508
     remote: JSC
     remote_id: 30
 
@@ -118,9 +109,6 @@ actuators:
   id: 8091
   name: JX1
   IP: 192.168.8.201
-  modbus_port: 509
-  device_id: 1
-  mb_unit_id: 91
   pumps:
   - I1.1, Q0.0
   - I1.2, Q0.1
@@ -141,7 +129,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 509
     remote: JSC
     remote_id: 32
 
@@ -149,9 +138,6 @@ actuators:
   id: 8110
   name: SC
   IP: 192.168.8.201
-  modbus_port: 510
-  device_id: 1
-  mb_unit_id: 210
   pressure_AI: IW98    # 仅占位，该站特殊，有多个压力
   temperature_AI: IW96 # 仅占位，该站特殊，有多个温度
   pressure_span: 6.0
@@ -164,7 +150,8 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 510
     remote: JSC
     remote_id: 34
 
@@ -172,9 +159,6 @@ actuators:
   id: 8019
   name: DY9
   IP: 192.168.8.201
-  modbus_port: 511
-  device_id: 1
-  mb_unit_id: 19
   pressure_zero_raw: 5530
   pressure_underflow: 5000
   temperature_zero_raw: 5530
@@ -191,6 +175,7 @@ actuators:
   connections:
   - id: 1
     type: modbus_tcp_server
-    local_tsap_id: 502
+    device_id: 1
+    port: 511
     remote: JSC
     remote_id: 36

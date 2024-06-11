@@ -6,7 +6,7 @@ export const COMMAND = {
         { name: "overtime", type: "Int", offset: 16, length: 16, init_value: 5000 }, // 应答超时设定(毫秒)
         { name: "has_commands", type: "Bool", offset: 48, length: 1, init_value: false }, // 当前有命令需要发送
         { name: "reset_paras", type: "Bool", offset: 64, length: 1, init_value: false }, // 将命令参数值重置为节点参数值
-        { name: "node_ID", type: "UInt", offset: 128, length: 16, init_value: 8012 }, // 节点ID
+        { name: "ID", type: "UInt", offset: 128, length: 16, init_value: 8012 }, // 节点ID
         { name: "stop_pumps", type: "Bool", offset: 144, length: 1, init_value: false }, // 停泵命令
         { name: "cancel_stop", type: "Bool", offset: 145, length: 1, init_value: false }, // 取消停泵
         { name: "horn", type: "Bool", offset: 146, length: 1, init_value: false }, // 输出报警
