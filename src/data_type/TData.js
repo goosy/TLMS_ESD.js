@@ -21,12 +21,13 @@ export class TData extends EventEmitter {
     set(tagname, value) {
         const setter = this.#setters[tagname];
         if (setter == null) {
-            console.log("no setter for " + tagname);
+            console.log(`${this.name} has no setter for ` + tagname);
+            return;
         }
         const old_value = this.#values[tagname];
         setter(value);
         this.#values[tagname] = value;
-        this.emit("change", tagname, old_value, value);
+        if (old_value !== value) this.emit("change", tagname, old_value, value);
     }
 
     #tags_info = {};  // buffer information affected by tags
@@ -78,28 +79,40 @@ export class TData extends EventEmitter {
 
     init(item) {
         const offset = item.offset;
-        const type = item.type;
+        const type = item.type.toLowerCase();
         const name = item.name;
-        const byte_offset = offset >> 4 << 1; // Byte index value with word units as delimiters
-        const bit_offset = offset % 16;
+        let byte_offset = offset >> 3;
+        const byte_remainder = byte_offset % 2;
+        const bit_offset = offset % 8;
         const bit_number = 1 << bit_offset;
         const tag_info = {
             start: byte_offset,
             length: 2,
+        }
+        if (type === "bool" || type === "byte") {
+            if (type === "byte") assert(bit_offset === 0);
+            byte_offset += 1 - byte_remainder * 2; // swap high and low bytes for big_endian
+        } else {
+            // Byte index value with word units as delimiters
+            assert(byte_remainder === 0 && bit_offset === 0);
         }
 
         assert(this.#tags_info[name] == null);
         this.#tags_info[name] = tag_info;
         const getters = this.#getters;
         assert(getters[name] == null);
-        switch (type.toLowerCase()) {
+        switch (type) {
             case 'bool':
-                getters[name] = () => (this.#buffer.readUInt16BE(byte_offset) & bit_number) > 0;
+                getters[name] = () => (this.#buffer.readUInt8(byte_offset) & bit_number) > 0;
+                break;
+            case 'byte':
+                getters[name] = () => this.#buffer.readUInt8(byte_offset);
                 break;
             case 'int':
                 getters[name] = () => this.#buffer.readInt16BE(byte_offset);
                 break;
             case 'uint':
+            case 'word':
                 getters[name] = () => this.#buffer.readUInt16BE(byte_offset);
                 break;
             case 'dint':
@@ -124,11 +137,14 @@ export class TData extends EventEmitter {
         switch (type.toLowerCase()) {
             case 'bool':
                 setters[name] = (value) => {
-                    let word = this.#buffer.readUInt16BE(byte_offset);
-                    if (value) word = word | bit_number;
-                    else word = word & ~bit_number;
-                    this.#buffer.writeUInt16BE(word, byte_offset);
+                    let byte = this.#buffer.readUInt8(byte_offset);
+                    if (value) byte = byte | bit_number;
+                    else byte = byte & ~bit_number;
+                    this.#buffer.writeUInt8(byte, byte_offset);
                 }
+                break;
+            case 'byte':
+                getters[name] = () => this.#buffer.wirteUInt8(byte_offset);
                 break;
             case 'int':
                 setters[name] = (value) => {
@@ -136,6 +152,7 @@ export class TData extends EventEmitter {
                 }
                 break;
             case 'uint':
+            case 'word':
                 setters[name] = (value) => {
                     this.#buffer.writeUInt16BE(value, byte_offset);
                 }
@@ -166,6 +183,7 @@ export class TData extends EventEmitter {
         const buffer = Buffer.alloc(size, 0);
         this.setMaxListeners(100);
         this.#buffer = buffer;
+        this.groups = data_struct.groups;
         for (const item of data_struct.items) {
             this.init(item);
         }
