@@ -1,6 +1,10 @@
 export const NODE = {
     name: "NODE",
     length: 1184,
+    groups: {
+        status: { start: 0, end: 160 },
+        paras: { start: 160, end: 1184 },
+    },
     items: [
         { name: "ID", type: "UInt", offset: 0, length: 16, init_value: 0 }, // 节点ID
         { name: "comm_OK", type: "Bool", offset: 16, length: 1, init_value: true }, // 用于维护节点通讯状态
@@ -22,29 +26,29 @@ export const NODE = {
         { name: "temperature", type: "Real", offset: 32, length: 32, init_value: 0 }, // 温度值
         { name: "pressure", type: "Real", offset: 64, length: 32, init_value: 0 }, // 压力值
         { name: "flowmeter", type: "Real", offset: 96, length: 32, init_value: 0 }, // 流量值
-        { name: "response_code", type: "DInt", offset: 128, length: 32, init_value: 0 }, // 执行应答
-        { name: "temperature_zero_raw", type: "Int", offset: 160, length: 16, init_value: 0 }, // 模块原始零点值
-        { name: "temperature_span_raw", type: "Int", offset: 176, length: 16, init_value: 27648 }, // 模块原始量程值
-        { name: "temperature_underflow", type: "Int", offset: 192, length: 16, init_value: 500 }, // 模块下溢出设置值
-        { name: "temperature_overflow", type: "Int", offset: 208, length: 16, init_value: 28000 }, // 模块上溢出设置值
-        { name: "pressure_zero_raw", type: "Int", offset: 224, length: 16, init_value: 0 }, // 模块原始零点值
-        { name: "pressure_span_raw", type: "Int", offset: 240, length: 16, init_value: 27648 }, // 模块原始量程值
-        { name: "pressure_underflow", type: "Int", offset: 256, length: 16, init_value: 500 }, // 模块下溢出设置值
-        { name: "pressure_overflow", type: "Int", offset: 272, length: 16, init_value: 28000 }, // 模块上溢出设置值
-        { name: "temperature_zero", type: "Real", offset: 288, length: 32, init_value: 0 }, // 零点值
-        { name: "temperature_span", type: "Real", offset: 320, length: 32, init_value: 100 }, // 量程值
-        { name: "temperature_AH", type: "Real", offset: 352, length: 32, init_value: 0 }, // 高高值
-        { name: "temperature_WH", type: "Real", offset: 384, length: 32, init_value: 0 }, // 高值
-        { name: "temperature_WL", type: "Real", offset: 416, length: 32, init_value: 0 }, // 低值
-        { name: "temperature_AL", type: "Real", offset: 448, length: 32, init_value: 0 }, // 低低值
-        { name: "temperature_DZ", type: "Real", offset: 480, length: 32, init_value: 0.05 }, // 温度比较死区
-        { name: "temperature_FT", type: "UDInt", offset: 512, length: 32, init_value: 0 }, // 温度比较容错时间
-        { name: "pressure_zero", type: "Real", offset: 544, length: 32, init_value: 0 }, // 零点值
-        { name: "pressure_span", type: "Real", offset: 576, length: 32, init_value: 4 }, // 量程值
-        { name: "pressure_AH", type: "Real", offset: 608, length: 32, init_value: 0 }, // 高高值
-        { name: "pressure_WH", type: "Real", offset: 640, length: 32, init_value: 0 }, // 高值
-        { name: "pressure_WL", type: "Real", offset: 672, length: 32, init_value: 0 }, // 低值
-        { name: "pressure_AL", type: "Real", offset: 704, length: 32, init_value: 0 }, // 低低值
+        { name: "response_code", type: "UInt", offset: 128, length: 32, init_value: 0 }, // 执行应答
+        { name: "temperature_zero_raw", type: "Int", offset: 160, length: 16, init_value: 0 }, // 温度原始零点值
+        { name: "temperature_span_raw", type: "Int", offset: 176, length: 16, init_value: 27648 }, // 温度原始量程值
+        { name: "temperature_underflow", type: "Int", offset: 192, length: 16, init_value: -500 }, // 温度下溢出设置值
+        { name: "temperature_overflow", type: "Int", offset: 208, length: 16, init_value: 28000 }, // 温度上溢出设置值
+        { name: "temperature_zero", type: "Real", offset: 224, length: 32, init_value: 0 }, // 温度零点值
+        { name: "temperature_span", type: "Real", offset: 256, length: 32, init_value: 100 }, // 温度量程值
+        { name: "temperature_AH", type: "Real", offset: 288, length: 32, init_value: 0 }, // 温度高高值
+        { name: "temperature_WH", type: "Real", offset: 320, length: 32, init_value: 0 }, // 温度高值
+        { name: "temperature_WL", type: "Real", offset: 352, length: 32, init_value: 0 }, // 温度低值
+        { name: "temperature_AL", type: "Real", offset: 384, length: 32, init_value: 0 }, // 温度低低值
+        { name: "temperature_DZ", type: "Real", offset: 416, length: 32, init_value: 0.5 }, // 温度比较死区
+        { name: "temperature_FT", type: "UDInt", offset: 448, length: 32, init_value: 0 }, // 温度比较容错时间
+        { name: "pressure_zero_raw", type: "Int", offset: 480, length: 16, init_value: 0 }, // 压力原始零点值
+        { name: "pressure_span_raw", type: "Int", offset: 496, length: 16, init_value: 27648 }, // 压力原始量程值
+        { name: "pressure_underflow", type: "Int", offset: 512, length: 16, init_value: -500 }, // 压力下溢出设置值
+        { name: "pressure_overflow", type: "Int", offset: 528, length: 16, init_value: 28000 }, // 压力上溢出设置值
+        { name: "pressure_zero", type: "Real", offset: 544, length: 32, init_value: 0 }, // 压力零点值
+        { name: "pressure_span", type: "Real", offset: 576, length: 32, init_value: 4 }, // 压力量程值
+        { name: "pressure_AH", type: "Real", offset: 608, length: 32, init_value: 0 }, // 压力高高值
+        { name: "pressure_WH", type: "Real", offset: 640, length: 32, init_value: 0 }, // 压力高值
+        { name: "pressure_WL", type: "Real", offset: 672, length: 32, init_value: 0 }, // 压力低值
+        { name: "pressure_AL", type: "Real", offset: 704, length: 32, init_value: 0 }, // 压力低低值
         { name: "pressure_DZ", type: "Real", offset: 736, length: 32, init_value: 0.05 }, // 压力比较死区
         { name: "pressure_FT", type: "UDInt", offset: 768, length: 32, init_value: 0 }, // 压力比较容错时间
         { name: "flow1", type: "Real", offset: 800, length: 32, init_value: 0 }, // 流量1
@@ -61,60 +65,3 @@ export const NODE = {
         { name: "pump_change_delay", type: "UDInt", offset: 1152, length: 32, init_value: 180000 }, // 泵操作延时
     ]
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
