@@ -45,7 +45,7 @@ export async function init(controller_name) {
             continue; // Only run the specified controller
         }
         const data = new TData(LINE);
-        data.set("ID", cfg_line.id);
+        data.ID =  cfg_line.id;
         data.name = cfg_line.name;
         attach_to_server(unit_id_map[data.name], data);
         const line = { data, controller };

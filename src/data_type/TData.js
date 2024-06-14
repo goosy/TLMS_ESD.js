@@ -102,83 +102,74 @@ export class TData extends EventEmitter {
         this.#tags_info[name] = tag_info;
         const getters = this.#getters;
         assert(getters[name] == null);
+        const setters = this.#setters;
+        assert(setters[name] == null);
         switch (type) {
             case 'bool':
                 getters[name] = () => (this.#buffer.readUInt8(byte_offset) & bit_number) > 0;
+                setters[name] = (value) => {
+                    let byte = this.#buffer.readUInt8(byte_offset);
+                    if (value) byte = byte | bit_number;
+                    else byte = byte & ~bit_number;
+                    this.#buffer.writeUInt8(byte, byte_offset);
+                };
                 break;
             case 'byte':
                 getters[name] = () => this.#buffer.readUInt8(byte_offset);
+                getters[name] = () => this.#buffer.wirteUInt8(byte_offset);
                 break;
             case 'int':
                 getters[name] = () => this.#buffer.readInt16BE(byte_offset);
+                setters[name] = (value) => {
+                    this.#buffer.writeInt16BE(value, byte_offset);
+                };
                 break;
             case 'uint':
             case 'word':
                 getters[name] = () => this.#buffer.readUInt16BE(byte_offset);
+                setters[name] = (value) => {
+                    this.#buffer.writeUInt16BE(value, byte_offset);
+                };
                 break;
             case 'dint':
                 getters[name] = () => this.#buffer.readInt32BE(byte_offset);
                 tag_info.length = 4;
+                setters[name] = (value) => {
+                    this.#buffer.writeInt32BE(value, byte_offset);
+                };
                 break;
             case 'udint':
                 getters[name] = () => this.#buffer.readUInt32BE(byte_offset);
                 tag_info.length = 4;
+                setters[name] = (value) => {
+                    this.#buffer.writeUInt32BE(value, byte_offset);
+                };
                 break;
             case 'real':
                 getters[name] = () => this.#buffer.readFloatBE(byte_offset);
+                setters[name] = (value) => {
+                    this.#buffer.writeFloatBE(value, byte_offset);
+                };
                 tag_info.length = 4;
                 break;
             default:
                 break;
         }
         this.#values[name] = getters[name]();
-
-        const setters = this.#setters;
-        assert(setters[name] == null);
-        switch (type.toLowerCase()) {
-            case 'bool':
-                setters[name] = (value) => {
-                    let byte = this.#buffer.readUInt8(byte_offset);
-                    if (value) byte = byte | bit_number;
-                    else byte = byte & ~bit_number;
-                    this.#buffer.writeUInt8(byte, byte_offset);
-                }
-                break;
-            case 'byte':
-                getters[name] = () => this.#buffer.wirteUInt8(byte_offset);
-                break;
-            case 'int':
-                setters[name] = (value) => {
-                    this.#buffer.writeInt16BE(value, byte_offset);
-                }
-                break;
-            case 'uint':
-            case 'word':
-                setters[name] = (value) => {
-                    this.#buffer.writeUInt16BE(value, byte_offset);
-                }
-                break;
-            case 'dint':
-                setters[name] = (value) => {
-                    this.#buffer.writeInt32BE(value, byte_offset);
-                }
-                break;
-            case 'udint':
-                setters[name] = (value) => {
-                    this.#buffer.writeUInt32BE(value, byte_offset);
-                }
-                break;
-            case 'real':
-                setters[name] = (value) => {
-                    this.#buffer.writeFloatBE(value, byte_offset);
-                }
-                break;
-            default:
-                break;
-        }
+        const self = this;
+        Object.defineProperty(self, name, {
+            get() {
+                return self.#values[name];
+            },
+            set(value) {
+                self.set(name, value);
+            },
+            enumerable: true,
+            configurable: false,
+        });
     }
 
-    constructor(data_struct, options) {
+    constructor(data_struct) {
         super();
         const size = data_struct.length >> 3;
         const buffer = Buffer.alloc(size, 0);
