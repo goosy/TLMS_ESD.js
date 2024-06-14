@@ -1,3 +1,5 @@
+import { MAIN_PERIOD } from "./config.js";
+
 export function section_init(section) {
     const {
         ID,
@@ -100,29 +102,29 @@ export function section_loop(section) {
     data.flow_diff = flow_diff;
     const flow_warning_trigger = (flow_diff > flow_diff_WH) && !bypass;
     data.flowWarningTrigger = flow_warning_trigger;
-    if (flow_warning_trigger) section.flow_warning_count++;
+    if (flow_warning_trigger) section.flow_warning_count += MAIN_PERIOD;
     else section.flow_warning_count = 0;
     const flow_alarm_trigger = (flow_diff > flow_diff_AH) && !bypass;
     data.flowAlarmTrigger = flow_alarm_trigger;
-    if (flow_alarm_trigger) section.flow_alarm_count++;
+    if (flow_alarm_trigger) section.flow_alarm_count += MAIN_PERIOD;
     else section.flow_alarm_count = 0;
-    const flow_warning_F = section.flow_warning_count > data.flow_diff_WH_delay / 1000;
+    const flow_warning_F = section.flow_warning_count > data.flow_diff_WH_delay;
     data.flow_warning_F = flow_warning_F;
-    const flow_alarm_F = section.flow_alarm_count > data.flow_diff_AH_delay / 1000;
+    const flow_alarm_F = section.flow_alarm_count > data.flow_diff_AH_delay;
     data.flow_alarm_F = flow_alarm_F;
     const pre_stop_notice = flow_alarm_F && protect_F && pump_run;//预备停泵
     data.pre_stop_notice = pre_stop_notice;
     let countdown = 0;
     if (pre_stop_notice) {
-        section.action_count++;
-        countdown = data.action_time / 1000 - section.action_count;
+        section.action_count += MAIN_PERIOD;
+        countdown = data.action_time - section.action_count;
     } else {
         section.action_count = 0;
         countdown = 0;
     }
     let flow_action = false;
     if (countdown > 0) {
-        data.countdown = countdown;
+        data.countdown = countdown / 1000;
     } else {
         data.countdown = 0;
         flow_action = true;

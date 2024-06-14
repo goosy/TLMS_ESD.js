@@ -1,14 +1,18 @@
+import { EventEmitter } from 'node:events';
 import { MTClient, attach_to_server, createMTServer } from "./drivers/modbusTCP.js";
 import { TData } from "./data_type/TData.js";
 import { SECTION } from "./data_type/TSection.js";
 import { LINE } from "./data_type/TLine.js";
 import { NODE } from "./data_type/TNode.js";
 import { COMMAND } from "./data_type/TCmd.js";
-import { read_config, cfg_lines, cfg_actuators, cfg_controllers } from './config.js';
+import { read_config, cfg_lines, cfg_actuators, cfg_controllers, MAIN_PERIOD } from "./config.js";
 import { actuator_loop, actuator_init, lines, sections, actuators } from './node_proc.js';
 import { section_loop, section_init } from './section_proc.js';
 
 export let work_path = '.';
+const main_loop = new EventEmitter();
+main_loop.setMaxListeners(100);
+setInterval(() => main_loop.emit('tick'), MAIN_PERIOD);
 
 function add_actuator(section, cfg_node) {
     const unit_id_map = section.line.controller.modbus_server.unit_id;
@@ -29,7 +33,7 @@ function add_actuator(section, cfg_node) {
     if (cfg_node.is_end) section.end_nodes.push(actuator);
     if (cfg_node.has_pumps) section.pump_nodes.push(actuator);
     actuator_init(actuator);
-    setInterval(() => actuator_loop(actuator), 1000);
+    main_loop.on('tick', () => actuator_loop(actuator));
 }
 
 export async function init(controller_name) {
@@ -90,7 +94,7 @@ export async function init(controller_name) {
             section_init(section);
             line.sections.push(section);
             sections.push(section);
-            setInterval(() => section_loop(section), 1000);
+            main_loop.on('tick', () => section_loop(section));
         }
     }
 
