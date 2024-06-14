@@ -5,12 +5,12 @@ export const
 
 function reset_parameter(actuator) {
     const { ID, data, command } = actuator;
-    const data_para_start = (data.groups.paras.start >> 3);
     const cmd_para_start = (command.groups.paras.start >> 3);
-    const cmd_para_end = (command.groups.paras.end >> 3);
-    data.buffer.copy(command.buffer, data_para_start, cmd_para_start, cmd_para_end);
-    command.ID =  ID;
+    const data_para_start = (data.groups.paras.start >> 3);
+    const data_para_end = (data.groups.paras.end >> 3);
+    data.buffer.copy(command.buffer, cmd_para_start, data_para_start, data_para_end);
     command.refresh_value();
+    command.ID = ID;
 }
 
 async function send_command(actuator) {
@@ -30,7 +30,7 @@ export function actuator_init(actuator) {
     command.name = name + '_CMD';
     data.name = name;
 
-    data.ID =  ID;
+    data.ID = ID;
     data.setIO(data_driver, {
         start: 0,
         length: data.size,
@@ -46,6 +46,11 @@ export function actuator_init(actuator) {
         buffer.writeUInt16BE(buffer.readUInt16BE(word_offset) | (1 << bit_offset), word_offset);
         buffer.copy(data.buffer, start, start, end);
         data.refresh_value();
+        // @delete temporary code
+        // because the PLC is not completed,
+        // except stop_pumps and write_paras
+        // all commands in response_code are ignored.
+        command.command_word = command.command_word & 0x81;
     });
     data.on("change", (tagname, _o, new_value) => {
         // handle command response_code
@@ -59,14 +64,15 @@ export function actuator_init(actuator) {
         //     enable_temperature_alarm disable_temperature_alarm
         //     reset_CPU reset_conn
         if (tagname === 'response_code' && new_value) {
+            // Reset the corresponding bit in command_word according to response_code
             let command_word = command.command_word;
             command_word = ~new_value & command_word & 0x7fff;
-            command.command_word =  command_word;
+            command.command_word = command_word;
             return;
         }
     });
 
-    command.ID =  ID;
+    command.ID = ID;
     command.setIO(data_driver, {
         start: 200,
         length: command.size,
@@ -84,12 +90,12 @@ export function actuator_init(actuator) {
         if (tagname === 'reset_paras' && new_value) {
             reset_parameter(actuator);
             setTimeout(() => {
-                command.reset_paras =  false;
+                command.reset_paras = false;
             }, 500);
             return;
         }
         if (tagname === 'command_word') {
-            command.has_commands =  new_value > 0;
+            command.has_commands = new_value > 0;
             return;
         }
     });
@@ -98,8 +104,8 @@ export function actuator_init(actuator) {
 export function actuator_loop(actuator) {
     const { ID, name, data, command, section, data_driver } = actuator;
     const connected = data_driver.isOpen;
-    data.comm_OK =  connected;
-    if (!connected) data.work_OK =  false;
+    data.comm_OK = connected;
+    if (!connected) data.work_OK = false;
     do_section(section);
 }
 
