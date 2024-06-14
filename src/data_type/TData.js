@@ -5,6 +5,11 @@ import { EventEmitter } from 'node:events';
 export class TData extends EventEmitter {
     // only read
     #buffer;
+    /**
+     * get the internal buffer
+     *
+     * @return {Buffer} - the internal buffer.
+     */
     get buffer() { return this.#buffer; }
     get size() {
         return this.#buffer.length;
