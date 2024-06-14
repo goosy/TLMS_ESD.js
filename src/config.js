@@ -8,6 +8,7 @@ export const cfg_lines = [],
     cfg_actuators = [],
     cfg_connections = {},
     cfg_controllers = [];
+export const MAIN_PERIOD = 500;
 
 const controllers = {};
 
