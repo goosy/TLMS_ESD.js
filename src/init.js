@@ -8,6 +8,7 @@ import { COMMAND } from "./data_type/TCmd.js";
 import { read_config, cfg_lines, cfg_actuators, cfg_controllers, MAIN_PERIOD } from "./config.js";
 import { actuator_loop, actuator_init, lines, sections, actuators } from './node_proc.js';
 import { section_loop, section_init } from './section_proc.js';
+import { line_loop, line_init } from "./line_proc.js";
 
 export let work_path = '.';
 const main_loop = new EventEmitter();
@@ -49,12 +50,13 @@ export async function init(controller_name) {
             continue; // Only run the specified controller
         }
         const data = new TData(LINE);
-        data.ID =  cfg_line.id;
-        data.name = cfg_line.name;
-        attach_to_server(unit_id_map[data.name], data);
-        const line = { data, controller };
+        const ID = cfg_line.id;
+        const name = cfg_line.name;
+        attach_to_server(unit_id_map[name], data);
+        const line = { ID, name, data, controller, sections: [] };
+        line_init(line);
+        main_loop.on('tick', () => line_loop(line));
         lines.push(line);
-        line.sections = [];
         for (const cfg_section of cfg_line.sections) {
             const data = new TData(SECTION);
             const ID = cfg_section.id;
@@ -92,9 +94,9 @@ export async function init(controller_name) {
                 add_actuator(section, cfg_node);
             });
             section_init(section);
+            main_loop.on('tick', () => section_loop(section));
             line.sections.push(section);
             sections.push(section);
-            main_loop.on('tick', () => section_loop(section));
         }
     }
 
