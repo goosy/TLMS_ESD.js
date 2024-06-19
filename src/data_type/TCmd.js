@@ -22,10 +22,11 @@ export const COMMAND = {
         { name: "write_paras", type: "Bool", offset: 151, length: 1, init_value: false }, // 写参数命令
         { name: "enable_pressure_alarm", type: "Bool", offset: 152, length: 1, init_value: false }, // 允许压力报警
         { name: "disable_pressure_alarm", type: "Bool", offset: 153, length: 1, init_value: false }, // 禁止压力报警
-        { name: "enable_temperature_alarm", type: "Bool", offset: 154, length: 1, init_value: false }, // 允许温度报警
-        { name: "disable_temperature_alarm", type: "Bool", offset: 155, length: 1, init_value: false }, // 禁止温度报警
-        { name: "reset_CPU", type: "Bool", offset: 156, length: 1, init_value: false }, // 预留
-        { name: "reset_conn", type: "Bool", offset: 157, length: 1, init_value: false }, // 预留
+        { name: "enable", type: "Bool", offset: 154, length: 1, init_value: false }, // 允许该节点工作
+        { name: "disable", type: "Bool", offset: 155, length: 1, init_value: false }, // 禁止该节点工作
+        { name: "reset_CPU", type: "Bool", offset: 156, length: 1, init_value: false }, // 重置CPU
+        { name: "reset_conn", type: "Bool", offset: 157, length: 1, init_value: false }, // 重置连接
+        { name: "executing", type: "Bool", offset: 159, length: 1, init_value: false }, // 正在执行
         { name: "temperature_zero_raw", type: "Int", offset: 160, length: 16, init_value: 0 }, // 温度原始零点值
         { name: "temperature_span_raw", type: "Int", offset: 176, length: 16, init_value: 27648 }, // 温度原始量程值
         { name: "temperature_underflow", type: "Int", offset: 192, length: 16, init_value: -500 }, // 温度下溢出设置值

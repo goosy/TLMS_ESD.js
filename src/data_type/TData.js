@@ -57,18 +57,19 @@ export class TData extends EventEmitter {
      * Sets up the IO operations for the driver.
      *
      * @param {Object} driver - The driver object to start and listen for data.
-     * @param {{start:number, length:number}} buff_info - The buffer information, unit: byte.
+     * @param {{start:number, length:number}} buffer_info - The buffer information, unit: byte.
      * @return {void}
      */
-    setIO(driver, buff_info) {
+    setIO(driver, buffer_info) {
         driver.start();
-        const area_start = buff_info.start;
-        if (buff_info.pollable) driver.on("tick", async () => {
-            const buffer = await driver.read(buff_info);
+        this.buffer_info = buffer_info;
+        const area_start = buffer_info.start;
+        if (buffer_info.pollable) driver.on("tick", async () => {
+            const buffer = await driver.read(buffer_info);
             this.emit("data", buffer);
         });
         // @todo debouncing it
-        if (buff_info.writewritable) this.on("change", async (tagname) => {
+        if (buffer_info.writewritable) this.on("change", async (tagname) => {
             const info = this.get_tag_info(tagname);
             assert(info != null);
             const { start, length } = info;
