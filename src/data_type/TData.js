@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
+import { debounce } from "../util.js";
 
 export class TData extends EventEmitter {
     // only read
@@ -106,11 +107,14 @@ export class TData extends EventEmitter {
         }
         if (buffer_info.poll) driver.on("tick", this.#poll);
 
-        // @todo debouncing it
-        this.#push = async (tagname) => {
-            const tag_info = this.get_tag_info(tagname);
-            assert(tag_info != null);
-            await this.IO_write(tag_info);
+        // debouncing push
+        this.#push = (tagname) => {
+            const key = `${this.name}:${tagname}`;
+            debounce(key, async () => {
+                const tag_info = this.get_tag_info(tagname);
+                assert(tag_info != null);
+                await this.IO_write(tag_info);
+            }, 200);
         };
         if (buffer_info.push) this.on("change", this.#push);
     }
