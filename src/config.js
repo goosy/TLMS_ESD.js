@@ -42,6 +42,7 @@ function add_conf(doc) {
                 const [run_state, stop_signal] = pumpstr.split(',', 2).map(str => str.trim());
                 pumps[i] = { run_state, stop_signal };
             });
+            actuator.has_pumps = true;
         }
 
         actuator.pressure_AH ??= actuator.pressure_span;
@@ -108,12 +109,6 @@ export async function read_config(work_path) {
                 conn.remote_tsap_id = rconn.port;
             }
         }
-    }
-    for (const section of cfg_sections) {
-        section.begin_nodes = section.begin_nodes.map(node_name => cfg_actuators[node_name]);
-        section.end_nodes = section.end_nodes.map(node_name => cfg_actuators[node_name]);
-        section.nodes = [...section.begin_nodes, ...section.end_nodes];
-        section.nodes.forEach(node => node.section = section);
     }
     for (const line of cfg_lines) {
         const c_name = line.controller;
