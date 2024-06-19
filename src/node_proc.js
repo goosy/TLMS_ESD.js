@@ -41,9 +41,9 @@ export function node_init(actuator) {
         data.refresh_value();
         // @delete temporary code
         // because the PLC is not completed,
-        // except stop_pumps and write_paras
+        // except stop_pumps enable_pressure_SD disable_pressure_SD and write_paras
         // all commands in response_code are ignored.
-        command.command_word = command.command_word & 0x81;
+        command.command_word = command.command_word & 0xB1;
     });
     data.on("change", (tagname, _o, new_value) => {
         // handle command response_code
@@ -61,6 +61,18 @@ export function node_init(actuator) {
             let command_word = command.command_word;
             command_word = ~new_value & command_word & 0x7fff;
             command.command_word = command_word;
+            return;
+        }
+        if (tagname === 'pressure_SD_F') {
+            if (new_value) {
+                command.enable_pressure_SD = false;
+            } else {
+                command.disable_pressure_SD = false;
+            }
+            return;
+        }
+        if (tagname === 'pump_run' && !new_value) {
+            command.stop_pumps = false;
             return;
         }
     });
