@@ -31,10 +31,10 @@ export function actuator_init(actuator) {
     data.name = name;
 
     data.ID = ID;
-    data.setIO(data_driver, {
+    data.set_IO(data_driver, {
         start: 0,
         length: data.size,
-        pollable: true,
+        poll: true,
     });
     const start = (data.groups.status.start >> 3) + 2;
     const end = data.groups.paras.end >> 3;
@@ -73,8 +73,8 @@ export function actuator_init(actuator) {
     });
 
     command.ID = ID;
-    command.setIO(data_driver, {
-        start: 200,
+    command.set_IO(data_driver, {
+        start: 200 - 16,
         length: command.size,
     });
     data_driver.on("connect", () => {

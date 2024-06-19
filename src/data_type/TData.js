@@ -32,6 +32,7 @@ export class TData extends EventEmitter {
         const old_value = this.#values[tagname];
         setter(value);
         this.#values[tagname] = value;
+        // the change event must be after the new value is applied
         if (old_value !== value) this.emit("change", tagname, old_value, value);
     }
 
@@ -53,11 +54,14 @@ export class TData extends EventEmitter {
     refresh_value() {
         for (const [tagname, old_value] of Object.entries(this.#values)) {
             const new_value = this.#getters[tagname]();
-            if (old_value !== new_value) this.emit("change", tagname, old_value, new_value);
             this.#values[tagname] = new_value;
+            // the change event must be after the new value is applied
+            if (old_value !== new_value) this.emit("change", tagname, old_value, new_value);
         }
     }
 
+    #poll; // polling function from driver
+    #push; // pushing function to driver
     /**
      * Sets up the IO operations for the driver.
      *
@@ -65,22 +69,50 @@ export class TData extends EventEmitter {
      * @param {{start:number, length:number}} buffer_info - The buffer information, unit: byte.
      * @return {void}
      */
-    setIO(driver, buffer_info) {
+    set_IO(driver, buffer_info) {
+        if (typeof this.#poll === 'function') { // remove previous polling listener
+            this?.driver?.on("tick", this.#poll);
+        }
+        if (typeof this.#push === 'function') { // remove previous pushing listener
+            this.off("change", this.#push);
+        }
+        if (driver == null) {
+            this.driver = null;
+            this.buffer_info = null;
+            this.IO_read = null;
+            this.IO_write = null;
+            return;
+        }
+        this.driver = driver;
         driver.start();
+
         this.buffer_info = buffer_info;
         const area_start = buffer_info.start;
-        if (buffer_info.pollable) driver.on("tick", async () => {
-            const buffer = await driver.read(buffer_info);
-            this.emit("data", buffer);
-        });
+        this.IO_read = async (range) => {
+            const start = area_start + range.start;
+            const length = range.length;
+            return await driver.read({ start, length });
+        }
+        this.IO_write = async (range) => {
+            const { start, length } = range;
+            const subbuffer = this.#buffer.subarray(start, start + length);
+            await driver.write(subbuffer, { start: area_start + start });
+        }
+
+        this.#poll = async () => {
+            const buffer = await this.IO_read(buffer_info);
+            if (buffer) this.emit("data", buffer);
+            else this.emit("read_error");
+        }
+        if (buffer_info.poll) driver.on("tick", this.#poll);
+
         // @todo debouncing it
-        if (buffer_info.writewritable) this.on("change", async (tagname) => {
-            const info = this.get_tag_info(tagname);
-            assert(info != null);
-            const { start, length } = info;
-            const buffer = this.#buffer.subarray(start, start + length);
-            await driver.write(buffer, { start: area_start + start, length });
-        });
+        this.#push = async (tagname) => {
+            const tag_info = this.get_tag_info(tagname);
+            assert(tag_info != null);
+            await this.IO_write(tag_info);
+        };
+        if (buffer_info.push) this.on("change", this.#push);
     }
 
     init(item) {
