@@ -5,7 +5,7 @@ import { LINE } from "./data_type/TLine.js";
 import { NODE } from "./data_type/TNode.js";
 import { COMMAND } from "./data_type/TCmd.js";
 import { read_config, cfg_lines, cfg_controllers } from './config.js';
-import { actuator_loop, actuator_init, lines, sections, actuators } from './automation.js';
+import { actuator_loop, actuator_init, lines, sections, actuators } from './node_proc.js';
 
 export let work_path = '.';
 
