@@ -4,7 +4,7 @@ function reset_parameter(actuator) {
     const data_para_start = (data.groups.paras.start >> 3);
     const data_para_end = (data.groups.paras.end >> 3);
     data.buffer.copy(command.buffer, cmd_para_start, data_para_start, data_para_end);
-    command.refresh_value();
+    command.check_all_tags();
     command.ID = ID;
 }
 
@@ -38,14 +38,14 @@ export function node_init(actuator) {
         // keep the value of comm_OK tag as 1
         buffer.writeUInt16BE(buffer.readUInt16BE(word_offset) | (1 << bit_offset), word_offset);
         buffer.copy(data.buffer, start, start, end);
-        data.refresh_value();
+        data.check_all_tags();
         // @delete temporary code
         // because the PLC is not completed,
         // except stop_pumps enable_pressure_SD disable_pressure_SD and write_paras
         // all commands in response_code are ignored.
         command.command_word = command.command_word & 0xB1;
     });
-    data.on("change", (tagname, _o, new_value) => {
+    data.on("change", (tagname, old_value, new_value) => {
         // handle command response_code
         // valid: (handle in PLC)
         //     stop_pumps cancel_stop
