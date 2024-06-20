@@ -30,16 +30,39 @@ export class TData extends EventEmitter {
             console.log(`${this.name} has no setter for ` + tagname);
             return;
         }
-        const old_value = this.#values[tagname];
         setter(value);
-        this.#values[tagname] = value;
         // the change event must be after the new value is applied
-        if (old_value !== value) this.emit("change", tagname, old_value, value);
+        this.check_tag(tagname);
+        debounce(`${this.name}_${tagname}_inner_setter`, () => {
+            this.check_coupling(tagname);
+        }, 100);
     }
 
     #tags_info = {};  // buffer information affected by tags
     get_tag_info(tagname) {
         return this.#tags_info[tagname];
+    }
+
+    #couplings = {};
+    check_tag(tagname) {
+        const old_value = this.#values[tagname];
+        const new_value = this.#getters[tagname]();
+        // the change event must be after the new value is applied
+        if (old_value !== new_value) {
+            this.#values[tagname] = new_value;
+            this.emit("change", tagname, old_value, new_value);
+        }
+    }
+    check_coupling(tagname) {
+        const coupling = this.#couplings[tagname];
+        if (Array.isArray(coupling)) for (const tn of coupling) {
+            this.check_tag(tn);
+        }
+    }
+    check_all_tags() {
+        for (const tagname of Object.keys(this.#values)) {
+            this.check_tag(tagname);
+        }
     }
 
     /**
@@ -49,16 +72,7 @@ export class TData extends EventEmitter {
      */
     replace_buffer(buffer, start = 0) {
         buffer.copy(this.#buffer, start);
-        this.refresh_value();
-    }
-
-    refresh_value() {
-        for (const [tagname, old_value] of Object.entries(this.#values)) {
-            const new_value = this.#getters[tagname]();
-            this.#values[tagname] = new_value;
-            // the change event must be after the new value is applied
-            if (old_value !== new_value) this.emit("change", tagname, old_value, new_value);
-        }
+        this.check_all_tags();
     }
 
     #poll; // polling function from driver
@@ -138,6 +152,7 @@ export class TData extends EventEmitter {
             // Byte index value with word units as delimiters
             assert(byte_remainder === 0 && bit_offset === 0);
         }
+        this.#couplings[name] = item.coupling;
 
         assert(this.#tags_info[name] == null);
         this.#tags_info[name] = tag_info;

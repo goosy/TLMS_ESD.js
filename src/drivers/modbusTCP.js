@@ -177,7 +177,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
                 console.error(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
             } else {
                 tdata.buffer.writeUInt16BE(value, offset);
-                tdata.refresh_value();
+                tdata.check_all_tags();
             }
         },
 
@@ -196,7 +196,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
                 if (value) byte = byte | bit;
                 else byte = byte & ~bit;
                 tdata.buffer.writeUInt16BE(byte, offset);
-                tdata.refresh_value();
+                tdata.check_all_tags();
             } else {
                 console.error(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
             }

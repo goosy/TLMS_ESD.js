@@ -11,22 +11,86 @@ export const COMMAND = {
         { name: "has_commands", type: "Bool", offset: 48, length: 1, init_value: false }, // 当前有命令需要发送
         { name: "reset_paras", type: "Bool", offset: 64, length: 1, init_value: false }, // 将命令参数值重置为节点参数值
         { name: "ID", type: "UInt", offset: 128, length: 16, init_value: 8012 }, // 节点ID
-        { name: "command_word", type: "Word", offset: 144, length: 16, init_value: 0 }, // 命令字
-        { name: "stop_pumps", type: "Bool", offset: 144, length: 1, init_value: false }, // 停泵命令
-        { name: "cancel_stop", type: "Bool", offset: 145, length: 1, init_value: false }, // 取消停泵
-        { name: "horn", type: "Bool", offset: 146, length: 1, init_value: false }, // 输出报警
-        { name: "reset_horn", type: "Bool", offset: 147, length: 1, init_value: false }, // 停止报警
-        { name: "enable_pressure_SD", type: "Bool", offset: 148, length: 1, init_value: false }, // 设置压力联锁停泵
-        { name: "disable_pressure_SD", type: "Bool", offset: 149, length: 1, init_value: false }, // 取消压力联锁停泵
-        { name: "read_paras", type: "Bool", offset: 150, length: 1, init_value: false }, // 读取所有参数
-        { name: "write_paras", type: "Bool", offset: 151, length: 1, init_value: false }, // 写参数命令
-        { name: "enable_pressure_alarm", type: "Bool", offset: 152, length: 1, init_value: false }, // 允许压力报警
-        { name: "disable_pressure_alarm", type: "Bool", offset: 153, length: 1, init_value: false }, // 禁止压力报警
-        { name: "enable", type: "Bool", offset: 154, length: 1, init_value: false }, // 允许该节点工作
-        { name: "disable", type: "Bool", offset: 155, length: 1, init_value: false }, // 禁止该节点工作
-        { name: "reset_CPU", type: "Bool", offset: 156, length: 1, init_value: false }, // 重置CPU
-        { name: "reset_conn", type: "Bool", offset: 157, length: 1, init_value: false }, // 重置连接
-        { name: "executing", type: "Bool", offset: 159, length: 1, init_value: false }, // 正在执行
+        {   // 命令字
+            name: "command_word", type: "Word", offset: 144, length: 16, init_value: 0,
+            coupling: [
+                "stop_pumps",
+                "cancel_stop",
+                "horn",
+                "reset_horn",
+                "enable_pressure_SD",
+                "disable_pressure_SD",
+                "read_paras",
+                "write_paras",
+                "enable_pressure_alarm",
+                "disable_pressure_alarm",
+                "enable",
+                "disable",
+                "reset_CPU",
+                "reset_conn",
+                "executing",
+            ]
+        },
+        {   // 停泵命令
+            name: "stop_pumps", type: "Bool", offset: 144, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 取消停泵
+            name: "cancel_stop", type: "Bool", offset: 145, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 输出报警
+            name: "horn", type: "Bool", offset: 146, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 停止报警
+            name: "reset_horn", type: "Bool", offset: 147, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 设置压力联锁停泵
+            name: "enable_pressure_SD", type: "Bool", offset: 148, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 取消压力联锁停泵
+            name: "disable_pressure_SD", type: "Bool", offset: 149, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 读取所有参数
+            name: "read_paras", type: "Bool", offset: 150, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 写参数命令
+            name: "write_paras", type: "Bool", offset: 151, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 允许压力报警
+            name: "enable_pressure_alarm", type: "Bool", offset: 152, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 禁止压力报警
+            name: "disable_pressure_alarm", type: "Bool", offset: 153, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 允许该节点工作
+            name: "enable", type: "Bool", offset: 154, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 禁止该节点工作
+            name: "disable", type: "Bool", offset: 155, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 重置CPU
+            name: "reset_CPU", type: "Bool", offset: 156, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 重置连接
+            name: "reset_conn", type: "Bool", offset: 157, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
+        {   // 正在执行
+            name: "executing", type: "Bool", offset: 159, length: 1, init_value: false,
+            coupling: ["command_word"]
+        },
         { name: "temperature_zero_raw", type: "Int", offset: 160, length: 16, init_value: 0 }, // 温度原始零点值
         { name: "temperature_span_raw", type: "Int", offset: 176, length: 16, init_value: 27648 }, // 温度原始量程值
         { name: "temperature_underflow", type: "Int", offset: 192, length: 16, init_value: -500 }, // 温度下溢出设置值
