@@ -2,10 +2,11 @@
     "restartable": "rs",
     "verbose": true,
     "watch": [
-        "src"
+        "src/"
     ],
     "ext": "js,yaml",
     "ignore": [
+        "src/emulators/"
     ],
     "delay": "3",
     "execMap": {}
