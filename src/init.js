@@ -3,10 +3,7 @@ import { SECTION } from "./data_type/TSection.js";
 import { LINE } from "./data_type/TLine.js";
 import { NODE } from "./data_type/TNode.js";
 import { COMMAND } from "./data_type/TCmd.js";
-import {
-    read_config,
-    cfg_lines, cfg_actuators, cfg_controllers,
-} from "./config.js";
+import { cfg_lines, cfg_actuators, cfg_controllers } from "./config.js";
 export const MAIN_PERIOD = 500;
 export const
     lines = [],
@@ -33,9 +30,6 @@ function add_actuator(section, cfg_node) {
 }
 
 export async function init() {
-    work_path = process.cwd();
-    await read_config(work_path);
-
     cfg_controllers.forEach(_controller => {
         const controller = { ..._controller, lines: [] };
         controllers[_controller.name] = controller;

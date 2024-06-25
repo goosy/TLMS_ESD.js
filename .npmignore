@@ -12,9 +12,6 @@ yarn.lock
 .vscode/
 
 # test & production
-dev.js
-rollup.config.js
-conf/
-SCL/
+example/
 test/
 .pnp*

@@ -1,4 +1,5 @@
 import { init, controllers, MAIN_PERIOD } from "./init.js";
+import { read_config } from "./config.js";
 import { line_loop, line_init } from "./line_proc.js";
 import { section_loop, section_init } from './section_proc.js';
 import { node_loop, node_init } from './node_proc.js';
@@ -9,12 +10,11 @@ const running_lines = [];
 const running_sections = [];
 const running_nodes = [];
 
-export async function run(name) {
-    await init();
-    const controller = controllers[name];
-    if (controller) { // run controller
-        run_controller(controller);
-    }
+await read_config(process.cwd());
+await init();
+const controller = controllers[process.argv[2]];
+if (controller) { // run controller
+    run_controller(controller);
 }
 
 function add_node(node, unit_map) {

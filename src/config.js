@@ -1,6 +1,6 @@
-import assert from 'assert/strict';
-import { readdir } from 'fs/promises';
-import { posix } from 'path';
+import assert from 'node:assert/strict';
+import { readdir } from 'node:fs/promises';
+import { posix } from 'node:path';
 import { GCL } from './gcl.js';
 
 export const cfg_lines = [],

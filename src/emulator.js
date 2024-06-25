@@ -1,10 +1,10 @@
-import { attach_unit, createMTServer } from "../drivers/modbusTCP.js";
-import { MAIN_PERIOD } from "../init.js";
-import { TData } from "../data_type/TData.js";
-import { NODE } from "../data_type/TNode.js";
-import { COMMAND } from "../data_type/TCmd.js";
-import { read_config, cfg_actuators } from "../config.js";
-import { debounce, curr_time } from "../util.js";
+import { attach_unit, createMTServer } from "./drivers/modbusTCP.js";
+import { MAIN_PERIOD } from "./init.js";
+import { TData } from "./data_type/TData.js";
+import { NODE } from "./data_type/TNode.js";
+import { COMMAND } from "./data_type/TCmd.js";
+import { read_config, cfg_actuators } from "./config.js";
+import { debounce, curr_time } from "./util.js";
 
 function loop_actuator(actuator) {
     // host_actuator(actuator);
