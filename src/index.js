@@ -22,7 +22,7 @@ function add_node(node, unit_map) {
     const data_driver = new MTClient(node.modbus_server.IP, node.modbus_server.port, { unit_id });
     node.data_driver = data_driver;
     data_driver.on("connect", () => {
-        console.log(`ModbusTCP connected to ${node.name}: ${data_driver.conn_str}!`);
+        console.log(`connected to ${data_driver.conn_str}!`);
     });
     // for controller side, do not use `node.modbus_server.unit_id;`
     const s_unit_id = node.section.line.controller.modbus_server.unit_id[node.name];

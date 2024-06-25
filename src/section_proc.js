@@ -1,4 +1,5 @@
 import { MAIN_PERIOD } from "./init.js";
+import { curr_time } from "./util.js";
 
 export function section_init(section) {
     const {
@@ -6,8 +7,6 @@ export function section_init(section) {
         name,
         data,
         line,
-        begin_nodes,
-        end_nodes,
         pump_nodes,
         flow_diff_WH,
         flow_diff_WH_delay,
@@ -15,7 +14,8 @@ export function section_init(section) {
         flow_diff_AH_delay,
         action_time,
     } = section;
-    data.on("change", (tagname, _o, new_value) => {
+    data.on("change", (tagname, old_value, new_value) => {
+        console.log(`${curr_time()} ${name}: ${tagname} ${old_value} => ${new_value}`); // @debug
         switch (tagname) {
             case "stop_pumps": // set command
                 if (new_value == false) {
@@ -26,6 +26,20 @@ export function section_init(section) {
             case "action_F": // log action
                 if (new_value == true) {
                     // action_logs(ID, flow_begin, flow_end, flow_diff);
+                }
+                break;
+            case "pump_run":
+                // if the alarm disappears while the pump is restarted,
+                // the action_F will be eliminated.
+                // the purpose is to disengage the action_F when the pump is started again.
+                const autoStopCmd = data.autoStopCmd;
+                if (
+                    new_value && !data.flow_alarm_F && !data.press_alarm_F &&
+                    !data.autoStopCmd && !data.line_action_source
+                ) {
+                    // remove action information
+                    data.action_F = false;
+                    line.data.action_section_ID = 0;
                 }
                 break;
         }
@@ -42,7 +56,6 @@ export function section_init(section) {
     data.action_time = action_time;
 }
 
-
 export function section_loop(section) {
     const {
         ID,
@@ -52,10 +65,6 @@ export function section_loop(section) {
         begin_nodes,
         end_nodes,
         pump_nodes,
-        flow_diff_WH,
-        flow_diff_WH_delay,
-        flow_diff_AH,
-        flow_diff_AH_delay,
     } = section;
     const all_nodes = [...begin_nodes, ...end_nodes];
     const comm_OK = all_nodes.reduce((acc, current_node) => {
@@ -100,11 +109,11 @@ export function section_loop(section) {
     data.flow_end = flow_end;
     const flow_diff = flow_begin - flow_end;
     data.flow_diff = flow_diff;
-    const flow_warning_trigger = (flow_diff > flow_diff_WH) && !bypass;
+    const flow_warning_trigger = (flow_diff > data.flow_diff_WH) && !bypass;
     data.flowWarningTrigger = flow_warning_trigger;
     if (flow_warning_trigger) section.flow_warning_count += MAIN_PERIOD;
     else section.flow_warning_count = 0;
-    const flow_alarm_trigger = (flow_diff > flow_diff_AH) && !bypass;
+    const flow_alarm_trigger = (flow_diff > data.flow_diff_AH) && !bypass;
     data.flowAlarmTrigger = flow_alarm_trigger;
     if (flow_alarm_trigger) section.flow_alarm_count += MAIN_PERIOD;
     else section.flow_alarm_count = 0;
@@ -114,7 +123,7 @@ export function section_loop(section) {
     data.flow_alarm_F = flow_alarm_F;
     const pre_stop_notice = flow_alarm_F && protect_F && pump_run;//预备停泵
     data.pre_stop_notice = pre_stop_notice;
-    let countdown = 0;
+    let countdown;
     if (pre_stop_notice) {
         section.action_count += MAIN_PERIOD;
         countdown = data.action_time - section.action_count;
@@ -123,41 +132,41 @@ export function section_loop(section) {
         countdown = 0;
     }
     let flow_action = false;
-    if (countdown > 0) {
+    if (countdown >= 0) {
         data.countdown = countdown / 1000;
     } else {
         data.countdown = 0;
         flow_action = true;
     }
-    let action_F = false;
-    let line_action_source = line.data.line_action_source;
-    if (flow_action || (press_alarm_F && pump_run)) {
+    let action_F = data.action_F;
+    if (press_alarm_F && pump_run) {
         action_F = true;
-        data.autoStopCmd = press_alarm_F; // If the pressure exceeds the limit, the autoStopCmd of this section will be set
         line.data.action_section_ID = ID;
-        line.data.autoStopCmd = flow_alarm_F;
-        line_action_source = flow_alarm_F;
-        data.line_action_source = line_action_source;
+        // only if the pressure exceeds the limit,
+        // the autoStopCmd of this section will be set
+        data.autoStopCmd = true;
     }
-    if (!line.data.autoStopCmd) data.line_action_source = false;
+    if (flow_action) {
+        action_F = true;
+        line.data.action_section_ID = ID;
+        // only if the flowmeter exceeds the limit,
+        // the autoStopCmd of its line will be set
+        line.data.autoStopCmd = true;
+        data.line_action_source = true;
+    } else {
+        data.line_action_source &&= line.data.autoStopCmd;
+    }
 
-    if (!data.pump_run) {
+    if (!pump_run) {
         data.autoStopCmd = false;
         data.manStopCmd = false;
-    }
-    const autoStopCmd = data.autoStopCmd;
-    if (pump_run && !flow_alarm_F && !press_alarm_F && !autoStopCmd && !line_action_source) {
-        action_F = false;
     }
     data.action_F = action_F;
 
     // do stop pumps
-    const stop_pumps = autoStopCmd
-        || data.manStopCmd
-        || line.data.autoStopCmd
-        || line.data.manStopCmd;
-    data.stop_pumps = stop_pumps;
+    const stop_pumps = data.autoStopCmd || data.manStopCmd || line.data.autoStopCmd || line.data.manStopCmd;
+    data.stop_pumps = stop_pumps && pump_run;
     pump_nodes.forEach((node) => {
-        node.command.stop_pumps = stop_pumps;
-    })
+        node.command.stop_pumps = stop_pumps && node.data.pump_run;
+    });
 }

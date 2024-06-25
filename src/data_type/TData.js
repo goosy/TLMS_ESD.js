@@ -99,7 +99,6 @@ export class TData extends EventEmitter {
             return;
         }
         this.driver = driver;
-        driver.start();
 
         this.buffer_info = buffer_info;
         const area_start = buffer_info.start;
