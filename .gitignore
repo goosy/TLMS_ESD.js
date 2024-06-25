@@ -17,10 +17,12 @@ yarn.lock
 .yarn/
 .yarnrc.yml
 .pnp*js
-pnpm-lock.yaml
+/*-lock.yaml
 
 # production
-conf/**/
-lib/
 .vscode/
 .vs/
+
+/main.js
+/emulator.js
+/cli.js
