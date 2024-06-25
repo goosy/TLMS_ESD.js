@@ -11,18 +11,18 @@ export class MTClient extends Modbus {
     #disconnect_time = 0;
     get disconnect_time() { return this.#disconnect_time; }
 
-    get conn_str() { return `modbus://${this.host}:${this.port}`; }
-
     /** 
      * @param {string} host the ip of the TCP Port - required.
      * @param {number} port the Port number - default 502.
      */
     constructor(host, port = 502, options) {
         super();
-        this.setID(options?.unit_id ?? 1);
+        const unit_id = options?.unit_id ?? 1;
+        this.conn_str = `modbus://${host}:${port} unit:${unit_id}`;
+        this.setID(unit_id);
         this.host = host;
         this.port = port;
-        this.periodTime = options?.periodTime ?? 1000;
+        this.period_time = options?.period_time ?? 1000;
         this.reconnect_time = options?.reconnect_time ?? 5; // How many ticks to reconnect after
         this.on("close", () => {
             console.log(`${this.conn_str} connection closed!`);
@@ -48,6 +48,7 @@ export class MTClient extends Modbus {
             this.emit("connrefused");
         }
     }
+
     async tick() {
         if (this.isOpen) {
             this.emit("tick");
@@ -71,7 +72,7 @@ export class MTClient extends Modbus {
             } else {
                 if (iv) clearInterval(iv);
             }
-        }, this.periodTime);
+        }, this.period_time);
     }
 
     stop() {

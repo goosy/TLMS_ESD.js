@@ -1,27 +1,48 @@
+import { debouncify } from "./util.js";
+
 function reset_parameter(actuator) {
     const { ID, data, command } = actuator;
-    const cmd_para_start = (command.groups.paras.start >> 3);
-    const data_para_start = (data.groups.paras.start >> 3);
-    const data_para_end = (data.groups.paras.end >> 3);
+    const cmd_para_start = command.groups.paras.start >> 3;
+    const data_para_start = data.groups.paras.start >> 3;
+    const data_para_end = data.groups.paras.end >> 3;
     data.buffer.copy(command.buffer, cmd_para_start, data_para_start, data_para_end);
     command.check_all_tags();
     command.ID = ID;
 }
 
-async function send_command(actuator) {
-    const { data, command } = actuator;
-    if (command.has_commands === true || data.response_code !== 0) {
-        const start = command.groups.status.start >> 3;
-        const end = command.groups.paras.end >> 3;
-        const length = end - start;
-        await command.IO_write({ start, length });
-    }
+async function send_commands(actuator) {
+    const { command } = actuator;
+    const start = command.groups.status.start >> 3;
+    const end = command.groups.paras.end >> 3;
+    const length = end - start;
+    await command.IO_write({ start, length });
 }
 
 export function node_init(actuator) {
     const { ID, name, data, command, data_driver } = actuator;
     command.name = name + '_CMD';
     data.name = name;
+    const debounce_send_commands = debouncify(`SC4RespCodeOrCmdChan_${name}`, () => {
+        send_commands(actuator);
+    }, 100);
+
+    data_driver.on("data_error", () => {
+        data.work_OK = false;
+    });
+    data_driver.on("connect", () => {
+        // reset parameter
+        setTimeout(() => {
+            reset_parameter(actuator);
+        }, 2000);
+    });
+    let no_response_count = 0;
+    data_driver.on("tick", () => {
+        if (command.has_commands === true) no_response_count++;
+        else no_response_count = 0;
+        if (no_response_count > 2) {
+            debounce_send_commands();
+        }
+    });
 
     data.ID = ID;
     data.set_IO(data_driver, {
@@ -47,11 +68,11 @@ export function node_init(actuator) {
     });
     data.on("change", (tagname, old_value, new_value) => {
         // handle command response_code
-        // valid: (handle in PLC)
+        // valid: (handled in PLC)
         //     stop_pumps cancel_stop
         //     enable_pressure_SD disable_pressure_SD
         //     write_paras
-        // invalid:
+        // todo:
         //     horn reset_horn read_paras
         //     enable_pressure_alarm disable_pressure_alarm
         //     enable_temperature_alarm disable_temperature_alarm
@@ -61,6 +82,7 @@ export function node_init(actuator) {
             let command_word = command.command_word;
             command_word = ~new_value & command_word & 0x7fff;
             command.command_word = command_word;
+            if (data.response_code !== 0) debounce_send_commands();
             return;
         }
         if (tagname === 'pressure_SD_F') {
@@ -69,6 +91,7 @@ export function node_init(actuator) {
             } else {
                 command.disable_pressure_SD = false;
             }
+            debounce_send_commands();
             return;
         }
         if (tagname === 'pump_run' && !new_value) {
@@ -82,15 +105,6 @@ export function node_init(actuator) {
         start: 200 - 16,
         length: command.size,
     });
-    data_driver.on("connect", () => {
-        // reset parameter
-        setTimeout(() => {
-            reset_parameter(actuator);
-        }, 2000);
-    });
-    data_driver.on("tick", async () => {
-        send_command(actuator);
-    });
     command.on("change", (tagname, _, new_value) => {
         if (tagname === 'reset_paras' && new_value) {
             reset_parameter(actuator);
@@ -101,9 +115,12 @@ export function node_init(actuator) {
         }
         if (tagname === 'command_word') {
             command.has_commands = new_value > 0;
+            debounce_send_commands();
             return;
         }
     });
+
+    data_driver.start();
 }
 
 export function node_loop(actuator) {
