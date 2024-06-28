@@ -19,7 +19,7 @@ async function send_commands(actuator) {
 }
 
 export function node_init(actuator) {
-    const { ID, name, data, command, data_driver } = actuator;
+    const { ID, name, data, command, data_driver, command_driver, driver_info } = actuator;
     command.name = name + '_CMD';
     data.name = name;
     const debounce_send_commands = debouncify(`SC4RespCodeOrCmdChan_${name}`, () => {
@@ -36,20 +36,28 @@ export function node_init(actuator) {
         }, 2000);
     });
     let no_response_count = 0;
-    data_driver.on("tick", () => {
+    command_driver.on("tick", () => {
         if (command.has_commands === true) no_response_count++;
         else no_response_count = 0;
         if (no_response_count > 2) {
             debounce_send_commands();
         }
     });
+    const data_extras = [];
+    const commands_extras = [];
+    if (driver_info.protocol === 'S7') {
+        const data = driver_info.data;
+        data_extras.push(data.area, data.db);
+        const commands = driver_info.commands;
+        commands_extras.push(commands.area, commands.db);
+    }
 
     data.ID = ID;
     data.set_IO(data_driver, {
-        remote_start: 0,
+        remote_start: driver_info.data.start,
         length: data.size,
         poll: true,
-    });
+    }, ...data_extras);
     const start = (data.groups.status.start >> 3) + 2;
     const end = data.groups.paras.end >> 3;
     data.on('data', buffer => { // when driver's data buffer coming
@@ -101,11 +109,11 @@ export function node_init(actuator) {
     });
 
     command.ID = ID;
-    command.set_IO(data_driver, {
-        remote_start: 200,
+    command.set_IO(command_driver, {
+        remote_start: driver_info.commands.start,
         start: 16,
         length: command.size - 16,
-    });
+    }, ...commands_extras);
     command.on("change", (tagname, _, new_value) => {
         if (tagname === 'reset_paras' && new_value) {
             reset_parameter(actuator);
@@ -122,6 +130,7 @@ export function node_init(actuator) {
     });
 
     data_driver.start();
+    if(!command_driver.is_connected) command_driver.start();
 }
 
 export function node_loop(actuator) {

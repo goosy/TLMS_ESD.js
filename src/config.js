@@ -34,6 +34,46 @@ function add_conf(doc) {
             actuator.has_pumps = true;
         }
 
+        const modbus_server = actuator.modbus_server;
+        const s7_server = actuator.s7_server;
+        if (modbus_server) {
+            const port = modbus_server.port ?? 502;
+            const unit_id = modbus_server.unit_id ?? 1;
+            const start = modbus_server.start ?? 0;
+            const length = modbus_server.length;
+            const data = modbus_server.data ?? {};
+            data.port ??= port;
+            data.unit_id ??= unit_id;
+            data.start ??= start;
+            data.length ??= length;
+            const commands = modbus_server.commands ?? {};
+            commands.port ??= port;
+            commands.unit_id ??= unit_id;
+            commands.start ??= start;
+            commands.length ??= length;
+            actuator.modbus_server = { data, commands };
+        } else if (s7_server) {
+            const port = s7_server.port ?? 102;
+            const rack = s7_server.rack ?? 0;
+            const slot = s7_server.slot ?? 0;
+            const area = s7_server.area ?? 'DB';
+            const db = s7_server.db ?? 10;
+            const start = s7_server.start ?? 0;
+            const length = s7_server.length;
+            const data = s7_server.data ?? {};
+            data.area ??= area;
+            data.db ??= db;
+            data.start ??= start;
+            data.length ??= length;
+            const commands = s7_server.commands ?? {};
+            commands.area ??= area;
+            commands.db ??= db;
+            commands.start ??= start;
+            commands.length ??= length;
+            actuator.s7_server = { port, rack, slot, data, commands };
+        }
+
+
         actuator.pressure_AH ??= actuator.pressure_span;
         actuator.pressure_WH ??= actuator.pressure_span;
         actuator.pressure_WL ??= actuator.pressure_zero;

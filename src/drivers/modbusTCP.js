@@ -40,7 +40,7 @@ export class MTClient extends Modbus {
             this.connrefused = false;
             this.emit("connect");
         } catch (err) {
-            if (!this.connrefused) console.log(`can't connect: ${this.conn_str}: ${err}`);
+            if (!this.connrefused) console.log(`can't connect to ${this.conn_str}: ${err}`);
             this.connrefused = true;
             this.emit("connrefused");
         }

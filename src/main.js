@@ -4,11 +4,34 @@ import { line_loop, line_init } from "./line_proc.js";
 import { section_loop, section_init } from './section_proc.js';
 import { node_loop, node_init } from './node_proc.js';
 import { MTClient, attach_unit, createMTServer } from "./drivers/modbusTCP.js";
+import { S7Client } from "./drivers/s7.js";
 
 // for run controller
 const running_lines = [];
 const running_sections = [];
 const running_nodes = [];
+const modbusTCP_clients = {};
+const S7_clients = {};
+function get_modbusTCP_client(IP, port, unit_id) {
+    const key = `${IP}:${port} ${unit_id}`;
+    if (key in modbusTCP_clients) return modbusTCP_clients[key];
+    const driver = new MTClient(IP, port, { unit_id });
+    modbusTCP_clients[key] = driver;
+    driver.on("connect", () => {
+        console.log(`connected to ${driver.conn_str}!`);
+    });
+    return driver;
+}
+function get_s7_client(IP, port, rack, slot) {
+    const key = `${IP}:${port} ${rack} ${slot}`;
+    if (key in S7_clients) return S7_clients[key];
+    const driver = new S7Client({ host: IP, port, rack, slot });
+    S7_clients[key] = driver;
+    driver.on("connect", () => {
+        console.log(`connected to ${driver.conn_str}!`);
+    });
+    return driver;
+}
 
 await read_config(process.cwd());
 await init();
@@ -18,13 +41,23 @@ if (controller) { // run controller
 }
 
 function add_node(node, unit_map) {
-    const unit_id = node.modbus_server.unit_id; // for actuator side
-    const data_driver = new MTClient(node.modbus_server.IP, node.modbus_server.port, { unit_id });
+    const driver_info = node.driver_info;
+    let data_driver = null;
+    let command_driver = null;
+    // for actuator side
+    if (driver_info.protocol === 'modbusTCP') {
+        const data = driver_info.data;
+        data_driver = get_modbusTCP_client(driver_info.IP, data.port, data.unit_id);
+        const commands = driver_info.commands;
+        command_driver = get_modbusTCP_client(driver_info.IP, commands.port, commands.unit_id);
+    } else if (driver_info.protocol === 'S7') {
+        const { port, host, rack, slot } = driver_info;
+        data_driver = command_driver = get_s7_client(host, port, rack, slot);
+    }
     node.data_driver = data_driver;
-    data_driver.on("connect", () => {
-        console.log(`connected to ${data_driver.conn_str}!`);
-    });
-    // for controller side, do not use `node.modbus_server.unit_id;`
+    node.command_driver = command_driver;
+
+    // for controller side, do not use `node.driver_info.unit_id;`
     const s_unit_id = node.section.line.controller.modbus_server.unit_id[node.name];
     const data = node.data;
     attach_unit(unit_map, s_unit_id, data, 0);

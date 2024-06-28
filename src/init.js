@@ -17,11 +17,24 @@ function add_actuator(section, cfg_node) {
     const ID = cfg_node.id;
     const name = cfg_node.name;
     const IP = cfg_node.IP;
-    const modbus_server = { IP, ...cfg_node.modbus_server };
+    let driver_info = null;
+    if (cfg_node.modbus_server) {
+        driver_info = {
+            ...cfg_node.modbus_server,
+            protocol: 'modbusTCP',
+            IP,
+        };
+    } else if (cfg_node.s7_server) {
+        driver_info = {
+            ...cfg_node.s7_server,
+            protocol: 'S7',
+            host: IP,
+        };
+    }
     const data = new TData(NODE);
     const command = new TData(COMMAND);
 
-    const actuator = { ID, name, data, command, modbus_server, section };
+    const actuator = { ID, name, data, command, driver_info, section };
     actuators.push(actuator);
     actuators[name] = actuator;
     if (cfg_node.is_begin) section.begin_nodes.push(actuator);
