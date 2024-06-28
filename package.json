@@ -1,6 +1,6 @@
 {
   "name": "tlms_esd",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "管道泄漏紧急关断系统",
   "type": "module",
   "main": "index.js",

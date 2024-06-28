@@ -46,7 +46,7 @@ export function node_init(actuator) {
 
     data.ID = ID;
     data.set_IO(data_driver, {
-        start: 0,
+        remote_start: 0,
         length: data.size,
         poll: true,
     });
@@ -102,8 +102,9 @@ export function node_init(actuator) {
 
     command.ID = ID;
     command.set_IO(data_driver, {
-        start: 200 - 16,
-        length: command.size,
+        remote_start: 200,
+        start: 16,
+        length: command.size - 16,
     });
     command.on("change", (tagname, _, new_value) => {
         if (tagname === 'reset_paras' && new_value) {
@@ -124,8 +125,8 @@ export function node_init(actuator) {
 }
 
 export function node_loop(actuator) {
-    const { data, section, data_driver } = actuator;
-    const connected = data_driver.isOpen;
-    data.comm_OK = connected;
-    if (!connected) data.work_OK = false;
+    const { data, data_driver } = actuator;
+    const is_connected = data_driver.is_connected;
+    data.comm_OK = is_connected;
+    if (!is_connected) data.work_OK = false;
 }
