@@ -81,10 +81,15 @@ export class TData extends EventEmitter {
      * Sets up the IO operations for the driver.
      *
      * @param {Object} driver - The driver object to start and listen for data.
-     * @param {{start:number, length:number}} buffer_info - The buffer information, unit: byte.
+     * @param {Object} options - The buffer information, unit: byte.
+     * @param {number} [options.start=0] The starting address on the instance buffer, default is 0
+     * @param {number} [options.remote_start=0] The starting address of the buffer on the remote device, default is 0
+     * @param {number} [options.length] The effective length of the exchange data area, defaults to the remaining length of the buffer
+     * @param {boolean} [options.poll=false] Whether to periodically poll data
+     * @param {boolean} [options.push=false] Whether to push data to the device when it changes
      * @return {void}
      */
-    set_IO(driver, buffer_info) {
+    set_IO(driver, options, ...extras) {
         if (typeof this.#poll === 'function') { // remove previous polling listener
             this?.driver?.on("tick", this.#poll);
         }
@@ -100,25 +105,35 @@ export class TData extends EventEmitter {
         }
         this.driver = driver;
 
-        this.buffer_info = buffer_info;
-        const area_start = buffer_info.start;
+        options.start ??= 0;
+        options.remote_start ??= 0;
+        options.length ??= this.#buffer.length - options.start;
+        this.buffer_info = options;
+
+        const offset = options.remote_start - options.start;
+        const validateRange = (range) => {
+            assert(range.start >= options.start);
+            assert(range.start + range.length <= options.start + options.length);
+        }
         this.IO_read = async (range) => {
-            const start = area_start + range.start;
+            validateRange(range);
+            const start = offset + range.start;
             const length = range.length;
-            return await driver.read({ start, length });
+            return await driver.read({ start, length }, ...extras);
         }
         this.IO_write = async (range) => {
+            validateRange(range);
             const { start, length } = range;
             const subbuffer = this.#buffer.subarray(start, start + length);
-            await driver.write(subbuffer, { start: area_start + start });
+            await driver.write(subbuffer, { start: offset + start }, ...extras);
         }
 
         this.#poll = async () => {
-            const buffer = await this.IO_read(buffer_info);
+            const buffer = await this.IO_read(options);
             if (buffer) this.emit("data", buffer);
             else this.emit("read_error");
         }
-        if (buffer_info.poll) driver.on("tick", this.#poll);
+        if (options.poll) driver.on("tick", this.#poll);
 
         // debouncing push
         this.#push = (tagname) => {
@@ -129,7 +144,7 @@ export class TData extends EventEmitter {
                 await this.IO_write(tag_info);
             }, 200);
         };
-        if (buffer_info.push) this.on("change", this.#push);
+        if (options.push) this.on("change", this.#push);
     }
 
     init(item) {

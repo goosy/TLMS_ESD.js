@@ -1,15 +1,7 @@
 import Modbus, { ServerTCP } from "modbus-serial";
+import { Base_Driver } from "./base.js";
 
 export class MTClient extends Modbus {
-
-    #started = false;
-    get started() { return this.#started; }
-
-    #reconnecting = false;
-    get reconnecting() { return this.#reconnecting; }
-
-    #disconnect_time = 0;
-    get disconnect_time() { return this.#disconnect_time; }
 
     /** 
      * @param {string} host the ip of the TCP Port - required.
@@ -22,13 +14,18 @@ export class MTClient extends Modbus {
         this.setID(unit_id);
         this.host = host;
         this.port = port;
-        this.period_time = options?.period_time ?? 1000;
-        this.reconnect_time = options?.reconnect_time ?? 5; // How many ticks to reconnect after
+        const period_time = options?.period_time;
+        if(period_time) this.period_time = period_time;
+        const reconnect_time = options?.reconnect_time; // How many ticks to reconnect after
+        if(reconnect_time) this.reconnect_time = reconnect_time;
         this.on("close", () => {
+            this.emit("disconnect");
             console.log(`${this.conn_str} connection closed!`);
         });
+        Object.mixin(this, new Base_Driver());
     }
 
+    get is_connected() { return super.isOpen; }
     connrefused = false;
     async connect(host, option) {
         if (typeof host === "string") {
@@ -48,62 +45,19 @@ export class MTClient extends Modbus {
             this.emit("connrefused");
         }
     }
-
-    async tick() {
-        if (this.isOpen) {
-            this.emit("tick");
-            this.#disconnect_time = 0;
-            this.#reconnecting = false;
-        } else {
-            this.#disconnect_time++;
-            if (!this.reconnecting && this.#disconnect_time > this.reconnect_time) {
-                this.#reconnecting = true;
-                await this.connect();
-                this.#reconnecting = false;
-            }
-        }
-    }
-
-    async start() {
-        this.#started = true;
-        const iv = setInterval(() => {
-            if (this.started) {
-                this.tick()
-            } else {
-                if (iv) clearInterval(iv);
-            }
-        }, this.period_time);
-    }
-
-    stop() {
-        this.#started = false;
-        this.close();
-    }
-
-    #data_error = false;
-    get data_error() { return this.#data_error; }
-    emit_data_ok() {
-        if (this.data_error) {
-            this.#data_error = false;
-            this.emit("data_ok");
-        }
-    }
-    emit_data_error() {
-        if (!this.data_error) {
-            this.#data_error = true;
-            this.emit("data_error");
-        }
+    disconnect() {
+        super.close();
     }
 
     /**
      * Reads the holding registers within the specified area asynchronously.
      *
-     * @param {{start:number, length:number}} area - The area to read from, specified as an object with start and length properties with unit byte.
+     * @param {{start:number, length:number}} range - The area to read from, specified as an object with start and length properties with unit byte.
      * @return {Promise<Buffer>} A promise that resolves with the buffer containing the read data, or rejects with an error if the read operation fails.
      */
-    async read(area) {
+    async read(range) {
         try {
-            const ret = await this.readHoldingRegisters(area.start >> 1, area.length >> 1);
+            const ret = await this.readHoldingRegisters(range.start >> 1, range.length >> 1);
             this.emit_data_ok();
             return ret.buffer;
         } catch (err) {
@@ -116,12 +70,12 @@ export class MTClient extends Modbus {
      * Writes the given buffer to the specified area asynchronously.
      *
      * @param {Buffer} buffer - The buffer containing the data to be written.
-     * @param {{start:number, length:number}} area - The area to write to, specified as an object with start and length properties with unit byte.
+     * @param {{start:number, length:number}} range - The area to write to, specified as an object with start and length properties with unit byte.
      * @return {Promise<void>} A promise that resolves when the write operation is complete, or rejects with an error if the write operation fails.
      */
-    async write(buffer, area) {
+    async write(buffer, range) {
         try {
-            await this.writeRegisters(area.start >> 1, buffer);
+            await this.writeRegisters(range.start >> 1, buffer);
             this.emit_data_ok();
         } catch (err) {
             this.emit_data_error();
