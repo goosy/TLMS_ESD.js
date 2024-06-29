@@ -6,11 +6,7 @@ import { GCL } from './gcl.js';
 export const cfg_lines = [],
     cfg_sections = [],
     cfg_actuators = [],
-    cfg_connections = {},
     cfg_controllers = [];
-export const MAIN_PERIOD = 500;
-
-const controllers = {};
 
 function add_conf(doc) {
     const {
@@ -22,16 +18,8 @@ function add_conf(doc) {
 
     for (const _controller of _controllers) {
         const controller = { ..._controller };
-        controllers[controller.name] = controller;
-        const conns = controller.connections;
-        cfg_connections[controller.name] = conns;
-        const local_ip = controller.IP.split('.');
-        for (const conn of conns) {
-            const default_name = `${controller.name}_${conn.id}`;
-            cfg_connections[default_name] = conn;
-            conn.name ??= default_name;
-            conn.local_ip = local_ip;
-        }
+        cfg_controllers[controller.name] = controller;
+        cfg_controllers.push(controller);
     }
     for (const _actuator of _actuators) {
         const actuator = { ..._actuator };
@@ -54,17 +42,6 @@ function add_conf(doc) {
         actuator.temperature_WH ??= actuator.temperature_span;
         actuator.temperature_WL ??= actuator.temperature_zero;
         actuator.temperature_AL ??= actuator.temperature_zero;
-        const conns = actuator.connections;
-        cfg_connections[actuator.name] = conns;
-        const local_ip = actuator.IP.split('.');
-        for (const conn of conns) {
-            const default_name = `${actuator.name}_${conn.id}`;
-            cfg_connections[default_name] = conn;
-            conn.name ??= default_name;
-            conn.send_data ??= '"node_data"';
-            conn.recv_data ??= '"commands"';
-            conn.local_ip = local_ip;
-        }
         cfg_actuators[actuator.name] = actuator;
         cfg_actuators['ID' + actuator.id] = actuator;
         cfg_actuators.push(actuator);
@@ -102,23 +79,12 @@ export async function read_config(work_path) {
     }
     docs.forEach(add_conf);
 
-    for (const actuator of cfg_actuators) {
-        for (const conn of actuator.connections) {
-            if (conn.remote) {
-                const rconn = cfg_connections[conn.remote + '_' + conn.remote_id];
-                conn.remote_ip = rconn.local_ip;
-                conn.remote_tsap_id = rconn.port;
-            }
-        }
-    }
     for (const line of cfg_lines) {
         const c_name = line.controller;
-        const controller = controllers[c_name];
+        const controller = cfg_controllers[c_name];
         controller.lines ??= [];
         controller.lines.push(line);
         line.controller = controller;
-        cfg_controllers[c_name] = controller;
-        cfg_controllers.push(controller);
 
         line.sections = line.sections.map(name => {
             const section = cfg_sections[name];

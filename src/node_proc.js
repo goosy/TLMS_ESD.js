@@ -1,8 +1,3 @@
-export const
-    lines = [],
-    sections = [],
-    actuators = [];
-
 function reset_parameter(actuator) {
     const { ID, data, command } = actuator;
     const cmd_para_start = (command.groups.paras.start >> 3);
@@ -14,19 +9,17 @@ function reset_parameter(actuator) {
 }
 
 async function send_command(actuator) {
-    const { data, command, data_driver } = actuator;
+    const { data, command } = actuator;
     if (command.has_commands === true || data.response_code !== 0) {
-        let start = command.groups.status.start >> 3;
+        const start = command.groups.status.start >> 3;
         const end = command.groups.paras.end >> 3;
-        const buffer = command.buffer.subarray(start, end);
-        const length = start - start;
-        start = command.buffer_info.start;
-        await data_driver.write(buffer, { start, length });
+        const length = end - start;
+        await command.IO_write({ start, length });
     }
 }
 
-export function actuator_init(actuator) {
-    const { ID, name, data, command, section, data_driver } = actuator;
+export function node_init(actuator) {
+    const { ID, name, data, command, data_driver } = actuator;
     command.name = name + '_CMD';
     data.name = name;
 
@@ -101,12 +94,9 @@ export function actuator_init(actuator) {
     });
 }
 
-export function actuator_loop(actuator) {
-    const { ID, name, data, command, section, data_driver } = actuator;
+export function node_loop(actuator) {
+    const { data, section, data_driver } = actuator;
     const connected = data_driver.isOpen;
     data.comm_OK = connected;
     if (!connected) data.work_OK = false;
-    do_section(section);
 }
-
-function do_section(section) { }

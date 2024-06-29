@@ -19,7 +19,7 @@ sections:
   flow_diff_AH_delay: 3000
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
-  action_time: 60000
+  action_time: 10000
 - comment: 广饶-临淄段
   id: 23
   name: GL
@@ -29,7 +29,7 @@ sections:
   flow_diff_AH_delay: 3000
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
-  action_time: 60000
+  action_time: 10000
 
 
 ## 节点
@@ -38,7 +38,7 @@ actuators:
 - comment: 东营东辛线出站
   id: 8012
   name: DY2
-  IP: 192.168.8.201
+  IP: 192.168.8.200
   pumps:
   - I1.0
   - I1.1
@@ -55,45 +55,27 @@ actuators:
   pressure_AI: IW64
   temperature_AI: IW66
   pressure_SD: false # 压力联锁设置
-  flows:
-  - ID1000
-  - ID1004
-  - ID1008
-  - ID1012
-  - ID1016
-  connections:
-  - id: 1
-    type: modbus_tcp_server
-    device_id: 1
-    port: 512
-    remote: JSC
-    remote_id: 40
+  flows: []
+  modbus_server:
+    port: 503
+    unit_id: 12
 
 - comment: 广饶进站
   id: 8021
   name: GR1
-  IP: 192.168.8.201
+  IP: 192.168.8.200
   pressure_AI: IW96
   temperature_AI: IW98
   pressure_span: 2.0
-  flows:
-  - ID1000
-  - ID1004
-  - ID1008
-  - ID1012
-  - ID1016
-  connections:
-  - id: 1
-    type: modbus_tcp_server
-    device_id: 1
-    port: 513
-    remote: JSC
-    remote_id: 46
+  flows: []
+  modbus_server:
+    port: 503
+    unit_id: 21
 
 - comment: 广饶出站
   id: 8023
   name: GR3
-  IP: 192.168.8.201
+  IP: 192.168.8.200
   pumps:
   - I0.6, Q0.0
   - I0.7, Q0.1
@@ -104,37 +86,19 @@ actuators:
   pressure_AI: IW96
   temperature_AI: IW98
   pressure_SD: true
-  flows:
-  - ID1000
-  - ID1004
-  - ID1008
-  - ID1012
-  - ID1016
-  connections:
-  - id: 1
-    type: modbus_tcp_server
-    device_id: 1
-    port: 514
-    remote: JSC
-    remote_id: 48
+  flows: []
+  modbus_server:
+    port: 503
+    unit_id: 23
 
 - comment: 临淄进站
   id: 8032
   name: LZ
-  IP: 192.168.8.201
+  IP: 192.168.8.200
   pressure_AI: IW96
   pressure_span: 2.0
   temperature_AI: IW98
-  flows:
-  - ID1000
-  - ID1004
-  - ID1008
-  - ID1012
-  - ID1016
-  connections:
-  - id: 1
-    type: modbus_tcp_server
-    device_id: 1
-    port: 515
-    remote: JSC
-    remote_id: 50
+  flows: []
+  modbus_server:
+    port: 503
+    unit_id: 32
