@@ -1,4 +1,4 @@
-import { MAIN_PERIOD } from "./config.js";
+import { MAIN_PERIOD } from "./init.js";
 
 export function section_init(section) {
     const {
