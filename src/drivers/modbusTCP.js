@@ -15,9 +15,9 @@ export class MTClient extends Modbus {
         this.host = host;
         this.port = port;
         const period_time = options?.period_time;
-        if(period_time) this.period_time = period_time;
+        if (period_time) this.period_time = period_time;
         const reconnect_time = options?.reconnect_time; // How many ticks to reconnect after
-        if(reconnect_time) this.reconnect_time = reconnect_time;
+        if (reconnect_time) this.reconnect_time = reconnect_time;
         this.on("close", () => {
             this.emit("disconnect");
             console.log(`${this.conn_str} connection closed!`);
@@ -83,23 +83,24 @@ export class MTClient extends Modbus {
     }
 }
 
-const get_register_info = (addr, unit) => {
+const get_register_info = (addr, units) => {
     const byte_offset = addr * 2;
-    for (const { tdata, start, end } of unit) {
+    for (const { tdata, start, offset, end } of units) {
         if (tdata.buffer && byte_offset >= start && byte_offset < end) {
-            return { tdata, offset: byte_offset - start };
+            return { tdata, offset: byte_offset + offset - start };
         }
     }
     return { tdata: null, offset: -1 };
 };
 
-const get_coil_info = (addr, unit) => {
-    const byte_offset = addr >> 4 << 1; // Byte index value with word units as delimiters
-    const bit_offset = addr % 16;
-    const bit = 1 << bit_offset;
-    for (const { tdata, start, end } of unit) {
+const get_coil_info = (addr, units) => {
+    const byte_offset = addr >> 3;
+    const bit_offset = addr % 8;
+    const bit_mask = 1 << bit_offset;
+    for (const { tdata, start, offset, end } of units) {
         if (tdata.buffer && byte_offset >= start && byte_offset < end) {
-            return { tdata, offset: byte_offset - start, bit };
+            // return.offset: the index in the buffer
+            return { tdata, offset: byte_offset + offset - start, bit_mask };
         }
     }
     return { tdata: null, offset: -1 };
@@ -128,33 +129,33 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         },
         setRegister: (addr, value, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
-            if (!tdata) {
-                console.error(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
-            } else {
+            if (tdata) {
                 tdata.buffer.writeUInt16BE(value, offset);
                 tdata.check_all_tags();
+                return;
             }
+            console.error(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
         },
 
         getCoil: (addr, unit_id) => {
-            const { tdata, offset, bit } = get_coil_info(addr, unit_map[unit_id]);
+            const { tdata, offset, bit_mask } = get_coil_info(addr, unit_map[unit_id]);
             if (tdata) {
-                return (tdata.buffer.readUInt16BE(offset) & bit) > 0;
+                return (tdata.buffer.readUInt8(offset) & bit_mask) > 0;
             }
             console.error(`Invalid coil address: ${addr} for read in unit ${unit_id}`);
         },
 
         setCoil: (addr, value, unit_id) => {
-            const { tdata, offset, bit } = get_coil_info(addr, unit_map[unit_id]);
+            const { tdata, offset, bit_mask } = get_coil_info(addr, unit_map[unit_id]);
             if (tdata) {
-                let byte = tdata.buffer.readUInt16BE(offset);
-                if (value) byte = byte | bit;
-                else byte = byte & ~bit;
-                tdata.buffer.writeUInt16BE(byte, offset);
+                let byte = tdata.buffer.readUInt8(offset);
+                if (value) byte = byte | bit_mask;
+                else byte = byte & ~bit_mask;
+                tdata.buffer.writeUInt8(byte, offset);
                 tdata.check_all_tags();
-            } else {
-                console.error(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
+                return;
             }
+            console.error(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
         },
     }
 
@@ -174,11 +175,12 @@ function new_blank_unit(unit_id) {
     return unit;
 }
 
-export function attach_unit(unit_map, unit_id, tdata, start = 0) {
+export function attach_unit(unit_map, unit_id, tdata, start = 0, offset = 0) {
     unit_map[unit_id] ??= new_blank_unit(unit_id);
     unit_map[unit_id].push({
         tdata,
         start,
-        end: tdata.size + start,
+        offset,
+        end: tdata.size - offset + start,
     });
 }
