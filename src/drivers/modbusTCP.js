@@ -116,47 +116,55 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
     const vector = {
         getInputRegister: (addr, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
-            if (tdata) {
-                return tdata.buffer.readUInt16BE(offset);
+            if (tdata == null) {
+                console.error(`Invalid InputRegister address(${addr}) when reading unit ${unit_id}`);
+                return 0;
             }
-            console.error(`Invalid InputRegister address(${addr}) when reading unit ${unit_id}`);
+            if (tdata.LE_list.includes(offset)) return tdata.buffer.readUInt16LE(offset);
+            return tdata.buffer.readUInt16BE(offset);
         },
         getHoldingRegister: (addr, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
-            if (tdata) {
-                return tdata.buffer.readUInt16BE(offset);
+            if (tdata == null) {
+                console.error(`Invalid HoldingRegister address(${addr}) when reading unit ${unit_id}`);
+                return 0;
             }
-            console.error(`Invalid HoldingRegister address(${addr}) when reading unit ${unit_id}`);
+            if (tdata.LE_list.includes(offset)) return tdata.buffer.readUInt16LE(offset);
+            return tdata.buffer.readUInt16BE(offset);
         },
         setRegister: (addr, value, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
-            if (tdata) {
-                tdata.buffer.writeUInt16BE(value, offset);
-                tdata.check_all_tags();
-                return;
+            if (tdata == null) {
+                console.error(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
+                return 0;
             }
-            console.error(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
+            if (tdata.LE_list.includes(offset)) tdata.buffer.writeUInt16LE(value, offset);
+            else tdata.buffer.writeUInt16BE(value, offset);
+            tdata.check_all_tags();
+            return;
         },
 
         getCoil: (addr, unit_id) => {
             const { tdata, offset, bit_mask } = get_coil_info(addr, unit_map[unit_id]);
-            if (tdata) {
-                return (tdata.buffer.readUInt8(offset) & bit_mask) > 0;
+            if (tdata == null) {
+                console.error(`Invalid coil address: ${addr} for read in unit ${unit_id}`);
+                return false;
             }
-            console.error(`Invalid coil address: ${addr} for read in unit ${unit_id}`);
+            return (tdata.buffer.readUInt8(offset) & bit_mask) > 0;
         },
 
         setCoil: (addr, value, unit_id) => {
             const { tdata, offset, bit_mask } = get_coil_info(addr, unit_map[unit_id]);
-            if (tdata) {
-                let byte = tdata.buffer.readUInt8(offset);
-                if (value) byte = byte | bit_mask;
-                else byte = byte & ~bit_mask;
-                tdata.buffer.writeUInt8(byte, offset);
-                tdata.check_all_tags();
+            if (tdata == null) {
+                console.error(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
                 return;
             }
-            console.error(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
+            let byte = tdata.buffer.readUInt8(offset);
+            if (value) byte = byte | bit_mask;
+            else byte = byte & ~bit_mask;
+            tdata.buffer.writeUInt8(byte, offset);
+            tdata.check_all_tags();
+            return;
         },
     }
 

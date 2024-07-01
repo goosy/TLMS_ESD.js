@@ -127,6 +127,7 @@ export class TData extends EventEmitter {
         if (options.push) this.on("change", this.#push);
     }
 
+    LE_list = [];
     init(_item) {
         const offset = _item.offset;
         const type = _item.type.toLowerCase();
@@ -204,6 +205,7 @@ export class TData extends EventEmitter {
                 break;
             case 'word':
                 // For the combination of bits and bytes, use little_endian
+                this.LE_list.push(byte_offset);
                 this.#tags[name] = {
                     ...tag,
                     get _value() {
@@ -240,6 +242,7 @@ export class TData extends EventEmitter {
                 break;
             case 'dword':
                 // For the combination of bits and bytes, use little_endian
+                this.LE_list.push(byte_offset, byte_offset + 2);
                 this.#tags[name] = {
                     ...tag,
                     get _value() {
