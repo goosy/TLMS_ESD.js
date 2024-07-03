@@ -140,12 +140,11 @@ function actuator_init(actuator) {
 const unit_map_poll = {};
 const actuators = [];
 
-function init_tdata(tdata, info, offset) {
-    const unit_id = info.unit_id;
-    const port = info.port;
+function init_tdata(tdata, mb_info, offset) {
+    const unit_id = mb_info.unit_id;
+    const port = mb_info.port;
     unit_map_poll[port] ??= {};
-    const unit_map = unit_map_poll[port];
-    attach_unit(unit_map, unit_id, tdata, info.start, offset);
+    attach_unit(unit_map_poll[port], unit_id, tdata, mb_info.start, offset);
 }
 
 function prepare_actuator(name) {

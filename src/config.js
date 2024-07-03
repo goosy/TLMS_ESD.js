@@ -41,6 +41,9 @@ function add_conf(doc) {
             const unit_id = modbus_server.unit_id ?? 1;
             const start = modbus_server.start ?? 0;
             const length = modbus_server.length;
+            const endian = modbus_server.endian ?? 'big';
+            const combined_endian = modbus_server.combined_endian ?? 'little';
+
             const data = modbus_server.data ?? {};
             data.port ??= port;
             data.unit_id ??= unit_id;
@@ -51,7 +54,7 @@ function add_conf(doc) {
             commands.unit_id ??= unit_id;
             commands.start ??= start;
             commands.length ??= length;
-            actuator.modbus_server = { data, commands };
+            actuator.modbus_server = { data, commands, endian, combined_endian };
         } else if (s7_server) {
             const port = s7_server.port ?? 102;
             const rack = s7_server.rack ?? 0;
@@ -60,6 +63,9 @@ function add_conf(doc) {
             const db = s7_server.db ?? 10;
             const start = s7_server.start ?? 0;
             const length = s7_server.length;
+            const endian = s7_server.endian ?? 'big';
+            const combined_endian = s7_server.combined_endian ?? 'little';
+
             const data = s7_server.data ?? {};
             data.area ??= area;
             data.db ??= db;
@@ -70,7 +76,7 @@ function add_conf(doc) {
             commands.db ??= db;
             commands.start ??= start;
             commands.length ??= length;
-            actuator.s7_server = { port, rack, slot, data, commands };
+            actuator.s7_server = { port, rack, slot, data, commands, endian, combined_endian };
         }
 
 

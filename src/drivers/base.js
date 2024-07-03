@@ -1,4 +1,4 @@
-import "../util.js";
+import "../util.js";  // the side effects need to be executed
 
 export class Base_Driver {
     constructor() {

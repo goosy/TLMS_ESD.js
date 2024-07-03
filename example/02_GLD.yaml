@@ -56,6 +56,8 @@ actuators:
   modbus_server:
     port: 503
     unit_id: 79
+    endian: big
+    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
@@ -74,6 +76,8 @@ actuators:
     slot: 1
     area: DB
     start: 0
+    endian: big
+    combined_endian: little
     data: { db: 10 }
     commands: { db: 11 }
 
@@ -88,6 +92,8 @@ actuators:
   modbus_server:
     port: 503
     unit_id: 97
+    endian: big
+    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
@@ -110,6 +116,8 @@ actuators:
   modbus_server:
     port: 503
     unit_id: 91
+    endian: big
+    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
@@ -124,6 +132,8 @@ actuators:
   modbus_server:
     port: 503
     unit_id: 10
+    endian: big
+    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
@@ -142,5 +152,7 @@ actuators:
   modbus_server:
     port: 503
     unit_id: 19
+    endian: big
+    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }

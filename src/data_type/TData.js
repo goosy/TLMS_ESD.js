@@ -18,6 +18,8 @@ export class TData extends EventEmitter {
     get size() {
         return this.#buffer.length;
     }
+    #IO_buffer = null;
+    get IO_buffer() { return this.#IO_buffer; }
 
     name;
 
@@ -64,17 +66,9 @@ export class TData extends EventEmitter {
      * @param {number} [options.start=0] The starting address on the instance buffer, default is 0
      * @param {number} [options.remote_start=0] The starting address of the buffer on the remote device, default is 0
      * @param {number} [options.length] The effective length of the exchange data area, defaults to the remaining length of the buffer
-     * @param {boolean} [options.poll=false] Whether to periodically poll data
-     * @param {boolean} [options.push=false] Whether to push data to the device when it changes
      * @return {void}
      */
     set_IO(driver, options, ...extras) {
-        if (typeof this.#poll === 'function') { // remove previous polling listener
-            this?.driver?.off("tick", this.#poll);
-        }
-        if (typeof this.#push === 'function') { // remove previous pushing listener
-            this.off("change", this.#push);
-        }
         if (driver == null) {
             this.driver = null;
             this.buffer_info = null;
@@ -84,47 +78,62 @@ export class TData extends EventEmitter {
         }
         this.driver = driver;
 
-        options.start ??= 0;
-        options.remote_start ??= 0;
-        options.length ??= this.#buffer.length - options.start;
+        const IO_start = options.start ?? 0;
+        const remote_start = options.remote_start ?? 0;
+        const IO_length = options.length ?? this.#buffer.length - IO_start;
+        const endian = options.endian ?? "big";
+        const combined_endian = options.combined_endian ?? "little";
+        this.create_tag_group = () => new Tag_Group(
+            this,
+            { IO_start, remote_start, IO_length, endian, combined_endian }
+        );
+
         this.buffer_info = options;
 
-        const offset = options.remote_start - options.start;
-        const validateRange = (range) => {
-            assert(range.start >= options.start);
-            assert(range.start + range.length <= options.start + options.length);
+        const offset = remote_start - IO_start;
+        const check_driver = (range) => {
+            if (!driver.is_connected) {
+                console.error('driver is not connected');
+                return false;
+            }
+            assert(range.start >= IO_start);
+            assert(range.start + range.length <= IO_start + IO_length);
+            return true;
         }
         this.IO_read = async (range) => {
-            validateRange(range);
+            if (!check_driver(range)) return false;
             const start = offset + range.start;
             const length = range.length;
-            return await driver.read({ start, length }, ...extras);
+            const buffer = await driver.read({ start, length }, ...extras);
+            if (buffer) {
+                buffer.copy(this.#IO_buffer, range.start, /*start*/0, /*end*/length);
+                return true;
+            } else {
+                this.emit("read_error");
+                return false;
+            }
         }
-        this.IO_write = async (range) => {
-            validateRange(range);
-            const { start, length } = range;
-            const subbuffer = this.#buffer.subarray(start, start + length);
-            await driver.write(subbuffer, { start: offset + start }, ...extras);
+        this.IO_write = async (buffer, range) => {
+            if (!check_driver(range)) return false;
+            const start = range.start + offset;
+            await driver.write(buffer, { start }, ...extras);
+            return true;
         }
 
-        this.#poll = async () => {
-            const buffer = await this.IO_read(options);
-            if (buffer) this.emit("data", buffer);
-            else this.emit("read_error");
+        this.read_all = async () => {
+            const start = remote_start;
+            const length = IO_length;
+            if (!check_driver({ start: IO_start, length })) return false;
+            const buffer = await driver.read({ start, length }, ...extras);
+            if (buffer) {
+                buffer.copy(this.#IO_buffer, IO_start);
+                this.emit("data", buffer);
+                return true;
+            } else {
+                this.emit("read_error");
+                return false;
+            }
         }
-        if (options.poll) driver.on("tick", this.#poll);
-
-        // debouncing push
-        this.#push = (tagname) => {
-            const key = `${this.name}:${tagname}`;
-            debounce(key, async () => {
-                const tag = this.get(tagname);
-                assert(tag != null);
-                const { byte_offset: start, length } = tag;
-                await this.IO_write({ start, length });
-            }, 200);
-        };
-        if (options.push) this.on("change", this.#push);
     }
 
     LE_list = [];
@@ -276,9 +285,7 @@ export class TData extends EventEmitter {
                 const tag = self.#tags[name];
                 tag._value = value;
                 self.check_tag(name);
-                debounce(`${self.name}_${name}_inner_setter`, () => {
-                    self.check_coupling(name);
-                }, 100);
+                self.check_coupling(name);
             },
             enumerable: true,
             configurable: false,
@@ -288,13 +295,140 @@ export class TData extends EventEmitter {
     constructor(data_struct, name) {
         super();
         this.name = name;
+        this.setMaxListeners(100);
         const size = data_struct.length >> 3;
         const buffer = Buffer.alloc(size, 0);
-        this.setMaxListeners(100);
         this.#buffer = buffer;
+        this.#IO_buffer = Buffer.alloc(size, 0);
         this.groups = data_struct.groups;
         for (const item of data_struct.items) {
             this.init(item);
+        }
+    }
+}
+
+class Tag_Group {
+
+    #tags = [];
+    #areas = [];
+
+    constructor(tdata, options) {
+        this.tdata = tdata;
+        this.buffer = tdata.buffer;
+        this.IO_start = options.IO_start;
+        this.remote_offset = options.remote_start - this.IO_start;
+        this.IO_length = options.IO_length;
+        this.skip_endian = options.endian === 'big';
+        this.skip_combined = options.combined_endian === 'little';
+    }
+
+    convert_tag_endian(buffer, tag) {
+        if (tag.type === 'bit' || tag.type === 'byte') return;
+        if (tag.type === 'word' || tag.type === 'dword') {
+            if (this.skip_combined) return;
+        } else {
+            if (this.skip_endian) return;
+        }
+        const index = tag.byte_offset;
+        if (tag.length === 2) {
+            buffer.writeUInt16BE(buffer.readUInt16LE(index), index);
+        }
+        if (tag.length === 4) {
+            buffer.writeUInt32BE(buffer.readUInt32LE(index), index);
+        }
+    }
+
+    get_copy_of_buffer() {
+        return Buffer.from(this.tdata.buffer);
+    }
+
+    /**
+     * Asynchronously reads the IO buffer if the driver is connected, otherwise logs an error and returns null.
+     *
+     * @return {Promise<Buffer|null>} The IO buffer if the driver is connected, otherwise null.
+     */
+    async read_IO_buffer() {
+        if (await this.tdata.read_all()) {
+            return this.tdata.IO_buffer;
+        }
+        return null;
+    }
+
+    async read() {
+        const IO_buffer = await this.read_IO_buffer();
+        if (IO_buffer === null) return;
+        this.#tags.forEach(tag => this.convert_tag_endian(IO_buffer, tag));
+        this.#areas.forEach(area => {
+            const { start, end } = area;
+            IO_buffer.copy(this.tdata.buffer, start, start, end);
+        });
+        this.tdata.check_all_tags();
+    }
+    async write() {
+        const IO_buffer = this.get_copy_of_buffer();
+        this.#tags.forEach(tag => this.convert_tag_endian(IO_buffer, tag));
+        for (const area of this.#areas) {
+            const { start, end } = area;
+            const length = end - start;
+            const subbuffer = IO_buffer.subarray(start, end);
+            await this.tdata.IO_write(subbuffer, { start, length });
+        };
+    }
+
+    #add(tagname) {
+        const tag = this.tdata.get(tagname);
+        this.#tags.push(tag);
+        if (!tag) throw new Error('Invalid tag configuration');
+        const tag_start = tag.byte_offset;
+        const length = tag.length;
+        if (typeof tag_start !== 'number' || typeof length !== 'number' || length < 0) {
+            throw new Error('Invalid tag configuration');
+        }
+        const tag_end = tag_start + length;
+        const areas = this.#areas;
+        let left = 0;
+        let right = areas.length - 1;
+        while (left <= right) {
+            const mid = Math.floor((left + right) / 2);
+            const area = areas[mid];
+            if (tag_start > area.end) {
+                left = mid + 1;
+                continue;
+            } else if (tag_end < area.start) {
+                right = mid - 1;
+                continue;
+            }
+            if (tag_start == area.end) {
+                // Merge right side
+                area.end = tag_end;
+                const next = areas[mid + 1];
+                if (next && tag_end == next.start) {
+                    area.end = next.end;
+                    areas.splice(mid + 1, 1);
+                }
+                return mid;
+            }
+            if (tag_end == area.start) {
+                // Merge left side
+                area.start = tag_start;
+                const prev = areas[mid - 1];
+                if (prev && tag_start == prev.end) {
+                    area.start = prev.start;
+                    areas.splice(mid - 1, 1);
+                }
+                return mid;
+            }
+            throw new Error('Invalid tag configuration');
+        }
+
+        // insert new area
+        areas.splice(left, 0, { start: tag_start, end: tag_end });
+        return left;
+    }
+
+    add(...tags) {
+        for (const tag of tags) {
+            this.#add(tag);
         }
     }
 }
