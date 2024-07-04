@@ -1,9 +1,8 @@
 {
   "name": "tlms_esd",
-  "version": "0.1.1",
-  "description": "管道泄漏紧急关断系统",
+  "version": "0.2.0",
+  "description": "Pipeline Leakage Emergency Shutdown System",
   "type": "module",
-  "main": "index.js",
   "exports": {
     "cli": "./cli.js",
     "default": "./main.js",
@@ -21,18 +20,14 @@
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@st-one-io/nodes7": "^1.1.0",
     "eslint": "^8.57.0",
-    "globby": "^13.2.2",
-    "iconv-lite": "^0.6.3",
     "mri": "^1.2.0",
     "nodemon": "^3.1.4",
-    "nodes7": "^0.3.18",
     "rimraf": "^3.0.2",
     "rollup": "^4.18.0",
     "yaml": "^2.4.5"
   },
   "directories": {
-    "conf": "example",
-    "lib": "lib"
+    "conf": "example"
   },
   "scripts": {
     "build": "rollup -c",
