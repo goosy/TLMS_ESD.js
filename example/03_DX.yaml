@@ -1,0 +1,120 @@
+## 线
+lines:
+- comment: 东辛线
+  id: 123
+  name: DXL
+  controller: JSC
+  sections: [DG, GL]
+
+
+## 段
+sections:
+- comment: 东营-广饶段
+  id: 12
+  name: DG
+  begin_nodes: [DY2]
+  end_nodes: [GR1]
+  flow_diff_AH: 50.0
+  flow_diff_AH_delay: 3000
+  flow_diff_WH: 20.0
+  flow_diff_WH_delay: 3000
+  action_time: 10000
+- comment: 广饶-临淄段
+  id: 23
+  name: GL
+  begin_nodes: [GR3]
+  end_nodes: [LZ]
+  flow_diff_AH: 50.0
+  flow_diff_AH_delay: 3000
+  flow_diff_WH: 20.0
+  flow_diff_WH_delay: 3000
+  action_time: 10000
+
+
+## 节点
+actuators:
+
+- comment: 东营东辛线出站
+  id: 8012
+  name: DY2
+  IP: 192.168.8.200
+  pumps:
+  - I1.0
+  - I1.1
+  - I1.2
+  - I1.3
+  pump_stop_signal: Q0.0
+  pressure_zero_raw: 5530
+  pressure_underflow: 5000
+  temperature_zero_raw: 5530
+  temperature_underflow: 5000
+  pressure_span: 6.0
+  pressure_AH: 3.0
+  pressure_WH: 2.8
+  pressure_AI: IW64
+  temperature_AI: IW66
+  pressure_SD: false # 压力联锁设置
+  flows: []
+  modbus_server:
+    port: 503
+    unit_id: 12
+    endian: big
+    combined_endian: big
+    data: { start: 0 }
+    commands: { start: 200 }
+
+- comment: 广饶进站
+  id: 8021
+  name: GR1
+  IP: 192.168.8.200
+  pressure_span: 2.0
+  pressure_AI: IW96
+  temperature_AI: IW98
+  flows: []
+  modbus_server:
+    port: 503
+    unit_id: 21
+    endian: big
+    combined_endian: big
+    data: { start: 0 }
+    commands: { start: 200 }
+
+- comment: 广饶出站
+  id: 8023
+  name: GR3
+  IP: 192.168.8.200
+  pumps:
+  - I0.6, Q0.0
+  - I0.7, Q0.1
+  - I1.0, Q0.2
+  - I1.1, Q0.3
+  pressure_span: 4.0
+  pressure_AH: 3.2
+  pressure_WH: 3.0
+  pressure_AI: IW96
+  temperature_AI: IW98
+  pressure_SD: true
+  flows: []
+  modbus_server:
+    port: 503
+    unit_id: 23
+    endian: big
+    combined_endian: big
+    data: { start: 0 }
+    commands: { start: 200 }
+
+- comment: 临淄进站
+  id: 8032
+  name: LZ
+  IP: 192.168.8.200
+  pressure_span: 2.0
+  pressure_AI: IW96
+  temperature_AI: IW98
+  flows: []
+  modbus_server:
+    port: 503
+    unit_id: 32
+    endian: big
+    combined_endian: big
+    data: { start: 0 }
+    commands: { start: 200 }

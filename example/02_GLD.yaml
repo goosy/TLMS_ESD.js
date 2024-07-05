@@ -1,7 +1,3 @@
-files:
-- SC/AI.scl
-- SC/PLCTags.sdf
-
 ## 线
 lines:
 - comment: 孤罗东线
@@ -64,22 +60,22 @@ actuators:
 - comment: 垦西交油点
   id: 8111
   name: KX
-  IP: 192.168.89.10
+  IP: 192.168.27.211
   pressure_span: 2.5
   pressure_AI: IW98
   temperature_AI: IW96
   flows: []
   s7_server:
     # port: 102
-    # 其中 area db start length 可以单独在 data commands 中指定
+    # 其中 area db start length 也可以单独在 data commands 中指定
     rack: 0
     slot: 1
     area: DB
     start: 0
     endian: big
     combined_endian: little
-    data: { db: 10 }
-    commands: { db: 11 }
+    data: { db: 1 }
+    commands: { db: 2 }
 
 - comment: 集贤进站
   id: 8097
@@ -124,20 +120,24 @@ actuators:
 - comment: 胜采交油点
   id: 8110
   name: SC
-  IP: 192.168.8.200
+  IP: 192.168.201.210
   pressure_AI: IW98    # 仅占位，该站特殊，有多个压力
   temperature_AI: IW96 # 仅占位，该站特殊，有多个温度
   pressure_span: 6.0
   flows: []
-  modbus_server:
-    port: 503
-    unit_id: 10
+  s7_server:
+    # port: 102
+    # 其中 area db start length 也可以单独在 data commands 中指定
+    rack: 0
+    slot: 1
+    area: DB
+    start: 0
     endian: big
-    combined_endian: big
-    data: { start: 0 }
-    commands: { start: 200 }
+    combined_endian: little
+    data: { db: 1 }
+    commands: { db: 2 }
 
-- comment: 东营孤永东线进站
+- comment: 东营孤罗东线进站
   id: 8019
   name: DY9
   IP: 192.168.8.200
