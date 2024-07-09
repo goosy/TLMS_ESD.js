@@ -59,6 +59,7 @@ if (argv.version) {
 } else if (argv.help) {
     show_help();
 } else if (cmd === 'start') {
+    process.env.TLMS = 'controller';
     exec(
         `pm2 start --name="tlms-${basename(work_path)}" "${join(module_path, 'main.js')}" -- ${controller_name}`,
         { cwd: work_path }
@@ -78,9 +79,11 @@ if (argv.version) {
     });
 } else if (cmd === 'debug') {
     process.argv[2] = controller_name;
+    process.env.LOG_LEVEL = 'debug';
     import('./main.js');
 } else if (cmd === 'emu') {
-    console.log(acturator_names) // @debug
+    process.env.TLMS = 'emulator';
+    process.env.LOG_LEVEL = 'debug';
     process.argv = [process.argv[0], process.argv[1], ...acturator_names];
     import('./emulator.js');
 } else if (cmd === 'log') {

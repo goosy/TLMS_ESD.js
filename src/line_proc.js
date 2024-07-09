@@ -4,9 +4,6 @@ export function line_init(line) {
         name,
         data,
     } = line;
-    data.on("change", (tagname, _o, new_value) => {
-        ;
-    });
     data.ID = ID;
     data.name = name;
 }
@@ -14,7 +11,6 @@ export function line_init(line) {
 export function line_loop(line) {
     const {
         data,
-        controller,
         sections,
     } = line;
     const bypass = line.data.bypass;

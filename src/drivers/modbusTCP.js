@@ -1,5 +1,6 @@
 import Modbus, { ServerTCP } from "modbus-serial";
 import { Base_Driver } from "./base.js";
+import { logger } from '../util.js';
 
 export class MTClient extends Modbus {
 
@@ -20,7 +21,7 @@ export class MTClient extends Modbus {
         if (reconnect_time) this.reconnect_time = reconnect_time;
         this.on("close", () => {
             this.emit("disconnect");
-            console.log(`${this.conn_str} connection closed!`);
+            logger.info(`${this.conn_str} connection closed!`);
         });
         Object.mixin(this, new Base_Driver());
     }
@@ -40,7 +41,7 @@ export class MTClient extends Modbus {
             this.connrefused = false;
             this.emit("connect");
         } catch (err) {
-            if (!this.connrefused) console.log(`can't connect to ${this.conn_str}: ${err}`);
+            if (!this.connrefused) logger.warn(`can't connect to ${this.conn_str}: ${err}`);
             this.connrefused = true;
             this.emit("connrefused");
         }
@@ -168,7 +169,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         },
     }
 
-    console.log(`ModbusTCP listening on modbus://${host}:${port}`);
+    logger.info(`ModbusTCP listening on modbus://${host}:${port}`);
     const server = new ServerTCP(vector, { host, port, debug: true, unitID: 0, });
     server.on("socketError", function (err) {
         // Handle socket error if needed, can be ignored

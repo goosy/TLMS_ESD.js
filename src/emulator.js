@@ -4,7 +4,7 @@ import { TData } from "./data_type/TData.js";
 import { NODE } from "./data_type/TNode.js";
 import { COMMAND } from "./data_type/TCmd.js";
 import { read_config, cfg_actuators } from "./config.js";
-import { debounce, curr_time } from "./util.js";
+import { debounce, logger } from './util.js';
 
 function loop_actuator(actuator) {
     // host_actuator(actuator);
@@ -38,7 +38,7 @@ function actuator_init(actuator) {
         pressure_SD,
     } = actuator;
     data.on('change', (tagname, old_value, new_value) => {
-        console.log(`${curr_time()} ${name}: ${tagname} ${old_value} => ${new_value}`); // @debug
+        logger.debug(`${name}: ${tagname} ${old_value} => ${new_value}`);
         if (tagname === 'pump_run_1' || tagname === 'pump_run_2' || tagname === 'pump_run_3' || tagname === 'pump_run_4') {
             data.pump_change_F = true;
             data.pump_run = data.pump_run_1 || data.pump_run_2 || data.pump_run_3 || data.pump_run_4;
@@ -85,7 +85,7 @@ function actuator_init(actuator) {
     data.pump_change_delay = 20000;
 
     command.on("change", (tagname, old_value, new_value) => {
-        console.log(`${curr_time()} ${name}_CMD: ${tagname} ${old_value} => ${new_value}`); // @debug
+        logger.debug(`${name}_CMD: ${tagname} ${old_value} => ${new_value}`);
         if (tagname === 'enable_pressure_SD') {
             if (new_value) {
                 data.pressure_SD_F = true;
@@ -192,7 +192,7 @@ function prepare_actuator(name) {
 export async function run(running_actuator_names) {
     for (const name of running_actuator_names) {
         if (prepare_actuator(name)) {
-            console.log(`actuator: ${name} is ready.`);
+            logger.info(`actuator: ${name} is ready.`);
         }
     }
 
@@ -204,7 +204,7 @@ export async function run(running_actuator_names) {
     for (const [port, unit_map] of Object.entries(unit_map_poll)) {
         const server = createMTServer('0.0.0.0', port, unit_map);
         server.on("close", () => {
-            console.log("connection closed!");
+            logger.info("connection closed!");
         });
     }
 

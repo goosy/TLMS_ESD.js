@@ -1,5 +1,6 @@
 import { S7Endpoint, s7constants } from '@st-one-io/nodes7';
 import { Base_Driver } from "./base.js";
+import { logger } from '../util.js';
 
 const area_map = {
     M: s7constants.proto.area.FLAGS,
@@ -36,9 +37,8 @@ export class S7Client extends S7Endpoint {
 
         this.config = config;
         this.on('disconnect', () => {
-            console.log(`${this.conn_str} connection closed.`);
+            logger.warn(`${this.conn_str} connection closed.`);
         });
-        // this.on('error', e => console.log('PLC Error!', e));
 
         Object.mixin(this, new Base_Driver());
     }
@@ -49,7 +49,7 @@ export class S7Client extends S7Endpoint {
             await super.connect();
             this.connrefused = false;
         } catch (e) {
-            if (!this.connrefused) console.log(`can't connect to PLC ${this.conn_str}`);
+            if (!this.connrefused) logger.warn(`can't connect to PLC ${this.conn_str}`);
             this.connrefused = true;
             this.emit("connrefused");
         }

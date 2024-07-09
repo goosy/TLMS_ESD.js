@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { GCL } from './gcl.js';
+import { logger } from './util.js';
 
 export const cfg_lines = [],
     cfg_sections = [],
@@ -117,7 +118,7 @@ export async function read_config(work_path) {
             const filename = posix.join(work_path, file);
             const gcl = new GCL();
             await gcl.load(filename);
-            console.log(`read ${filename}`);
+            logger.info(`read ${filename}`);
 
             const doc = gcl.document.toJS();
             docs.push(doc);

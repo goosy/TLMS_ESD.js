@@ -11,8 +11,6 @@ export const
     actuators = [],
     controllers = [];
 
-export let work_path = '.';
-
 function add_actuator(section, cfg_node) {
     const ID = cfg_node.id;
     const name = cfg_node.name;

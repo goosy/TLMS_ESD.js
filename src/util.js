@@ -1,3 +1,68 @@
+import { createLogger, format, transports } from "winston";
+import "winston-daily-rotate-file";
+import { AssertionError } from "assert";
+
+const customFormat = format.combine(
+    format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+    format.align(),
+    format.printf((info) => `${info.level}: ${[info.timestamp]}: ${info.message}`)
+);
+
+const defaultOptions = {
+    format: customFormat,
+    datePattern: "YYYY-MM-DD",
+    zippedArchive: true,
+    maxSize: "20m",
+    maxFiles: "7d",
+};
+
+const level = process.env.LOG_LEVEL || 'info';
+
+export const logger = createLogger({
+    level,
+    format: customFormat,
+});
+
+if (process.env.TLMS !== 'emulator') {
+    logger.add(new transports.DailyRotateFile({
+        filename: "logs/info-%DATE%.log",
+        level,
+        ...defaultOptions,
+    }));
+    logger.add(new transports.DailyRotateFile({
+        filename: "logs/error-%DATE%.log",
+        level: "warn",
+        ...defaultOptions,
+    }));
+}
+
+if (process.env.TLMS !== 'controller') {
+    logger.add(new transports.Console({
+        format: format.combine(
+            format.colorize(),
+            format.simple(),
+            format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+            format.printf((info) => `${info.level}: ${[info.timestamp]}: ${info.message}`),
+        )
+    }));
+}
+
+process.on('uncaughtException', (error) => {
+    if (error instanceof AssertionError) {
+        logger.error('Assertion Error:', {
+            message: error.message,
+            actual: error.actual,
+            expected: error.expected,
+            operator: error.operator,
+            stack: error.stack
+        });
+        console.error('An AssertionError occurred. Exiting process.');
+        process.exit(1);
+    } else {
+        throw error;
+    }
+});
+
 /**
  * Mixes properties from multiple objects into a target object.
  *
@@ -70,12 +135,4 @@ export function debounce(key, fn, delay) {
         fn();
         delete timers[key];
     }, delay);
-}
-
-export function curr_time() {
-    const date = new Date();
-    const hours = date.getHours().toString().padStart(2, '0');
-    const minutes = date.getMinutes().toString().padStart(2, '0');
-    const seconds = date.getSeconds().toString().padStart(2, '0');
-    return `${hours}:${minutes}:${seconds}`;
 }

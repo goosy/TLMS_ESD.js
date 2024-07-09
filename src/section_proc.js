@@ -1,5 +1,5 @@
 import { MAIN_PERIOD } from "./init.js";
-import { curr_time } from "./util.js";
+import { logger } from "./util.js";
 
 export function section_init(section) {
     const {
@@ -15,7 +15,7 @@ export function section_init(section) {
         action_time,
     } = section;
     data.on("change", (tagname, old_value, new_value) => {
-        console.log(`${curr_time()} ${name}: ${tagname} ${old_value} => ${new_value}`); // @debug
+        logger.debug(`${name}: ${tagname} ${old_value} => ${new_value}`); // @debug
         switch (tagname) {
             case "stop_pumps": // set command
                 if (new_value == false) {

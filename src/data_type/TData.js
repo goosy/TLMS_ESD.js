@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
-import { debounce } from "../util.js";
+import { logger } from "../util.js";
 
 export class TData extends EventEmitter {
     // only read
@@ -33,7 +33,7 @@ export class TData extends EventEmitter {
         const name = tag.name ?? tag;
         const _tag = this.#tags[name];
         if (_tag == null) {
-            console.log(`${this.name} has no tag named ` + tagname);
+            logger.debug(`${this.name} has no tag named ` + tagname);
             return;
         }
         const old_value = _tag.value;
@@ -159,7 +159,6 @@ export class TData extends EventEmitter {
         }
         this.#couplings[name] = _item.coupling.map(cp => cp.name);
 
-        if (this.#tags[name]) console.log(name);
         assert(this.#tags[name] == null);
         let self = this;
         switch (type) {

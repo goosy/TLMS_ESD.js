@@ -5,6 +5,7 @@ import { section_loop, section_init } from './section_proc.js';
 import { node_loop, node_init } from './node_proc.js';
 import { MTClient, attach_unit, createMTServer } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
+import { logger } from './util.js';
 
 // for run controller
 const running_lines = [];
@@ -18,7 +19,7 @@ function get_modbusTCP_client(IP, port, unit_id) {
     const driver = new MTClient(IP, port, { unit_id });
     modbusTCP_clients[key] = driver;
     driver.on("connect", () => {
-        console.log(`connected to ${driver.conn_str}!`);
+        logger.info(`connected to ${driver.conn_str}!`);
     });
     return driver;
 }
@@ -28,7 +29,7 @@ function get_s7_client(IP, port, rack, slot) {
     const driver = new S7Client({ host: IP, port, rack, slot });
     S7_clients[key] = driver;
     driver.on("connect", () => {
-        console.log(`connected to ${driver.conn_str}!`);
+        logger.info(`connected to ${driver.conn_str}!`);
     });
     return driver;
 }
@@ -93,7 +94,7 @@ function run_controller(controller) {
     // start modbus TCP server
     const server = createMTServer('0.0.0.0', controller.modbus_server.port, unit_map);
     server.on("close", () => {
-        console.log("connection closed!");
+        logger.error("connection closed!");
     });
 
     // main loop
