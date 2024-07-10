@@ -6,6 +6,7 @@ controllers:
 - comment: main controller
   name: JSC
   IP: 192.168.8.200
+  records_size: 20
   modbus_server:
     port: 502
     unit_id:

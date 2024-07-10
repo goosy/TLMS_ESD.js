@@ -1,4 +1,4 @@
-import { MAIN_PERIOD } from "./init.js";
+import { MAIN_PERIOD } from "./config.js";
 import { logger } from "./util.js";
 
 export function section_init(section) {

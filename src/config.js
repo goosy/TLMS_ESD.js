@@ -4,6 +4,7 @@ import { posix } from 'node:path';
 import { GCL } from './gcl.js';
 import { logger } from './util.js';
 
+export const MAIN_PERIOD = 500;
 export const cfg_lines = [],
     cfg_sections = [],
     cfg_actuators = [],

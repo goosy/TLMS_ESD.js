@@ -4,12 +4,7 @@ import { LINE } from "./data_type/TLine.js";
 import { NODE } from "./data_type/TNode.js";
 import { COMMAND } from "./data_type/TCmd.js";
 import { cfg_lines, cfg_actuators, cfg_controllers } from "./config.js";
-export const MAIN_PERIOD = 500;
-export const
-    lines = [],
-    sections = [],
-    actuators = [],
-    controllers = [];
+import { Action_Record } from "./action_record.js";
 
 function add_actuator(section, cfg_node) {
     const ID = cfg_node.id;
@@ -33,26 +28,30 @@ function add_actuator(section, cfg_node) {
     const command = new TData(COMMAND, name);
 
     const actuator = { ID, name, data, command, driver_info, section };
-    actuators.push(actuator);
-    actuators[name] = actuator;
     if (cfg_node.is_begin) section.begin_nodes.push(actuator);
     if (cfg_node.is_end) section.end_nodes.push(actuator);
     if (cfg_node.has_pumps) section.pump_nodes.push(actuator);
 }
 
-export async function init() {
-    cfg_controllers.forEach(_controller => {
-        const controller = { ..._controller, lines: [] };
-        controllers[_controller.name] = controller;
-        controllers.push(controller);
-    })
+export async function prepare_controller(controller_name) {
+    const controller = cfg_controllers.find(c => c.name === controller_name);
+    if (controller == undefined) {
+        return null;
+    }
+    controller.lines = [];
+
+    // action records
+    const action_record = new Action_Record('action_records');
+    action_record.records_size = controller.records_size ?? 10;
+    await action_record.init();
+    controller.action_record = action_record;
+
     for (const cfg_line of cfg_lines) {
-        const controller = controllers[cfg_line.controller.name];
+        if (cfg_line.controller.name !== controller_name) continue;
         const ID = cfg_line.id;
         const name = cfg_line.name;
         const data = new TData(LINE, name);
         const line = { ID, name, data, controller, sections: [] };
-        lines.push(line);
         controller.lines.push(line);
         for (const cfg_section of cfg_line.sections) {
             const ID = cfg_section.id;
@@ -89,7 +88,8 @@ export async function init() {
                 add_actuator(section, cfg_node);
             });
             line.sections.push(section);
-            sections.push(section);
         }
     }
+
+    return controller;
 }

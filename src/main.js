@@ -1,9 +1,8 @@
-import { init, controllers, MAIN_PERIOD } from "./init.js";
-import { read_config } from "./config.js";
+import { prepare_controller } from "./init.js";
+import { read_config, MAIN_PERIOD } from "./config.js";
 import { line_loop, line_init } from "./line_proc.js";
 import { section_loop, section_init } from './section_proc.js';
 import { node_loop, node_init } from './node_proc.js';
-import { Action_Record } from "./action_record.js";
 import { MTClient, attach_unit, createMTServer } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
 import { logger } from './util.js';
@@ -34,13 +33,6 @@ function get_s7_client(IP, port, rack, slot) {
         logger.info(`connected to ${driver.conn_str}!`);
     });
     return driver;
-}
-
-await read_config(process.cwd());
-await init();
-const controller = controllers[process.argv[2]];
-if (controller) { // run controller
-    run_controller(controller);
 }
 
 function add_node(node, unit_map) {
@@ -76,11 +68,12 @@ function run_controller(controller) {
     const unit_map = {};
 
     // action records
-    const name = 'action_records';
-    const action_record = new Action_Record(name);
-    action_record.init();
-    attach_unit(unit_map, unit_id_map[name], action_record.data, 0);
-    controller.action_record = action_record;
+    attach_unit(
+        unit_map,
+        unit_id_map.action_records,
+        controller.action_record.data,
+        0,
+    );
 
     for (const line of controller.lines) { // lines
         const data = line.data;
@@ -113,3 +106,8 @@ function run_controller(controller) {
         running_nodes.forEach(node => node_loop(node));
     }, MAIN_PERIOD);
 }
+
+const controller_name = process.argv[2];
+await read_config(process.cwd());
+const controller = await prepare_controller(controller_name);
+if (controller) run_controller(controller); // run controller

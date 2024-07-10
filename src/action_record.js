@@ -32,6 +32,7 @@ function set_current_time(tdata) {
 
 export class Action_Record {
     records = [];
+    records_size = 10;
     data;
     name;
     file;
@@ -59,7 +60,7 @@ export class Action_Record {
             await writeFile(this.file, HEADERS.join(',') + '\n');
             logger.info(`Empty action record file ${this.file} is created and used.`);
         }
-        await this.read_last_10_records_from_csv();
+        await this.read_records_from_csv();
         this.data.on('change', (tagname, old_value, new_value) => {
             if (tagname == 'index') {
                 if (new_value == -1) {
@@ -84,14 +85,14 @@ export class Action_Record {
         }
     }
 
-    read_last_10_records_from_csv() {
+    read_records_from_csv() {
         return new Promise((resolve, reject) => {
             const records = this.records;
             createReadStream(this.file)
                 .pipe(csv_parser())
                 .on('error', error => reject(error))
                 .on('data', row => {
-                    if (records.unshift(row) > 10) records.pop();
+                    if (records.unshift(row) > this.records_size) records.pop();
                 })
                 .on('end', () => {
                     records.forEach(convertTypes);
@@ -104,7 +105,7 @@ export class Action_Record {
         set_current_time(this.data);
         const record = {};
         HEADERS.forEach(key => record[key] = this.data[key]);
-        if (this.records.unshift(record) > 10) this.records.pop();
+        if (this.records.unshift(record) > this.records_size) this.records.pop();
         this.data.index = 0;
         // append record to csv
         const row = HEADERS.map(key => this.data[key]).join(',') + '\n';
