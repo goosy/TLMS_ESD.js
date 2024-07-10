@@ -1,0 +1,113 @@
+import { access, writeFile, appendFile } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
+import csv_parser from 'csv-parser';
+import { TData } from './data_type/TData.js';
+import { RECORD } from './data_type/TRecord.js';
+import { logger } from './util.js';
+
+const HEADERS = RECORD.items
+    .filter(field => field.type.toLowerCase() != 'word' && field.name != 'index')
+    .map(field => field.name);
+const boolean_fields = ["press_action", "flow_action", "node1_pump_run", "node2_pump_run", "node3_pump_run", "node4_pump_run"];
+const number_fields = HEADERS.filter(field => !boolean_fields.includes(field));
+function convertTypes(row) {
+    number_fields.forEach(field => {
+        const value = row[field];
+        row[field] = value !== '' && value !== undefined ? parseFloat(value) : null;
+    });
+    boolean_fields.forEach(field => {
+        row[field] = row[field] === 'true';
+    });
+}
+
+function set_current_time(tdata) {
+    const d = new Date();
+    tdata.year = d.getFullYear();
+    tdata.month = d.getMonth() + 1;
+    tdata.day = d.getDate();
+    tdata.hour = d.getHours();
+    tdata.minute = d.getMinutes();
+    tdata.second = d.getSeconds();
+}
+
+export class Action_Record {
+    records = [];
+    data;
+    name;
+    file;
+    constructor(name) {
+        this.name = name;
+        this.file = name + '.csv';
+        this.data = new TData(RECORD, name);
+    }
+
+    get(index) {
+        const record = this.records[index];
+        if (!record) return false;
+        HEADERS.forEach(key => {
+            this.data[key] = record[key];
+        });
+        return true;
+    }
+
+    async init(filename) {
+        this.file = filename ?? this.file;
+        try {
+            await access(this.file);
+            logger.info('action record file is set to ' + this.file + '.');
+        } catch {
+            await writeFile(this.file, HEADERS.join(',') + '\n');
+            logger.info(`Empty action record file ${this.file} is created and used.`);
+        }
+        await this.read_last_10_records_from_csv();
+        this.data.on('change', (tagname, old_value, new_value) => {
+            if (tagname == 'index') {
+                if (new_value == -1) {
+                    const data = this.data;
+                    data.year = 0;
+                    data.month = 0;
+                    data.day = 0;
+                    data.hour = 0;
+                    data.minute = 0;
+                    data.second = 0;
+                } else {
+                    const OK = this.get(new_value);
+                    if (!OK) this.data.index = old_value;
+                }
+            }
+        });
+        // Initial index value
+        if (this.records.length) {
+            this.data.index = 0;
+        } else {
+            this.data.index = -1;
+        }
+    }
+
+    read_last_10_records_from_csv() {
+        return new Promise((resolve, reject) => {
+            const records = this.records;
+            createReadStream(this.file)
+                .pipe(csv_parser())
+                .on('error', error => reject(error))
+                .on('data', row => {
+                    if (records.unshift(row) > 10) records.pop();
+                })
+                .on('end', () => {
+                    records.forEach(convertTypes);
+                    resolve(true);
+                });
+        });
+    }
+
+    async add_record() {
+        set_current_time(this.data);
+        const record = {};
+        HEADERS.forEach(key => record[key] = this.data[key]);
+        if (this.records.unshift(record) > 10) this.records.pop();
+        this.data.index = 0;
+        // append record to csv
+        const row = HEADERS.map(key => this.data[key]).join(',') + '\n';
+        await appendFile(this.file, row, { flags: 'a' });
+    }
+}

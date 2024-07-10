@@ -3,6 +3,7 @@ import { read_config } from "./config.js";
 import { line_loop, line_init } from "./line_proc.js";
 import { section_loop, section_init } from './section_proc.js';
 import { node_loop, node_init } from './node_proc.js';
+import { Action_Record } from "./action_record.js";
 import { MTClient, attach_unit, createMTServer } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
 import { logger } from './util.js';
@@ -13,6 +14,7 @@ const running_sections = [];
 const running_nodes = [];
 const modbusTCP_clients = {};
 const S7_clients = {};
+
 function get_modbusTCP_client(IP, port, unit_id) {
     const key = `${IP}:${port} ${unit_id}`;
     if (key in modbusTCP_clients) return modbusTCP_clients[key];
@@ -73,17 +75,24 @@ function run_controller(controller) {
     const unit_id_map = controller.modbus_server.unit_id;
     const unit_map = {};
 
-    for (const line of controller.lines) {
+    // action records
+    const name = 'action_records';
+    const action_record = new Action_Record(name);
+    action_record.init();
+    attach_unit(unit_map, unit_id_map[name], action_record.data, 0);
+    controller.action_record = action_record;
+
+    for (const line of controller.lines) { // lines
         const data = line.data;
         const name = line.name;
         attach_unit(unit_map, unit_id_map[name], data, 0);
         line_init(line);
         running_lines.push(line);
-        for (const section of line.sections) {
+        for (const section of line.sections) { // sections
             const data = section.data;
             const name = section.name;
             attach_unit(unit_map, unit_id_map[name], data, 0);
-            [...section.begin_nodes, ...section.end_nodes].forEach(node => {
+            [...section.begin_nodes, ...section.end_nodes].forEach(node => { // nodes
                 add_node(node, unit_map);
             });
             section_init(section);

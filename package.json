@@ -1,6 +1,6 @@
 {
   "name": "tlms_esd",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Pipeline Leakage Emergency Shutdown System",
   "type": "module",
   "exports": {
@@ -19,6 +19,7 @@
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@st-one-io/nodes7": "^1.1.0",
+    "csv-parser": "^3.0.0",
     "eslint": "^8.57.0",
     "mri": "^1.2.0",
     "nodemon": "^3.1.4",

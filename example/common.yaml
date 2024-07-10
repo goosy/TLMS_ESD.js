@@ -18,6 +18,7 @@ controllers:
       JD: 7
       DG: 8
       GL: 9
+      action_records: 10
       GD8: 78
       YA7: 87
       YA1: 81

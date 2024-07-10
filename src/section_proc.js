@@ -7,6 +7,8 @@ export function section_init(section) {
         name,
         data,
         line,
+        begin_nodes,
+        end_nodes,
         pump_nodes,
         flow_diff_WH,
         flow_diff_WH_delay,
@@ -25,7 +27,27 @@ export function section_init(section) {
                 break;
             case "action_F": // log action
                 if (new_value == true) {
-                    // action_logs(ID, flow_begin, flow_end, flow_diff);
+                    // logs: ID, flow_begin, flow_end, flow_diff
+                    const action_record = line.controller.action_record;
+                    const AR_data = action_record.data;
+                    AR_data.section_ID = data.ID;
+                    AR_data.flow_begin = data.flow_begin;
+                    AR_data.flow_end = data.flow_end;
+                    AR_data.flow_diff = data.flow_diff;
+                    AR_data.node1_press = begin_nodes[0]?.data?.pressure ?? 0;
+                    AR_data.node2_press = begin_nodes[1]?.data?.pressure ?? 0;
+                    AR_data.node3_press = begin_nodes[2]?.data?.pressure ?? 0;
+                    AR_data.node4_press = end_nodes[0]?.data?.pressure ?? 0;
+                    AR_data.node1_ID = begin_nodes[0]?.data?.ID ?? 0;
+                    AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
+                    AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
+                    AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
+                    AR_data.press_action = data.flow_alarm_F;
+                    AR_data.flow_action = data.press_alarm_F;
+                    AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
+                    AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
+                    AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
+                    action_record.add_record();
                 }
                 break;
             case "pump_run":
@@ -59,7 +81,6 @@ export function section_init(section) {
 export function section_loop(section) {
     const {
         ID,
-        name,
         data,
         line,
         begin_nodes,
@@ -83,7 +104,7 @@ export function section_loop(section) {
         return acc || current_node.data.pressure_SD_F && current_node.data.pressure_AH_F;
     }, false);
     data.press_alarm_F = press_alarm_F;
-    const pump_run = begin_nodes.reduce((acc, current_node) => {
+    const pump_run = pump_nodes.reduce((acc, current_node) => {
         return acc || current_node.data.pump_run;
     }, false);
     data.pump_run = pump_run;
