@@ -14,20 +14,20 @@ const running_nodes = [];
 const modbusTCP_clients = {};
 const S7_clients = {};
 
-function get_modbusTCP_client(IP, port, unit_id) {
-    const key = `${IP}:${port} ${unit_id}`;
+function get_modbusTCP_client(host, port, unit_id) {
+    const key = `${host}:${port} ${unit_id}`;
     if (key in modbusTCP_clients) return modbusTCP_clients[key];
-    const driver = new MTClient(IP, port, { unit_id });
+    const driver = new MTClient({ host, port, unit_id });
     modbusTCP_clients[key] = driver;
     driver.on("connect", () => {
         logger.info(`connected to ${driver.conn_str}!`);
     });
     return driver;
 }
-function get_s7_client(IP, port, rack, slot) {
-    const key = `${IP}:${port} ${rack} ${slot}`;
+function get_s7_client(host, port, rack, slot) {
+    const key = `${host}:${port} ${rack} ${slot}`;
     if (key in S7_clients) return S7_clients[key];
-    const driver = new S7Client({ host: IP, port, rack, slot });
+    const driver = new S7Client({ host, port, rack, slot });
     S7_clients[key] = driver;
     driver.on("connect", () => {
         logger.info(`connected to ${driver.conn_str}!`);
@@ -95,9 +95,6 @@ function run_controller(controller) {
 
     // start modbus TCP server
     const server = createMTServer('0.0.0.0', controller.modbus_server.port, unit_map);
-    server.on("close", () => {
-        logger.error("connection closed!");
-    });
 
     // main loop
     setInterval(() => {

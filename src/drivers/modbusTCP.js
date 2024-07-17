@@ -8,18 +8,19 @@ export class MTClient extends Modbus {
      * @param {string} host the ip of the TCP Port - required.
      * @param {number} port the Port number - default 502.
      */
-    constructor(host, port = 502, options) {
+    constructor(options) {
         super();
-        const unit_id = options?.unit_id ?? 1;
+        const { host, port = 502, unit_id = 1 } = options;
         this.conn_str = `modbus://${host}:${port} unit:${unit_id}`;
         this.setID(unit_id);
         this.host = host;
         this.port = port;
         const period_time = options?.period_time;
         if (period_time) this.period_time = period_time;
-        const reconnect_time = options?.reconnect_time; // How many ticks to reconnect after
+        const reconnect_time = options?.reconnect_time;
         if (reconnect_time) this.reconnect_time = reconnect_time;
-        this.on("close", () => {
+        this.on('error', this.on_error);
+        this.on('close', () => {
             this.emit("disconnect");
             logger.info(`${this.conn_str} connection closed!`);
         });
@@ -27,7 +28,13 @@ export class MTClient extends Modbus {
     }
 
     get is_connected() { return super.isOpen; }
-    connrefused = false;
+    on_error(error) {
+        if (!this.connfailed) logger.warn(`can't connect to ${this.conn_str}: ${error}`);
+        this.connfailed = true;
+        this.emit("connfailed");
+    }
+
+    connfailed = false;
     async connect(host, option) {
         if (typeof host === "string") {
             this.host = host;
@@ -38,12 +45,10 @@ export class MTClient extends Modbus {
         const tcpoption = { port: this.port };
         try {
             await this.connectTCP(this.host, tcpoption);
-            this.connrefused = false;
+            this.connfailed = false;
             this.emit("connect");
-        } catch (err) {
-            if (!this.connrefused) logger.warn(`can't connect to ${this.conn_str}: ${err}`);
-            this.connrefused = true;
-            this.emit("connrefused");
+        } catch (error) {
+            this.on_error(error);
         }
     }
     disconnect() {
@@ -118,7 +123,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         getInputRegister: (addr, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                console.error(`Invalid InputRegister address(${addr}) when reading unit ${unit_id}`);
+                logger.warn(`Invalid InputRegister address(${addr}) when reading unit ${unit_id}`);
                 return 0;
             }
             if (tdata.LE_list.includes(offset)) return tdata.buffer.readUInt16LE(offset);
@@ -127,7 +132,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         getHoldingRegister: (addr, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                console.error(`Invalid HoldingRegister address(${addr}) when reading unit ${unit_id}`);
+                logger.warn(`Invalid HoldingRegister address(${addr}) when reading unit ${unit_id}`);
                 return 0;
             }
             if (tdata.LE_list.includes(offset)) return tdata.buffer.readUInt16LE(offset);
@@ -136,7 +141,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         setRegister: (addr, value, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                console.error(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
+                logger.warn(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
                 return 0;
             }
             if (tdata.LE_list.includes(offset)) tdata.buffer.writeUInt16LE(value, offset);
@@ -148,7 +153,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         getCoil: (addr, unit_id) => {
             const { tdata, offset, bit_mask } = get_coil_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                console.error(`Invalid coil address: ${addr} for read in unit ${unit_id}`);
+                logger.warn(`Invalid coil address: ${addr} for read in unit ${unit_id}`);
                 return false;
             }
             return (tdata.buffer.readUInt8(offset) & bit_mask) > 0;
@@ -157,7 +162,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         setCoil: (addr, value, unit_id) => {
             const { tdata, offset, bit_mask } = get_coil_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                console.error(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
+                logger.warn(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
                 return;
             }
             let byte = tdata.buffer.readUInt8(offset);
@@ -173,7 +178,14 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
     const server = new ServerTCP(vector, { host, port, debug: true, unitID: 0, });
     server.on("socketError", function (err) {
         // Handle socket error if needed, can be ignored
-        console.error(err);
+        logger.warn(err);
+    });
+    server.on('error', function (err) {
+        // Handle socket error if needed, can be ignored
+        logger.warn(err);
+    });
+    server.on("close", () => {
+        logger.warn("connection closed!");
     });
 
     return server;
