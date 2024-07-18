@@ -8,6 +8,8 @@ const area_map = {
 };
 
 export class S7Client extends S7Endpoint {
+    connfailed = true;
+
     /**
      * Constructs a new S7Client object.
      *
@@ -22,7 +24,7 @@ export class S7Client extends S7Endpoint {
      * @return {void}
      */
     constructor(config, options) {
-        config.autoReconnect = 0; // the time to wait before trying to connect to the PLC again, in ms.If set to 0, disables the functionality
+        config.autoReconnect = 5000; // the time to wait before trying to connect to the PLC again, in ms.If set to 0, disables the functionality
         config.host ??= 'localhost';
         config.port ??= 102;
         config.rack ??= 0;
@@ -34,29 +36,42 @@ export class S7Client extends S7Endpoint {
         const reconnect_time = options?.reconnect_time;
         if (reconnect_time) this.reconnect_time = reconnect_time;
         this.conn_str = `s7://${config.host}:${config.port} rack${config.rack} slot${config.slot}`;
-
-        this.config = config;
-        this.on('disconnect', () => {
-            logger.warn(`${this.conn_str} connection closed.`);
+        this.on('error', this.on_error);
+        this.on('disconnect', this.on_error);
+        this.on("connect", () => {
+            logger.info(`connected to ${this.conn_str}!`);
+            this.connfailed = false;
         });
+        this.config = config;
+
+        // Due to the incompleteness of S7Endpoint.connect(),
+        // its own reconnection mechanism is temporarily used instead.
+        this.start_tick = function () {
+            if (this.started) {
+                if (this.is_connected) {
+                    this.emit("tick");
+                    this.connfailed = false;
+                }
+            } else {
+                clearInterval(this.loop);
+            }
+        }
+        // If the S7Endpoint issue is resolved, remove this block of code
+        // and set config.autoReconnect = 0;
+        // temporary code end
 
         Object.mixin(this, new Base_Driver());
     }
 
     get is_connected() { return super.isConnected; }
-    async connect() {
-        try {
-            await super.connect();
-            this.connrefused = false;
-        } catch (e) {
-            if (!this.connrefused) logger.warn(`can't connect to PLC ${this.conn_str}`);
-            this.connrefused = true;
-            this.emit("connrefused");
-        }
-    }
-    disconnect() {
-        super.disconnect();
-    }
+    on_error(error) {
+        if (!this.connfailed) logger.warn(`${this.conn_str}: ${error ?? "unknown error"}`);
+        this.connfailed = true;
+        this.emit("connfailed");
+    };
+
+    // connect() inherited from superclass
+    // disconnect() inherited from superclass
 
     /**
      * Reads the holding registers within the specified area asynchronously.
