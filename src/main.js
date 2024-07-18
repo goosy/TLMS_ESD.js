@@ -3,7 +3,7 @@ import { read_config, MAIN_PERIOD } from "./config.js";
 import { line_init } from "./line_proc.js";
 import { section_loop, section_init } from './section_proc.js';
 import { node_loop, node_init } from './node_proc.js';
-import { MTClient, attach_unit, createMTServer } from "./drivers/modbusTCP.js";
+import { MTClient, Unit_Map, createMTServer } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
 import { logger } from './util.js';
 
@@ -49,9 +49,9 @@ function add_node(node, unit_map) {
     // for controller side, do not use `node.driver_info.unit_id;`
     const s_unit_id = node.section.line.controller.modbus_server.unit_id[node.name];
     const data = node.data;
-    attach_unit(unit_map, s_unit_id, data, 0);
+    unit_map.attach_unit(s_unit_id, data, 0);
     const command = node.command;
-    attach_unit(unit_map, s_unit_id, command, 400);
+    unit_map.attach_unit(s_unit_id, command, 400);
 
     node_init(node);
     running_nodes.push(node);
@@ -59,11 +59,10 @@ function add_node(node, unit_map) {
 
 function run_controller(controller) {
     const unit_id_map = controller.modbus_server.unit_id;
-    const unit_map = {};
+    const unit_map = new Unit_Map();
 
     // action records
-    attach_unit(
-        unit_map,
+    unit_map.attach_unit(
         unit_id_map.action_records,
         controller.action_record.data,
         0,
@@ -72,13 +71,13 @@ function run_controller(controller) {
     for (const line of controller.lines) { // lines
         const data = line.data;
         const name = line.name;
-        attach_unit(unit_map, unit_id_map[name], data, 0);
+        unit_map.attach_unit(unit_id_map[name], data, 0);
         line_init(line);
         running_lines.push(line);
         for (const section of line.sections) { // sections
             const data = section.data;
             const name = section.name;
-            attach_unit(unit_map, unit_id_map[name], data, 0);
+            unit_map.attach_unit(unit_id_map[name], data, 0);
             [...section.begin_nodes, ...section.end_nodes].forEach(node => { // nodes
                 add_node(node, unit_map);
             });

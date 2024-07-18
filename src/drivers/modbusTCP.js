@@ -4,9 +4,15 @@ import { logger } from '../util.js';
 
 export class MTClient extends Modbus {
 
-    /** 
-     * @param {string} host the ip of the TCP Port - required.
-     * @param {number} port the Port number - default 502.
+    /**
+     * Constructs a new instance of the MTClient class.
+     *
+     * @param {Object} options - The options for the MTClient.
+     * @param {string} options.host - The IP address of the TCP Port. Defaults to '127.0.0.1'.
+     * @param {number} options.port - The port number. Defaults to 502.
+     * @param {number} options.unit_id - The unit ID. Defaults to 1.
+     * @param {number} [options.period_time] - The period time.
+     * @param {number} [options.reconnect_time] - The reconnect time.
      */
     constructor(options) {
         super();
@@ -194,28 +200,33 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
     return server;
 }
 
-function new_blank_unit(unit_id) {
-    const unit = [];
-    unit.ID = unit_id;
-    return unit;
-}
+export class Unit_Map {
+    unit_ids = [];
+    new_blank_unit(unit_id) {
+        const unit = [];
+        unit.ID = unit_id;
+        return unit;
+    }
 
-/**
- * Attaches a unit to the unit map.
- *
- * @param {Object} unit_map - The map of units.
- * @param {number} unit_id - The ID of the unit.
- * @param {TData} tdata - The TData object that contains the data associated with the unit.
- * @param {number} [start=0] - The starting index of the unit's data.
- * @param {number} [offset=0] - The starting index of the TData object.
- * @return {void} This function does not return anything.
- */
-export function attach_unit(unit_map, unit_id, tdata, start = 0, offset = 0) {
-    unit_map[unit_id] ??= new_blank_unit(unit_id);
-    unit_map[unit_id].push({
-        tdata,
-        start,
-        offset,
-        end: tdata.size - offset + start,
-    });
+    /**
+     * Attaches a unit to the unit map.
+     *
+     * @param {number} unit_id - The ID of the unit.
+     * @param {import('../data_type/TData.js').TData} tdata - The TData object that contains the data associated with the unit.
+     * @param {number} [start=0] - The starting index of the unit's data.
+     * @param {number} [offset=0] - The starting index of the TData object.
+     * @return {void} This function does not return anything.
+     */
+    attach_unit(unit_id, tdata, start = 0, offset = 0) {
+        if (this[unit_id] == null) {
+            this.unit_ids.push(unit_id);
+            this[unit_id] = this.new_blank_unit(unit_id);
+        }
+        this[unit_id].push({
+            tdata,
+            start,
+            offset,
+            end: tdata.size - offset + start,
+        });
+    }
 }
