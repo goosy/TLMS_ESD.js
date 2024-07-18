@@ -14,6 +14,8 @@ export class MTClient extends Modbus {
     #disconnect_time = 0;
     get disconnect_time() { return this.#disconnect_time; }
 
+    get conn_str() { return `modbus://${this.host}:${this.port}`; }
+
     /** 
      * @param {string} host the ip of the TCP Port - required.
      * @param {number} port the Port number - default 502.
@@ -25,22 +27,28 @@ export class MTClient extends Modbus {
         this.port = port;
         this.periodTime = options?.periodTime ?? 1000;
         this.reconnect_time = options?.reconnect_time ?? 5; // How many ticks to reconnect after
+        this.on("close", () => {
+            console.log(`${this.conn_str} connection closed!`);
+        });
     }
 
+    connrefused = false;
     async connect(host, option) {
         if (typeof host === "string") {
             this.host = host;
         }
-        const tcpoption = { port: this.port, ...option };
+        if (typeof option?.port === "number") {
+            this.port = option.port;
+        }
+        const tcpoption = { port: this.port };
         try {
             await this.connectTCP(this.host, tcpoption);
+            this.connrefused = false;
             this.emit("connect");
-            this.on("close", () => {
-                console.log("connection closed!");
-            });
-            console.log("connected!");
+            console.log(`ModbusTCP connected to ${this.conn_str}!`);
         } catch (err) {
-            console.log("can't connect: " + err);
+            if (!this.connrefused) console.log(`can't connect: ${this.conn_str}: ${err}`);
+            this.connrefused = true;
             this.emit("connrefused");
         }
     }
@@ -75,76 +83,112 @@ export class MTClient extends Modbus {
         this.close();
     }
 
+    /**
+     * Reads the holding registers within the specified area asynchronously.
+     *
+     * @param {{start:number, length:number}} area - The area to read from, specified as an object with start and length properties with unit byte.
+     * @return {Promise<Buffer>} A promise that resolves with the buffer containing the read data, or rejects with an error if the read operation fails.
+     */
     async read(area) {
         try {
-            const ret = await this.readHoldingRegisters(area.start, area.length)
+            const ret = await this.readHoldingRegisters(area.start >> 1, area.length >> 1);
             return ret.buffer;
+        } catch (err) {
+            console.log(err);
+        }
+    }
+
+    /**
+     * Writes the given buffer to the specified area asynchronously.
+     *
+     * @param {Buffer} buffer - The buffer containing the data to be written.
+     * @param {{start:number, length:number}} area - The area to write to, specified as an object with start and length properties with unit byte.
+     * @return {Promise<void>} A promise that resolves when the write operation is complete, or rejects with an error if the write operation fails.
+     */
+    async write(buffer, area) {
+        try {
+            await this.writeRegisters(area.start >> 1, buffer);
         } catch (err) {
             console.log(err);
         }
     }
 }
 
+const get_register_info = (addr, unitID) => {
+    const tdata_list = mb_server_map[unitID] ?? [];
+    const byte_offset = addr * 2;
+    for (const { tdata, start, end } of tdata_list) {
+        if (tdata.buffer && byte_offset >= start && byte_offset < end) {
+            return { tdata, offset: byte_offset - start };
+        }
+    }
+    return { tdata: null, offset: -1 };
+};
+
+const get_coil_info = (addr, unitID) => {
+    const tdata_list = mb_server_map[unitID] ?? [];
+    const byte_offset = addr >> 4 << 1; // Byte index value with word units as delimiters
+    const bit_offset = addr % 16;
+    const bit = 1 << bit_offset;
+    for (const { tdata, start, end } of tdata_list) {
+        if (tdata.buffer && byte_offset >= start && byte_offset < end) {
+            return { tdata, offset: byte_offset - start, bit };
+        }
+    }
+    console.error(`Invalid coil address: ${addr} for read in unit ${unitID}`);
+};
+
 /** 
  * @param {string} host the ip of the TCP Port - required.
  * @param {number} port the Port number - default 502.
  */
 export function createMTServer(host = "0.0.0.0", port = 502) {
-    const read_word = (addr, unitID) => {
-        const buff_list = mb_server_map[unitID] ?? [];
-        const byte_offset = addr * 2;
-        const bits_index = addr << 4;
-        for (const { buffer, start, end } of buff_list) {
-            if (buffer && bits_index >= start && bits_index < end) {
-                return buffer.readUInt16BE(byte_offset);
-            }
-        }
-        // console.error(`Invalid input or holdingaddress: ${addr} for unit ${unitID}`);
-    };
+
     const vector = {
-        getInputRegister: read_word,
-        getHoldingRegister: read_word,
+        getInputRegister: (addr, unitID) => {
+            const { tdata, offset } = get_register_info(addr, unitID);
+            if (tdata) {
+                return tdata.buffer.readUInt16BE(offset);
+            }
+            console.error(`Invalid InputRegister address(${addr}) when reading unit ${unitID}`);
+        },
+        getHoldingRegister: (addr, unitID) => {
+            const { tdata, offset } = get_register_info(addr, unitID);
+            if (tdata) {
+                return tdata.buffer.readUInt16BE(offset);
+            }
+            console.error(`Invalid HoldingRegister address(${addr}) when reading unit ${unitID}`);
+        },
+        setRegister: (addr, value, unitID) => {
+            const { tdata, offset } = get_register_info(addr, unitID);
+            if (!tdata) {
+                console.error(`Invalid regsiter address: ${addr} when writing to unit ${unitID}`);
+            } else {
+                tdata.buffer.writeUInt16BE(value, offset);
+                tdata.refresh_value();
+            }
+        },
 
         getCoil: (addr, unitID) => {
-            const buff_list = mb_server_map[unitID] ?? [];
-            const byte_offset = addr >> 3;
-            const bit_offset = addr % 8;
-            const bit_number = 1 << bit_offset;
-            for (const { buffer, start, end } of buff_list) {
-                if (buffer && addr >= start && addr < end) {
-                    return (buffer.readUInt8(byte_offset) & bit_number) > 0;
-                }
+            const { tdata, offset, bit } = get_coil_info(addr, unitID);
+            if (tdata) {
+                return (tdata.buffer.readUInt16BE(offset) & bit) > 0;
             }
-            // console.error(`Invalid coil address: ${addr} for unit ${unitID}`);
+            console.error(`Invalid coil address: ${addr} for read in unit ${unitID}`);
         },
 
         setCoil: (addr, value, unitID) => {
-            const buff_list = mb_server_map[unitID] ?? [];
-            const byte_offset = addr >> 3;
-            const bit_offset = addr % 8;
-            const bit_number = 1 << bit_offset;
-            for (const { buffer, start, end } of buff_list) {
-                if (buffer && addr >= start && addr < end) {
-                    let byte = buffer.readUInt8(byte_offset);
-                    if (value) byte = byte | bit_number;
-                    else byte = byte & ~bit_number;
-                    buffer.writeUInt8(byte, byte_offset);
-                    return;
-                }
+            const { tdata, offset, bit } = get_coil_info(addr, unitID);
+            if (tdata) {
+                let byte = tdata.buffer.readUInt16BE(offset);
+                if (value) byte = byte | bit;
+                else byte = byte & ~bit;
+                tdata.buffer.writeUInt16BE(byte, offset);
+                tdata.refresh_value();
+            } else {
+                console.error(`Invalid coil address: ${addr} for write in unit ${unitID}`);
             }
-            // console.error(`Invalid coil address: ${addr} for unit ${unitID}`);
         },
-        setRegister: (addr, value, unitID) => {
-            const buff_list = mb_server_map[unitID] ?? [];
-            const byte_offset = addr * 2;
-            const bits_index = addr << 4;
-            for (const { buffer, start, end } of buff_list) {
-                if (buffer && bits_index >= start && bits_index < end) {
-                    buffer.writeUInt16BE(value, byte_offset);
-                }
-            }
-            // console.error(`Invalid coil address: ${addr} for unit ${unitID}`);
-        }
     }
 
     console.log(`ModbusTCP listening on modbus://${host}:${port}`);
@@ -160,7 +204,7 @@ export function createMTServer(host = "0.0.0.0", port = 502) {
 export function attach_to_server(unitID, tdata, start = 0) {
     mb_server_map[unitID] ??= [];
     mb_server_map[unitID].push({
-        buffer: tdata.buffer,
+        tdata,
         start,
         end: tdata.size + start,
     });
