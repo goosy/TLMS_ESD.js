@@ -1,4 +1,4 @@
-import { attach_unit, createMTServer } from "./drivers/modbusTCP.js";
+import { Unit_Map, createMTServer } from "./drivers/modbusTCP.js";
 import { TData } from "./data_type/TData.js";
 import { NODE } from "./data_type/TNode.js";
 import { COMMAND } from "./data_type/TCmd.js";
@@ -136,14 +136,15 @@ function actuator_init(actuator) {
     command.name = name + '_CMD';
 }
 
-const unit_map_poll = {};
+const unit_map_list = new Map();
 const actuators = [];
 
 function init_tdata(tdata, mb_info, offset) {
     const unit_id = mb_info.unit_id;
+    const start = mb_info.start;
     const port = mb_info.port;
-    unit_map_poll[port] ??= {};
-    attach_unit(unit_map_poll[port], unit_id, tdata, mb_info.start, offset);
+    if(!unit_map_list.has(port)) unit_map_list.set(port, new Unit_Map());
+    unit_map_list.get(port).attach_unit(unit_id, tdata, start, offset);
 }
 
 function prepare_actuator(name) {
@@ -200,11 +201,8 @@ export async function run(running_actuator_names) {
     });
 
     // start modbus TCP server
-    for (const [port, unit_map] of Object.entries(unit_map_poll)) {
+    for (const [port, unit_map] of unit_map_list) {
         const server = createMTServer('0.0.0.0', port, unit_map);
-        server.on("close", () => {
-            logger.info("connection closed!");
-        });
     }
 
     // main loop
