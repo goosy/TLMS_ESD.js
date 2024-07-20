@@ -70,15 +70,10 @@ export class MTClient extends Modbus {
      * @param {{start:number, length:number}} range - The area to read from, specified as an object with start and length properties with unit byte.
      * @return {Promise<Buffer>} A promise that resolves with the buffer containing the read data, or rejects with an error if the read operation fails.
      */
-    async read(range) {
-        try {
-            const ret = await this.readHoldingRegisters(range.start >> 1, range.length >> 1);
-            this.emit_data_ok();
-            return ret.buffer;
-        } catch (err) {
-            this.emit_data_error();
-            return null;
-        }
+    read(range) {
+        const promise = this.readHoldingRegisters(range.start >> 1, range.length >> 1);
+        promise.then(this.emit_data_ok.bind(this), this.emit_data_error.bind(this),);
+        return promise.then(ret => ret.buffer);
     }
 
     /**
@@ -88,13 +83,10 @@ export class MTClient extends Modbus {
      * @param {{start:number, length:number}} range - The area to write to, specified as an object with start and length properties with unit byte.
      * @return {Promise<void>} A promise that resolves when the write operation is complete, or rejects with an error if the write operation fails.
      */
-    async write(buffer, range) {
-        try {
-            await this.writeRegisters(range.start >> 1, buffer);
-            this.emit_data_ok();
-        } catch (err) {
-            this.emit_data_error();
-        }
+    write(buffer, range) {
+        const promise = this.writeRegisters(range.start >> 1, buffer);
+        promise.then(this.emit_data_ok.bind(this), this.emit_data_error.bind(this),);
+        return promise;
     }
 }
 

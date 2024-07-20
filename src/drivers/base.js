@@ -4,7 +4,7 @@ export class Base_Driver {
     constructor() {
         // private fields
         let started = false;
-        let reconnecting = false;
+        let connecting = false;
         let disconnect_time = 10000; // Ensure that the connection is made initially
         let data_error = false;
         Object.defineProperty(this, 'started', {
@@ -14,9 +14,9 @@ export class Base_Driver {
             configurable: false,
             enumerable: true,
         });
-        Object.defineProperty(this, 'reconnecting', {
+        Object.defineProperty(this, 'connecting', {
             get: function () {
-                return reconnecting;
+                return connecting;
             },
             configurable: false,
             enumerable: true,
@@ -36,18 +36,22 @@ export class Base_Driver {
             enumerable: true,
         });
 
-        this.start_tick = async function () {
+        this.start_tick = function () {
             if (started) {
                 if (this.is_connected) {
                     this.emit("tick");
                     disconnect_time = 0;
-                    reconnecting = false;
+                    connecting = false;
                 } else if (this.reconnect_time > 0) {
                     disconnect_time += this.period_time;
-                    if (!reconnecting && disconnect_time > this.reconnect_time) {
-                        reconnecting = true;
-                        await this.connect();
-                        reconnecting = false;
+                    // must be use `this.connectiong` to take advantage of
+                    // the connection state management of the implementation class itself
+                    if (!this.connecting && disconnect_time > this.reconnect_time) {
+                        connecting = true;
+                        this.connect().then(
+                            () => connecting = false,
+                            () => connecting = false,
+                        );
                     }
                 }
             } else {
@@ -58,7 +62,7 @@ export class Base_Driver {
         this.start = function () {
             started = true;
             if (this.loop) clearInterval(this.loop);
-            this.loop = setInterval(() => this.start_tick(), this.period_time);
+            this.loop = setInterval(this.start_tick.bind(this), this.period_time);
         }
         this.stop = function () {
             started = false;
