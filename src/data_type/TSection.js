@@ -28,7 +28,7 @@ const inner_tags = [
 export const SECTION = {
     name: "SECTION",
     items: [
-        { name: "ID", type: "UInt", offset: 0, length: 16, init_value: 12 }, // 段号
+        { name: "ID", type: "UInt", offset: 0, length: 16, init_value: 0 }, // 段号
         {   // bypass word
             name: "bypass_word", type: "Word", offset: 16, length: 16, init_value: 0,
             coupling: [{ name: "bypass", type: "Bool", offset: 0, length: 1, init_value: false }], // 中间站点是否有越站

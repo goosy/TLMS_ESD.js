@@ -1,7 +1,11 @@
 import { debouncify } from "./util.js";
 
 export function node_init(actuator) {
-    const { ID, name, data, command, data_driver, command_driver, driver_info } = actuator;
+    const {
+        ID, name, data, command,
+        section, is_begin, is_end,
+        data_driver, command_driver, driver_info
+    } = actuator;
     command.name = name + '_CMD';
     data.name = name;
     actuator.debounce_send_commands = debouncify(`SC4RespCodeOrCmdChan_${name}`, () => {
@@ -65,17 +69,17 @@ export function node_init(actuator) {
     actuator.data_payload = data_payload;
 
     data.on("change", (tagname, old_value, new_value) => {
-        // handle command response_code
-        // valid: (handled in PLC)
-        //     stop_pumps cancel_stop
-        //     enable_pressure_SD disable_pressure_SD
-        //     write_paras
-        // todo:
-        //     horn reset_horn read_paras
-        //     enable_pressure_alarm disable_pressure_alarm
-        //     enable_temperature_alarm disable_temperature_alarm
-        //     reset_CPU reset_conn
         if (tagname === 'response_code' && new_value) {
+            // handle command response_code
+            // valid: (handled in PLC)
+            //     stop_pumps cancel_stop
+            //     enable_pressure_SD disable_pressure_SD
+            //     write_paras
+            // todo:
+            //     horn reset_horn read_paras
+            //     enable_pressure_alarm disable_pressure_alarm
+            //     enable_temperature_alarm disable_temperature_alarm
+            //     reset_CPU reset_conn
             // Reset the corresponding bit in commands according to response_code
             command.commands = ~new_value & command.commands;
             command.executing = false;
@@ -91,8 +95,34 @@ export function node_init(actuator) {
             actuator.debounce_send_commands();
             return;
         }
-        if (tagname === 'pump_run' && !new_value) {
-            command.stop_pumps = false;
+        if (tagname === 'comm_OK') {
+            section.update_comm_OK();
+            return;
+        }
+        if (tagname === 'work_OK') {
+            section.update_work_OK();
+            return;
+        }
+        if (tagname === 'pump_run') {
+            section.update_pump_run();
+            if (!new_value) command.stop_pumps = false;
+            return;
+        }
+        if (tagname === 'pump_change_F') {
+            section.update_pump_change_F();
+            return;
+        }
+        if (tagname === 'pressure_WH_F') {
+            section.update_press_warning_F();
+            return;
+        }
+        if (tagname === 'pressure_AH_F') {
+            section.update_press_alarm_F();
+            return;
+        }
+        if (tagname === 'flowmeter') {
+            if (is_begin) section.update_flow_begin();
+            if (is_end) section.update_flow_end();
             return;
         }
     });
