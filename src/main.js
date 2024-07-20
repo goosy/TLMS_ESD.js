@@ -3,6 +3,12 @@ import { read_config, MAIN_PERIOD } from "./config.js";
 import { line_init } from "./line_proc.js";
 import { section_loop, section_init } from './section_proc.js';
 import { node_loop, node_init } from './node_proc.js';
+import { TData } from "./data_type/TData.js";
+import { LINE } from "./data_type/TLine.js";
+import { SECTION } from "./data_type/TSection.js";
+import { NODE } from "./data_type/TNode.js";
+import { COMMAND } from "./data_type/TCmd.js";
+import { Action_Record } from "./action_record.js";
 import { MTClient, Unit_Map, createMTServer } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
 import { logger } from './util.js';
@@ -47,10 +53,13 @@ function add_node(node, unit_map) {
     node.command_driver = command_driver;
 
     // for controller side, do not use `node.driver_info.unit_id;`
-    const s_unit_id = node.section.line.controller.modbus_server.unit_id[node.name];
-    const data = node.data;
+    const name = node.name;
+    const s_unit_id = node.section.line.controller.modbus_server.unit_id[name];
+    const data = new TData(NODE, name);
+    node.data = data;
     unit_map.attach_unit(s_unit_id, data, 0);
-    const command = node.command;
+    const command = new TData(COMMAND, name);
+    node.command = command;
     unit_map.attach_unit(s_unit_id, command, 400);
 
     node_init(node);
@@ -62,21 +71,27 @@ function run_controller(controller) {
     const unit_map = new Unit_Map();
 
     // action records
+    const action_record = new Action_Record('action_records');
+    action_record.records_size = controller.records_size ?? 10;
+    action_record.init();
+    controller.action_record = action_record;
     unit_map.attach_unit(
         unit_id_map.action_records,
-        controller.action_record.data,
+        action_record.data,
         0,
     );
 
     for (const line of controller.lines) { // lines
-        const data = line.data;
         const name = line.name;
+        const data = new TData(LINE, name);
+        line.data = data;
         unit_map.attach_unit(unit_id_map[name], data, 0);
         line_init(line);
         running_lines.push(line);
         for (const section of line.sections) { // sections
-            const data = section.data;
             const name = section.name;
+            const data = new TData(SECTION, name);
+            section.data = data;
             unit_map.attach_unit(unit_id_map[name], data, 0);
             [...section.begin_nodes, ...section.end_nodes].forEach(node => { // nodes
                 add_node(node, unit_map);
