@@ -1,10 +1,4 @@
-import { TData } from "./data_type/TData.js";
-import { SECTION } from "./data_type/TSection.js";
-import { LINE } from "./data_type/TLine.js";
-import { NODE } from "./data_type/TNode.js";
-import { COMMAND } from "./data_type/TCmd.js";
 import { cfg_lines, cfg_actuators, cfg_controllers } from "./config.js";
-import { Action_Record } from "./action_record.js";
 
 function add_actuator(section, cfg_node) {
     const ID = cfg_node.id;
@@ -26,11 +20,9 @@ function add_actuator(section, cfg_node) {
             host: IP,
         };
     }
-    const data = new TData(NODE, name);
-    const command = new TData(COMMAND, name);
 
     const actuator = {
-        ID, name, data, command,
+        ID, name,
         driver_info,
         is_begin, is_end, has_pumps, section
     };
@@ -46,23 +38,15 @@ export async function prepare_controller(controller_name) {
     }
     controller.lines = [];
 
-    // action records
-    const action_record = new Action_Record('action_records');
-    action_record.records_size = controller.records_size ?? 10;
-    await action_record.init();
-    controller.action_record = action_record;
-
     for (const cfg_line of cfg_lines) {
         if (cfg_line.controller.name !== controller_name) continue;
         const ID = cfg_line.id;
         const name = cfg_line.name;
-        const data = new TData(LINE, name);
-        const line = { ID, name, data, controller, sections: [] };
+        const line = { ID, name, controller, sections: [] };
         controller.lines.push(line);
         for (const cfg_section of cfg_line.sections) {
             const ID = cfg_section.id;
             const name = cfg_section.name;
-            const data = new TData(SECTION, name);
             const flow_diff_WH = cfg_section.flow_diff_WH;
             const flow_diff_WH_delay = cfg_section.flow_diff_WH_delay;
             const flow_diff_AH = cfg_section.flow_diff_AH;
@@ -72,7 +56,6 @@ export async function prepare_controller(controller_name) {
             const section = {
                 ID,
                 name,
-                data,
                 line,
                 begin_nodes: [],
                 end_nodes: [],
