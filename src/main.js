@@ -19,9 +19,6 @@ function get_modbusTCP_client(host, port, unit_id) {
     if (key in modbusTCP_clients) return modbusTCP_clients[key];
     const driver = new MTClient({ host, port, unit_id });
     modbusTCP_clients[key] = driver;
-    driver.on("connect", () => {
-        logger.info(`connected to ${driver.conn_str}!`);
-    });
     return driver;
 }
 function get_s7_client(host, port, rack, slot) {
@@ -29,9 +26,6 @@ function get_s7_client(host, port, rack, slot) {
     if (key in S7_clients) return S7_clients[key];
     const driver = new S7Client({ host, port, rack, slot });
     S7_clients[key] = driver;
-    driver.on("connect", () => {
-        logger.info(`connected to ${driver.conn_str}!`);
-    });
     return driver;
 }
 
@@ -103,6 +97,10 @@ function run_controller(controller) {
         running_nodes.forEach(node => node_loop(node));
     }, MAIN_PERIOD);
 }
+
+process.on('uncaughtException', (error) => {
+    logger.error(`uncaughtException: ${error.message}`);
+});
 
 const controller_name = process.argv[2];
 await read_config(process.cwd());

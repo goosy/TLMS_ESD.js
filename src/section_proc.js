@@ -100,42 +100,49 @@ export function section_init(section) {
     section.update_flow_end();
 
     data.on("change", (tagname, old_value, new_value) => {
-        logger.debug(`${name}: ${tagname} ${old_value} => ${new_value}`); // @debug
+        logger.debug(`section_${name}: ${tagname} ${old_value} => ${new_value}`);
         if (tagname === "stop_pumps") {// set command
             if (new_value == true) {
                 pump_nodes.forEach((node) => {
                     node.command.stop_pumps = node.data.pump_run
+                    logger.info(`send stop_pumps command to ${node.name} actuator`);
                 });
             } else {
                 pump_nodes.forEach(node => {
                     node.command.stop_pumps = false;
                     node.command.cancel_stop = true;
+                    logger.info(`send cancel_stop command to ${node.name} actuator`);
                 });
             }
             return;
         }
-        if (tagname === "action_F" && new_value == true) { // log action
-            // logs: ID, flow_begin, flow_end, flow_diff
-            const action_record = line.controller.action_record;
-            const AR_data = action_record.data;
-            AR_data.section_ID = data.ID;
-            AR_data.flow_begin = data.flow_begin;
-            AR_data.flow_end = data.flow_end;
-            AR_data.flow_diff = data.flow_diff;
-            AR_data.node1_press = begin_nodes[0]?.data?.pressure ?? 0;
-            AR_data.node2_press = begin_nodes[1]?.data?.pressure ?? 0;
-            AR_data.node3_press = begin_nodes[2]?.data?.pressure ?? 0;
-            AR_data.node4_press = end_nodes[0]?.data?.pressure ?? 0;
-            AR_data.node1_ID = begin_nodes[0]?.data?.ID ?? 0;
-            AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
-            AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
-            AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
-            AR_data.press_action = data.press_alarm_F;
-            AR_data.flow_action = data.flow_alarm_F;
-            AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
-            AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
-            AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
-            action_record.add_record();
+        if (tagname === "action_F") { // log action
+            if (new_value == true) {
+                logger.info(`section ${name}: interlock action`);
+                // logs: ID, flow_begin, flow_end, flow_diff
+                const action_record = line.controller.action_record;
+                const AR_data = action_record.data;
+                AR_data.section_ID = data.ID;
+                AR_data.flow_begin = data.flow_begin;
+                AR_data.flow_end = data.flow_end;
+                AR_data.flow_diff = data.flow_diff;
+                AR_data.node1_press = begin_nodes[0]?.data?.pressure ?? 0;
+                AR_data.node2_press = begin_nodes[1]?.data?.pressure ?? 0;
+                AR_data.node3_press = begin_nodes[2]?.data?.pressure ?? 0;
+                AR_data.node4_press = end_nodes[0]?.data?.pressure ?? 0;
+                AR_data.node1_ID = begin_nodes[0]?.data?.ID ?? 0;
+                AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
+                AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
+                AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
+                AR_data.press_action = data.press_alarm_F;
+                AR_data.flow_action = data.flow_alarm_F;
+                AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
+                AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
+                AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
+                action_record.add_record();
+            } else {
+                logger.info(`section ${name}: reset action flag`);
+            }
             return;
         }
         if (tagname === "pump_run") {
@@ -159,16 +166,54 @@ export function section_init(section) {
             line.update_pump_run();
             return;
         }
-        if (tagname === 'protect_F') {
-            section.update_pre_stop_notice();
+        if (tagname === 'flow_warning_F') {
+            if (new_value == true) {
+                logger.warn(`section ${name}: flowmeter warning arrived`);
+            } else {
+                logger.info(`section ${name}: flowmeter warning left`);
+            }
             return;
         }
         if (tagname === 'flow_alarm_F') {
+            if (new_value == true) {
+                logger.error(`section ${name}: flowmeter alarm arrived`);
+            } else {
+                logger.info(`section ${name}: flowmeter alarm left`);
+            }
             section.update_pre_stop_notice();
             line.update_alarm_F();
             return;
         }
+        if (tagname === 'protect_F') {
+            section.update_pre_stop_notice();
+            return;
+        }
+        if (tagname === 'hangon_MF') {
+            if (new_value == true) {
+                logger.warn(`section ${name}: manually stop protection`);
+            } else {
+                logger.info(`section ${name}: manually resume protection`);
+            }
+            return;
+        }
+        if (tagname === 'hangon_AF') {
+            if (new_value == true) {
+                logger.info(`section ${name}: automatically stop protection`);
+            } else {
+                logger.info(`section ${name}: automatically resume protection`);
+            }
+            return;
+        }
+        if (tagname === 'pre_stop_notice' && new_value == true) {
+            logger.info(`section ${name} start action countdown`);
+            return;
+        }
         if (tagname === 'press_alarm_F') {
+            if (new_value == true) {
+                logger.error(`section ${name}: pressure alarm arrived`);
+            } else {
+                logger.info(`section ${name}: pressure alarm left`);
+            }
             line.update_alarm_F();
             return;
         }

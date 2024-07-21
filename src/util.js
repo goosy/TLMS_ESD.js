@@ -1,67 +1,49 @@
-import { createLogger, format, transports } from "winston";
-import "winston-daily-rotate-file";
-import { AssertionError } from "assert";
+import log4js from 'log4js';
 
-const customFormat = format.combine(
-    format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-    format.align(),
-    format.printf((info) => `${info.level}: ${[info.timestamp]}: ${info.message}`)
-);
-
-const defaultOptions = {
-    format: customFormat,
-    datePattern: "YYYY-MM-DD",
-    zippedArchive: true,
-    maxSize: "20m",
-    maxFiles: "7d",
+const layout = {
+    type: 'pattern',
+    pattern: '%d{yyyy-MM-dd hh:mm:ss.SSS} [%p] - %m'
 };
+
+const file_appender = {
+    type: 'file',
+    pattern: 'yyyy-MM-dd',
+    fileNameSep: '_',
+    keepFileExt: true,
+    maxLogSize: 10 * 1024 * 1024, // 10MB
+    compress: true,
+    alwaysIncludePattern: true,
+    layout,
+}
 
 const level = process.env.LOG_LEVEL || 'info';
 
-export const logger = createLogger({
-    level,
-    format: customFormat,
-});
-
-if (process.env.TLMS !== 'emulator') {
-    logger.add(new transports.DailyRotateFile({
-        filename: "logs/info-%DATE%.log",
-        level,
-        ...defaultOptions,
-    }));
-    logger.add(new transports.DailyRotateFile({
-        filename: "logs/error-%DATE%.log",
-        level: "warn",
-        ...defaultOptions,
-    }));
-}
-
+const appenders = [];
 if (process.env.TLMS !== 'controller') {
-    logger.add(new transports.Console({
-        format: format.combine(
-            format.colorize(),
-            format.simple(),
-            format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
-            format.printf((info) => `${info.level}: ${[info.timestamp]}: ${info.message}`),
-        )
-    }));
+    appenders.push('console');
+}
+if (process.env.TLMS !== 'emulator') {
+    appenders.push('info_file', 'error_file');
 }
 
-process.on('uncaughtException', (error) => {
-    if (error instanceof AssertionError) {
-        logger.error('Assertion Error:', {
-            message: error.message,
-            actual: error.actual,
-            expected: error.expected,
-            operator: error.operator,
-            stack: error.stack
-        });
-        console.error('An AssertionError occurred. Exiting process.');
-        process.exit(1);
-    } else {
-        throw error;
+log4js.configure({
+    appenders: {
+        info_file: { ...file_appender, filename: 'logs/info.log' },
+        error_file: { ...file_appender, filename: 'logs/error.log' },
+        console: {
+            type: 'console',
+            layout: {
+                type: 'pattern',
+                pattern: '%[%d{yyyy-MM-dd hh:mm:ss.SSS} %p%] - %m',
+            }
+        }
+    },
+    categories: {
+        default: { appenders, level }
     }
 });
+
+export const logger = log4js.getLogger();
 
 /**
  * Mixes properties from multiple objects into a target object.
