@@ -42,15 +42,17 @@ export function line_init(line) {
     line.update_pre_stop_notice();
 
     data.on("change", (tagname, old_value, new_value) => {
-        logger.debug(`line${name}: ${tagname} ${old_value} => ${new_value}`);
+        logger.debug(`line_${name}: ${tagname} ${old_value} => ${new_value}`);
         if (tagname === 'bypass') {
             sections.forEach(section => {
                 section.data.bypass = new_value;
             });
+            logger.info(`line ${name} changed bypass status to ${new_value}`);
         }
         if (tagname === 'pump_run' && !new_value) {
             data.autoStopCmd = false;
             data.manStopCmd = false;
+            logger.info(`line ${name}: reset autoStopCmd and manStopCmd`);
         }
     });
 }

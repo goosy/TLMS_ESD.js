@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
 import { logger } from "../util.js";
@@ -96,8 +95,10 @@ export class TData extends EventEmitter {
                 console.error('driver is not connected');
                 return false;
             }
-            assert(range.start >= IO_start);
-            assert(range.start + range.length <= IO_start + IO_length);
+            if (range.start < IO_start || range.start + range.length > IO_start + IO_length) {
+                logger.error(`invalid range ${JSON.stringify(range)}`);
+                process.exit(1);
+            }
             return true;
         }
         this.IO_read = async (range) => {
@@ -142,24 +143,33 @@ export class TData extends EventEmitter {
         const type = _item.type.toLowerCase();
         const name = _item.name;
         const value = _item.init_value;
-        if (this[name]) throw new Error(`new tag has duplicated name: ${name}`);
-        let byte_offset = offset >> 3;
-        const byte_remainder = byte_offset % 2;
+        if (this[name]) {
+            logger.error(`new tag has duplicated name: ${name}`);
+            process.exit(1);
+        }
+        const byte_offset = offset >> 3;
         const bit_offset = offset % 8;
         const bit_mask = 1 << bit_offset;
+        if (type !== "bool" && bit_offset !== 0) {
+            logger.error(`tag ${name} has bit offset: ${bit_offset}`);
+            process.exit(1);
+        }
+        if (type !== "bool" && type !== "byte" && byte_offset % 2 === 1) {
+            // Byte index value with word units as delimiters
+            logger.error(`${type} tag "${name}" has wrong offset: ${offset}`);
+            process.exit(1);
+        }
+        if (this.#tags[name] != null) {
+            logger.error(`duplicated tag name: ${name}`);
+            process.exit(1);
+        }
+        
         const tag = {
             name, type, value,
             byte_offset, bit_offset, bit_mask,
             length: 2,
         }
-        if (type === "byte") assert(bit_offset === 0);
-        if (type !== "bool" && type !== "byte") {
-            // Byte index value with word units as delimiters
-            assert(byte_remainder === 0 && bit_offset === 0);
-        }
         this.#couplings[name] = _item.coupling.map(cp => cp.name);
-
-        assert(this.#tags[name] == null);
         let self = this;
         switch (type) {
             case 'bool':
@@ -377,11 +387,15 @@ class Tag_Group {
     #add(tagname) {
         const tag = this.tdata.get(tagname);
         this.#tags.push(tag);
-        if (!tag) throw new Error('Invalid tag configuration');
+        if (!tag) {
+            logger.error('Invalid tag configuration');
+            process.exit(1);
+        }
         const tag_start = tag.byte_offset;
         const length = tag.length;
         if (typeof tag_start !== 'number' || typeof length !== 'number' || length < 0) {
-            throw new Error('Invalid tag configuration');
+            logger.error('Invalid tag configuration');
+            process.exit(1);
         }
         const tag_end = tag_start + length;
         const areas = this.#areas;
@@ -417,7 +431,8 @@ class Tag_Group {
                 }
                 return mid;
             }
-            throw new Error('Invalid tag configuration');
+            logger.error('Invalid tag configuration');
+            process.exit(1);
         }
 
         // insert new area

@@ -19,6 +19,9 @@ export class MTClient extends Modbus {
         if (period_time) this.period_time = period_time;
         const reconnect_time = options?.reconnect_time;
         if (reconnect_time) this.reconnect_time = reconnect_time;
+        this.on("connect", () => {
+            logger.info(`connected to ${this.conn_str}!`);
+        });
         this.on('error', this.on_error);
         this.on('close', () => {
             this.emit("disconnect");
@@ -29,7 +32,7 @@ export class MTClient extends Modbus {
 
     get is_connected() { return super.isOpen; }
     on_error(error) {
-        if (!this.connfailed) logger.warn(`can't connect to ${this.conn_str}: ${error}`);
+        if (!this.connfailed) logger.error(`can't connect to ${this.conn_str}: ${error}`);
         this.connfailed = true;
         this.emit("connfailed");
     }
@@ -123,7 +126,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         getInputRegister: (addr, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                logger.warn(`Invalid InputRegister address(${addr}) when reading unit ${unit_id}`);
+                logger.error(`Invalid InputRegister address(${addr}) when reading unit ${unit_id}`);
                 return 0;
             }
             if (tdata.LE_list.includes(offset)) return tdata.buffer.readUInt16LE(offset);
@@ -132,7 +135,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         getHoldingRegister: (addr, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                logger.warn(`Invalid HoldingRegister address(${addr}) when reading unit ${unit_id}`);
+                logger.error(`Invalid HoldingRegister address(${addr}) when reading unit ${unit_id}`);
                 return 0;
             }
             if (tdata.LE_list.includes(offset)) return tdata.buffer.readUInt16LE(offset);
@@ -141,7 +144,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         setRegister: (addr, value, unit_id) => {
             const { tdata, offset } = get_register_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                logger.warn(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
+                logger.error(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
                 return 0;
             }
             if (tdata.LE_list.includes(offset)) tdata.buffer.writeUInt16LE(value, offset);
@@ -153,7 +156,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         getCoil: (addr, unit_id) => {
             const { tdata, offset, bit_mask } = get_coil_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                logger.warn(`Invalid coil address: ${addr} for read in unit ${unit_id}`);
+                logger.error(`Invalid coil address: ${addr} for read in unit ${unit_id}`);
                 return false;
             }
             return (tdata.buffer.readUInt8(offset) & bit_mask) > 0;
@@ -162,7 +165,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         setCoil: (addr, value, unit_id) => {
             const { tdata, offset, bit_mask } = get_coil_info(addr, unit_map[unit_id]);
             if (tdata == null) {
-                logger.warn(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
+                logger.error(`Invalid coil address: ${addr} for write in unit ${unit_id}`);
                 return;
             }
             let byte = tdata.buffer.readUInt8(offset);
@@ -178,14 +181,14 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
     const server = new ServerTCP(vector, { host, port, debug: true, unitID: 0, });
     server.on("socketError", function (err) {
         // Handle socket error if needed, can be ignored
-        logger.warn(err);
+        logger.error(err);
     });
     server.on('error', function (err) {
         // Handle socket error if needed, can be ignored
-        logger.warn(err);
+        logger.error(err);
     });
     server.on("close", () => {
-        logger.warn("connection closed!");
+        logger.error("connection closed!");
     });
 
     return server;

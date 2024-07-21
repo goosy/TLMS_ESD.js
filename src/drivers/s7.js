@@ -65,7 +65,7 @@ export class S7Client extends S7Endpoint {
 
     get is_connected() { return super.isConnected; }
     on_error(error) {
-        if (!this.connfailed) logger.warn(`${this.conn_str}: ${error ?? "unknown error"}`);
+        if (!this.connfailed) logger.error(`${this.conn_str}: ${error ?? "unknown error"}`);
         this.connfailed = true;
         this.emit("connfailed");
     };

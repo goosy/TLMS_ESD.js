@@ -1,4 +1,3 @@
-import assert from 'node:assert/strict';
 import { readdir } from 'node:fs/promises';
 import { posix } from 'node:path';
 import { GCL } from './gcl.js';
@@ -25,7 +24,10 @@ function add_conf(doc) {
     }
     for (const _actuator of _actuators) {
         const actuator = { ..._actuator };
-        assert(typeof actuator.id === "number" && actuator.ID !== 0, `node:${actuator.name} ID 必须是一个非零数字`);
+        if(typeof actuator.id !== "number" || actuator.id === 0){
+            logger.error(`node:${actuator.name} ID 必须是一个非零数字`);
+            process.exit(1);
+        }
 
         const pumps = actuator.pumps;
         if (pumps) {

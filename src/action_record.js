@@ -62,6 +62,7 @@ export class Action_Record {
         }
         await this.read_records_from_csv();
         this.data.on('change', (tagname, old_value, new_value) => {
+            logger.debug(`${this.name}: ${tagname} ${old_value} => ${new_value}`);
             if (tagname == 'index') {
                 if (new_value == -1) {
                     const data = this.data;

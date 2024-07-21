@@ -1,4 +1,5 @@
 import { debouncify } from "./util.js";
+import { logger } from "./util.js";
 
 export function node_init(actuator) {
     const {
@@ -69,6 +70,7 @@ export function node_init(actuator) {
     actuator.data_payload = data_payload;
 
     data.on("change", (tagname, old_value, new_value) => {
+        logger.debug(`actuator_${name}_data: ${tagname} ${old_value} => ${new_value}`);
         if (tagname === 'response_code' && new_value) {
             // handle command response_code
             // valid: (handled in PLC)
@@ -89,18 +91,30 @@ export function node_init(actuator) {
         if (tagname === 'pressure_SD_F') {
             if (new_value) {
                 command.enable_pressure_SD = false;
+                logger.info(`actuator ${name} allows pressure interlock`);
             } else {
                 command.disable_pressure_SD = false;
+                logger.info(`actuator ${name} prohibits pressure interlock`);
             }
             actuator.debounce_send_commands();
             return;
         }
         if (tagname === 'comm_OK') {
             section.update_comm_OK();
+            if (new_value) {
+                logger.info(`actuator ${name} communication is normal`);
+            } else {
+                logger.error(`actuator ${name} communication lost`);
+            }
             return;
         }
         if (tagname === 'work_OK') {
             section.update_work_OK();
+            if (new_value) {
+                logger.info(`actuator ${name} resumes normal operation`);
+            } else {
+                logger.error(`actuator ${name} is not working properly`);
+            }
             return;
         }
         if (tagname === 'pump_run') {
@@ -108,15 +122,22 @@ export function node_init(actuator) {
             if (!new_value) command.stop_pumps = false;
             return;
         }
+        if (['pump_run_1', 'pump_run_2', 'pump_run_3', 'pump_run_4'].includes(tagname)) {
+            logger.info(`actuator ${name} pumps status changed: ${tagname}: ${old_value} -> ${new_value}`);
+            data.pump_run = data.pump_run_1 || data.pump_run_2 || data.pump_run_3 || data.pump_run_4;
+            return;
+        }
         if (tagname === 'pump_change_F') {
             section.update_pump_change_F();
             return;
         }
         if (tagname === 'pressure_WH_F') {
+            logger.info(`actuator ${name} pressure warning status changed: ${tagname}: ${old_value} -> ${new_value}`);
             section.update_press_warning_F();
             return;
         }
         if (tagname === 'pressure_AH_F') {
+            logger.info(`actuator ${name} pressure alarm status changed: ${tagname}: ${old_value} -> ${new_value}`);
             section.update_press_alarm_F();
             return;
         }
@@ -153,7 +174,8 @@ export function node_init(actuator) {
     );
     actuator.commands_payload = commands_payload;
 
-    command.on("change", (tagname, _, new_value) => {
+    command.on("change", (tagname, old_value, new_value) => {
+        logger.debug(`actuator_${name}_command: ${tagname} ${old_value} => ${new_value}`);
         if (tagname === 'reset_paras' && new_value) {
             actuator.reset_parameter();
             setTimeout(() => {
