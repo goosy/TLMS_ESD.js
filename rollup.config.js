@@ -14,7 +14,7 @@ export default [{
         commonjs(),
         json()
     ],
-    external: ['modbus-serial'],
+    external: [],
 }, {
     input: 'src/emulator.js',
     output: [{
@@ -26,7 +26,7 @@ export default [{
         commonjs(),
         json()
     ],
-    external: ['modbus-serial'],
+    external: [],
 }, {
     input: 'src/cli.js',
     output: [{

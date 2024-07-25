@@ -20,10 +20,11 @@ const running_nodes = [];
 const modbusTCP_clients = {};
 const S7_clients = {};
 
-function get_modbusTCP_client(host, port, unit_id) {
-    const key = `${host}:${port} ${unit_id}`;
+function get_modbusTCP_client(host, port) {
+    const key = `${host}:${port}`;
     if (key in modbusTCP_clients) return modbusTCP_clients[key];
-    const driver = new MTClient({ host, port, unit_id });
+    const driver = new MTClient({ host, port });
+    driver.setMaxListeners(20);
     modbusTCP_clients[key] = driver;
     return driver;
 }
@@ -31,10 +32,18 @@ function get_s7_client(host, port, rack, slot) {
     const key = `${host}:${port} ${rack} ${slot}`;
     if (key in S7_clients) return S7_clients[key];
     const driver = new S7Client({ host, port, rack, slot });
+    driver.setMaxListeners(20);
     S7_clients[key] = driver;
     return driver;
 }
 
+/**
+ * Adds a node to the system and sets up its data and command drivers.
+ *
+ * @param {Object} node - The node object to be added.
+ * @param {Unit_Map} unit_map - The unit map object to attach the node's data and command.
+ * @return {void} This function does not return anything.
+ */
 function add_node(node, unit_map) {
     const driver_info = node.driver_info;
     let data_driver = null;
@@ -42,9 +51,9 @@ function add_node(node, unit_map) {
     // for actuator side
     if (driver_info.protocol === 'modbusTCP') {
         const data = driver_info.data;
-        data_driver = get_modbusTCP_client(driver_info.IP, data.port, data.unit_id);
+        data_driver = get_modbusTCP_client(driver_info.IP, data.port);
         const commands = driver_info.commands;
-        command_driver = get_modbusTCP_client(driver_info.IP, commands.port, commands.unit_id);
+        command_driver = get_modbusTCP_client(driver_info.IP, commands.port);
     } else if (driver_info.protocol === 'S7') {
         const { port, host, rack, slot } = driver_info;
         data_driver = command_driver = get_s7_client(host, port, rack, slot);
@@ -103,6 +112,7 @@ function run_controller(controller) {
 
     // start modbus TCP server
     const server = createMTServer('0.0.0.0', controller.modbus_server.port, unit_map);
+    server.start();
 
     // main loop
     setInterval(() => {

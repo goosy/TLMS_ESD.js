@@ -1,15 +1,12 @@
 {
   "name": "tlms_esd",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "Pipeline Leakage Emergency Shutdown System",
   "type": "module",
   "exports": {
     "cli": "./cli.js",
     "default": "./main.js",
     "emu": "./emulator.js"
-  },
-  "dependencies": {
-    "modbus-serial": "^8.0.17"
   },
   "peerDependencies": {
     "pm2": "^5.4.1"
@@ -20,13 +17,12 @@
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@st-one-io/nodes7": "^1.1.0",
     "csv-parser": "^3.0.0",
-    "eslint": "^8.57.0",
+    "es-modbus": "^0.1.3",
     "log4js": "^6.9.1",
     "mri": "^1.2.0",
     "nodemon": "^3.1.4",
-    "rimraf": "^3.0.2",
-    "rollup": "^4.18.0",
-    "yaml": "^2.4.5"
+    "rollup": "^4.19.0",
+    "yaml": "^2.5.0"
   },
   "directories": {
     "conf": "example"
@@ -48,5 +44,5 @@
   ],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@9.4.0+sha512.f549b8a52c9d2b8536762f99c0722205efc5af913e77835dbccc3b0b0b2ca9e7dc8022b78062c17291c48e88749c70ce88eb5a74f1fa8c4bf5e18bb46c8bd83a"
+  "packageManager": "pnpm@9.6.0+sha512.38dc6fba8dba35b39340b9700112c2fe1e12f10b17134715a4aa98ccf7bb035e76fd981cf0bb384dfa98f8d6af5481c2bef2f4266a24bfa20c34eb7147ce0b5e"
 }

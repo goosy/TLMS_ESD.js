@@ -1,8 +1,9 @@
-import Modbus, { ServerTCP } from "modbus-serial";
+import { Modbus_Client, Modbus_Server } from "es-modbus";
 import { Base_Driver } from "./base.js";
 import { logger } from '../util.js';
 
-export class MTClient extends Modbus {
+export class MTClient extends Modbus_Client {
+    connfailed = false;
 
     /**
      * Constructs a new instance of the MTClient class.
@@ -15,54 +16,49 @@ export class MTClient extends Modbus {
      * @param {number} [options.reconnect_time] - The reconnect time.
      */
     constructor(options) {
-        super();
-        const { host, port = 502, unit_id = 1 } = options;
-        this.conn_str = `modbus://${host}:${port} unit:${unit_id}`;
-        this.setID(unit_id);
+        const host = typeof options.host === "string" ? options.host : '127.0.0.1';
+        const port = typeof options.port === "number" ? options.port : 502;
+        const rtu = false;
+        const period_time = options?.period_time;
+        const reconnect_time = options?.reconnect_time;
+        super(host, { port, rtu });
+        this.conn_str = `modbus://${host}:${port}`;
         this.host = host;
         this.port = port;
-        const period_time = options?.period_time;
         if (period_time) this.period_time = period_time;
-        const reconnect_time = options?.reconnect_time;
         if (reconnect_time) this.reconnect_time = reconnect_time;
+        // super own reconnection mechanism is used instead.
+        this.start_tick = function () {
+            if (this.started) {
+                if (this.is_connected) {
+                    this.emit("tick");
+                    this.connfailed = false;
+                }
+            } else {
+                clearInterval(this.loop);
+            }
+        }
+
+        this.on('error', this.on_error);
         this.on("connect", () => {
             logger.info(`connected to ${this.conn_str}!`);
+            this.connfailed = false;
         });
-        this.on('error', this.on_error);
-        this.on('close', () => {
-            this.emit("disconnect");
-            logger.info(`${this.conn_str} connection closed!`);
-        });
+        this.on('disconnect', this.on_error);
+
         Object.mixin(this, new Base_Driver());
     }
 
-    get is_connected() { return super.isOpen; }
+    get is_connected() { return super.is_connected; }
+
     on_error(error) {
-        if (!this.connfailed) logger.error(`can't connect to ${this.conn_str}: ${error}`);
+        if (!this.connfailed) logger.error(`${this.conn_str} connection closed! ${error ?? "unknown error"}`);
         this.connfailed = true;
         this.emit("connfailed");
     }
 
-    connfailed = false;
-    async connect(host, option) {
-        if (typeof host === "string") {
-            this.host = host;
-        }
-        if (typeof option?.port === "number") {
-            this.port = option.port;
-        }
-        const tcpoption = { port: this.port };
-        try {
-            await this.connectTCP(this.host, tcpoption);
-            this.connfailed = false;
-            this.emit("connect");
-        } catch (error) {
-            this.on_error(error);
-        }
-    }
-    disconnect() {
-        super.close();
-    }
+    // connect() inherited from superclass
+    // disconnect() inherited from superclass
 
     /**
      * Reads the holding registers within the specified area asynchronously.
@@ -70,10 +66,12 @@ export class MTClient extends Modbus {
      * @param {{start:number, length:number}} range - The area to read from, specified as an object with start and length properties with unit byte.
      * @return {Promise<Buffer>} A promise that resolves with the buffer containing the read data, or rejects with an error if the read operation fails.
      */
-    read(range) {
-        const promise = this.readHoldingRegisters(range.start >> 1, range.length >> 1);
-        promise.then(this.emit_data_ok.bind(this), this.emit_data_error.bind(this),);
-        return promise.then(ret => ret.buffer);
+    read(range, unit_id) {
+        const register_address = 40000 + (range.start >> 1) + 1;
+        const length = range.length >> 1;
+        const promise = super.read(`${register_address},${length}`, unit_id);
+        promise.then(this.emit_data_ok.bind(this), this.emit_data_error.bind(this));
+        return promise;
     }
 
     /**
@@ -83,9 +81,11 @@ export class MTClient extends Modbus {
      * @param {{start:number, length:number}} range - The area to write to, specified as an object with start and length properties with unit byte.
      * @return {Promise<void>} A promise that resolves when the write operation is complete, or rejects with an error if the write operation fails.
      */
-    write(buffer, range) {
-        const promise = this.writeRegisters(range.start >> 1, buffer);
-        promise.then(this.emit_data_ok.bind(this), this.emit_data_error.bind(this),);
+    write(buffer, range, unit_id) {
+        const register_address = 40000 + (range.start >> 1) + 1;
+        const length_str = range.length ? (`,${range.length >> 1}`) : '';
+        const promise = super.write(`${register_address}${length_str}`, buffer, unit_id);
+        promise.then(this.emit_data_ok.bind(this), this.emit_data_error.bind(this));
         return promise;
     }
 }
@@ -175,18 +175,24 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
         },
     }
 
-    logger.info(`ModbusTCP listening on modbus://${host}:${port}`);
-    const server = new ServerTCP(vector, { host, port, debug: true, unitID: 0, });
-    server.on("socketError", function (err) {
-        // Handle socket error if needed, can be ignored
-        logger.error(err);
+    const server = new Modbus_Server(vector, { host, port, unit_id: unit_map.unit_ids });
+    server.on("start", () => {
+        logger.info(`ModbusTCP server listening on modbus://${host}:${port}`);
+    })
+    server.on("socket_error", function (err) {
+        logger.error(`client error: ${err}`);
+    });
+    server.on('socket_connect', (socket) => {
+        logger.info(`client connected: ${socket.remoteAddress}:${socket.remotePort}`);
+    });
+    server.on('socket_disconnect', (socket) => {
+        logger.error(`client disconnected: ${socket.remoteAddress}:${socket.remotePort}`);
     });
     server.on('error', function (err) {
-        // Handle socket error if needed, can be ignored
-        logger.error(err);
+        logger.error(`server error: ${err}`);
     });
-    server.on("close", () => {
-        logger.error("connection closed!");
+    server.on("stop", () => {
+        logger.error(`ModbusTCP server modbus://${host}:${port} stoped!`);
     });
 
     return server;
@@ -194,11 +200,6 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
 
 export class Unit_Map {
     unit_ids = [];
-    new_blank_unit(unit_id) {
-        const unit = [];
-        unit.ID = unit_id;
-        return unit;
-    }
 
     /**
      * Attaches a unit to the unit map.
@@ -212,7 +213,7 @@ export class Unit_Map {
     attach_unit(unit_id, tdata, start = 0, offset = 0) {
         if (this[unit_id] == null) {
             this.unit_ids.push(unit_id);
-            this[unit_id] = this.new_blank_unit(unit_id);
+            this[unit_id] = [];
         }
         this[unit_id].push({
             tdata,
