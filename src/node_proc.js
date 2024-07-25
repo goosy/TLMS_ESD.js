@@ -33,10 +33,11 @@ export function node_init(actuator) {
     const data_extras = [];
     const commands_extras = [];
     if (driver_info.protocol === 'S7') {
-        const data = driver_info.data;
-        data_extras.push(data.area, data.db);
-        const commands = driver_info.commands;
-        commands_extras.push(commands.area, commands.db);
+        data_extras.push(driver_info.data.area, driver_info.data.db);
+        commands_extras.push(driver_info.commands.area, driver_info.commands.db);
+    } else if (driver_info.protocol === 'modbusTCP') {
+        data_extras.push(driver_info.data.unit_id);
+        commands_extras.push(driver_info.commands.unit_id);
     }
 
 

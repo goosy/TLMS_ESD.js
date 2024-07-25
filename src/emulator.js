@@ -143,7 +143,7 @@ function init_tdata(tdata, mb_info, offset) {
     const unit_id = mb_info.unit_id;
     const start = mb_info.start;
     const port = mb_info.port;
-    if(!unit_map_list.has(port)) unit_map_list.set(port, new Unit_Map());
+    if (!unit_map_list.has(port)) unit_map_list.set(port, new Unit_Map());
     unit_map_list.get(port).attach_unit(unit_id, tdata, start, offset);
 }
 
@@ -202,7 +202,7 @@ export async function run(running_actuator_names) {
 
     // start modbus TCP server
     for (const [port, unit_map] of unit_map_list) {
-        const server = createMTServer('0.0.0.0', port, unit_map);
+        createMTServer('0.0.0.0', port, unit_map).start();
     }
 
     // main loop
