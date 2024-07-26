@@ -82,8 +82,6 @@ if (argv.version) {
     process.env.LOG_LEVEL = 'debug';
     import('./main.js');
 } else if (cmd === 'emu') {
-    process.env.TLMS = 'emulator';
-    process.env.LOG_LEVEL = 'debug';
     process.argv = [process.argv[0], process.argv[1], ...acturator_names];
     import('./emulator.js');
 } else if (cmd === 'log') {
