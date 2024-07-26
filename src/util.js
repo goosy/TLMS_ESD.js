@@ -1,9 +1,11 @@
-import log4js from 'log4js';
+import { configure, getLogger } from 'log4js';
 
-const layout = {
-    type: 'pattern',
-    pattern: '%d{yyyy-MM-dd hh:mm:ss.SSS} [%p] - %m'
-};
+const level = process.env.LOG_LEVEL || 'info';
+
+const default_appenders = ['info_file', 'error_file'];
+if (process.env.TLMS !== 'controller') {
+    default_appenders.push('console');
+}
 
 const file_appender = {
     type: 'file',
@@ -13,37 +15,59 @@ const file_appender = {
     maxLogSize: 10 * 1024 * 1024, // 10MB
     compress: true,
     alwaysIncludePattern: true,
-    layout,
+    layout: {
+        type: 'pattern',
+        pattern: '%d{yyyy-MM-dd hh:mm:ss.SSS} [%p] - %m'
+    },
 }
 
-const level = process.env.LOG_LEVEL || 'info';
+const colored_layout = {
+    type: 'pattern',
+    pattern: '%[%d{yyyy-MM-dd hh:mm:ss.SSS} %p%] - %m',
+};
 
-const appenders = [];
-if (process.env.TLMS !== 'controller') {
-    appenders.push('console');
-}
-if (process.env.TLMS !== 'emulator') {
-    appenders.push('info_file', 'error_file');
-}
-
-log4js.configure({
+configure({
     appenders: {
         info_file: { ...file_appender, filename: 'logs/info.log' },
         error_file: { ...file_appender, filename: 'logs/error.log' },
-        console: {
-            type: 'console',
-            layout: {
-                type: 'pattern',
-                pattern: '%[%d{yyyy-MM-dd hh:mm:ss.SSS} %p%] - %m',
-            }
-        }
+        console: { type: 'console', layout: colored_layout, }
     },
     categories: {
-        default: { appenders, level }
+        console: { appenders: ['console'], level },
+        default: { appenders: default_appenders, level }
     }
 });
 
-export const logger = log4js.getLogger();
+const logger_map = {
+    default: getLogger('default'),
+    console: getLogger('console'),
+};
+
+export const logger = {
+    _logger: logger_map.default,
+    set category(category) {
+        logger._logger = logger_map[category] ?? logger_map.default;
+    },
+
+    trace(message, ...args) {
+        this._logger.trace(message, ...args);
+    },
+    debug(message, ...args) {
+        this._logger.debug(message, ...args);
+    },
+    info(message, ...args) {
+        this._logger.info(message, ...args);
+    },
+    warn(message, ...args) {
+        this._logger.warn(message, ...args);
+    },
+    error(message, ...args) {
+        this._logger.error(message, ...args);
+    },
+    fatal(message, ...args) {
+        this._logger.fatal(message, ...args);
+    },
+}
 
 /**
  * Mixes properties from multiple objects into a target object.

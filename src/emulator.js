@@ -5,6 +5,8 @@ import { COMMAND } from "./data_type/TCmd.js";
 import { read_config, cfg_actuators, MAIN_PERIOD } from "./config.js";
 import { debounce, logger } from './util.js';
 
+logger.category = 'console';
+
 function loop_actuator(actuator) {
     // host_actuator(actuator);
     const { data, command } = actuator;
