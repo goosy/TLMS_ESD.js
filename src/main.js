@@ -130,3 +130,4 @@ const controller_name = process.argv[2];
 await read_config(process.cwd());
 const controller = await prepare_controller(controller_name);
 if (controller) run_controller(controller); // run controller
+else logger.error(`Controller ${controller_name} not found!`);
