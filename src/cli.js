@@ -1,17 +1,17 @@
 import { exec } from 'node:child_process';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import mri from 'mri';
 import pkg from '../package.json' with { type: 'json' };
 
 const argv = mri(process.argv.slice(2), {
     boolean: ['help', 'version'],
     alias: {
-        H: 'help',
-        V: 'version',
-        P: 'path',
+        help: ['H', 'h'],
+        version: ['V', 'v'],
+        path: 'P',
     }
 });
-const [cmd = 'start', controller_name = 0] = argv._;
+const [cmd = 'help', controller_name = ''] = argv._;
 const acturator_names = argv._.slice(1);
 
 const _path = argv.path ?? '.';
@@ -26,8 +26,8 @@ function show_help() {
 tlms [subcommand] [controller_name or acturator_name_list] [options]
 
 subcommand 子命令:
-  help                       打印本帮助
-  start                      以当前目录下的配置文件运行TLMS，这是默认子命令
+  help                       打印本帮助，这是默认子命令
+  start                      以当前目录下的配置文件运行TLMS
   stop                       结束当前目录配置文件所在的TLMS
   list                       显示有多少个pm2托管的进程，包括TLMS实例
   debug                      以当前目录下的配置文件运行TLMS，但不压入后台，用于调试
@@ -42,15 +42,17 @@ controller_name or acturator_name_list:
   执行器可以是多个名称，用空格分开，用于 emu 子命令后。
 
 options:
---version     | -V | -v      显示版本号，会忽略任何 subcommand 子命令
---help        | -H           打印本帮助，会忽略任何 subcommand 子命令
---path        | -P           指示配置文件所在的目录，默认为 "."
+--version | -V | -v          显示版本号，会忽略任何 subcommand 子命令
+--help    | -H | -h          打印本帮助，会忽略任何 subcommand 子命令
+--path    | -P               指示配置文件所在的目录，默认为 "."
 
 例子:
-tlms                      以当前目录下的配置文件运行
-tlms start ./conf         以 ./conf 目录下的配置文件运行
-tlms stop                 停止
-tlms emu GD8 YA1 YA1 DY8  启动指定4个节点的仿真器
+tlms start                   以当前目录下的配置文件运行第1个控制器
+tlms start JSC               以当前目录下的配置文件运行 JSC 控制器
+tlms start --path ./conf     以 ./conf 目录下的配置文件运行
+tlms start JSC --path ./conf 同时指定控制器名称和配置文件路径
+tlms stop                    停止
+tlms emu GD8 YA1 YA1 DY8     启动指定4个节点的仿真器
 `);
 }
 
@@ -60,15 +62,14 @@ if (argv.version) {
     show_help();
 } else if (cmd === 'start') {
     process.env.TLMS = 'controller';
-    exec(
-        `pm2 start --name="tlms-${basename(work_path)}" "${join(module_path, 'main.js')}" -- ${controller_name}`,
+	const main_js = join(module_path, 'main.js').replace(/\\/g, '/');
+    const main_para = controller_name ? `-- ${controller_name}` : '';
+    exec('pm2 delete "tlms_esd"', () => exec(
+        `pm2 start --name="tlms_esd" "${main_js}" ${main_para}`,
         { cwd: work_path }
-    );
+    ));
 } else if (cmd === 'stop') {
-    exec(
-        `pm2 delete "tlms-${basename(work_path)}"`,
-        { cwd: work_path }
-    );
+    exec('pm2 delete "tlms_esd"');
 } else if (cmd === 'list') {
     exec(`pm2 list`, (error, stdout, _) => {
         if (error) {

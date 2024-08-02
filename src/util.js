@@ -1,4 +1,4 @@
-import { configure, getLogger } from 'log4js';
+import log4js from 'log4js';
 
 const level = process.env.LOG_LEVEL || 'info';
 
@@ -26,7 +26,7 @@ const colored_layout = {
     pattern: '%[%d{yyyy-MM-dd hh:mm:ss.SSS} %p%] - %m',
 };
 
-configure({
+log4js.configure({
     appenders: {
         info_file: { ...file_appender, filename: 'logs/info.log' },
         error_file: { ...file_appender, filename: 'logs/error.log' },
@@ -39,8 +39,8 @@ configure({
 });
 
 const logger_map = {
-    default: getLogger('default'),
-    console: getLogger('console'),
+    default: log4js.getLogger('default'),
+    console: log4js.getLogger('console'),
 };
 
 export const logger = {

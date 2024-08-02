@@ -32,10 +32,14 @@ function add_actuator(section, cfg_node) {
 }
 
 export async function prepare_controller(controller_name) {
-    const controller = cfg_controllers.find(c => c.name === controller_name);
+    // if controller_name is '', '0', 0, null, undefined, or not given, use the first one
+    const controller = controller_name == 0 || !controller_name
+        ? cfg_controllers[0]
+        : cfg_controllers.find(c => c.name === controller_name);
     if (controller == undefined) {
         return null;
     }
+    controller_name = controller.name;
     controller.lines = [];
 
     for (const cfg_line of cfg_lines) {
