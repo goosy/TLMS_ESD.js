@@ -31,8 +31,8 @@ function add_actuator(section, cfg_node) {
             host: IP,
         };
     }
-    const data = new TData(NODE);
-    const command = new TData(COMMAND);
+    const data = new TData(NODE, name);
+    const command = new TData(COMMAND, name);
 
     const actuator = { ID, name, data, command, driver_info, section };
     actuators.push(actuator);
@@ -50,16 +50,16 @@ export async function init() {
     })
     for (const cfg_line of cfg_lines) {
         const controller = controllers[cfg_line.controller.name];
-        const data = new TData(LINE);
         const ID = cfg_line.id;
         const name = cfg_line.name;
+        const data = new TData(LINE, name);
         const line = { ID, name, data, controller, sections: [] };
         lines.push(line);
         controller.lines.push(line);
         for (const cfg_section of cfg_line.sections) {
-            const data = new TData(SECTION);
             const ID = cfg_section.id;
             const name = cfg_section.name;
+            const data = new TData(SECTION, name);
             const flow_diff_WH = cfg_section.flow_diff_WH;
             const flow_diff_WH_delay = cfg_section.flow_diff_WH_delay;
             const flow_diff_AH = cfg_section.flow_diff_AH;

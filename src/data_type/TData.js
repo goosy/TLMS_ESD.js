@@ -8,6 +8,9 @@ export class TData extends EventEmitter {
     #buffer;
     /**
      * get the internal buffer
+     * all data items are stored in Big-Endian format.
+     * word items are an exception and are stored in Little-Endian format
+     * because they are considered to be a combination of bits or bytes in sequence.
      *
      * @return {Buffer} - the internal buffer.
      */
@@ -15,42 +18,28 @@ export class TData extends EventEmitter {
     get size() {
         return this.#buffer.length;
     }
-    #getters = {}; // get value from buffer
-    #setters = {}; // set value to buffer
 
     name;
 
-    #values = {};  // values cache
+    #tags = {};  // values cache
     get(tagname) {
-        return this.#values[tagname];
-    }
-    set(tagname, value) {
-        const setter = this.#setters[tagname];
-        if (setter == null) {
-            console.log(`${this.name} has no setter for ` + tagname);
-            return;
-        }
-        setter(value);
-        // the change event must be after the new value is applied
-        this.check_tag(tagname);
-        debounce(`${this.name}_${tagname}_inner_setter`, () => {
-            this.check_coupling(tagname);
-        }, 100);
-    }
-
-    #tags_info = {};  // buffer information affected by tags
-    get_tag_info(tagname) {
-        return this.#tags_info[tagname];
+        return this.#tags[tagname];
     }
 
     #couplings = {};
-    check_tag(tagname) {
-        const old_value = this.#values[tagname];
-        const new_value = this.#getters[tagname]();
-        // the change event must be after the new value is applied
+    check_tag(tag) {
+        const name = tag.name ?? tag;
+        const _tag = this.#tags[name];
+        if (_tag == null) {
+            console.log(`${this.name} has no tag named ` + tagname);
+            return;
+        }
+        const old_value = _tag.value;
+        const new_value = _tag._value;
         if (old_value !== new_value) {
-            this.#values[tagname] = new_value;
-            this.emit("change", tagname, old_value, new_value);
+            _tag.value = new_value;
+            // the change event must be after the new value is applied
+            this.emit("change", name, old_value, new_value);
         }
     }
     check_coupling(tagname) {
@@ -60,19 +49,9 @@ export class TData extends EventEmitter {
         }
     }
     check_all_tags() {
-        for (const tagname of Object.keys(this.#values)) {
-            this.check_tag(tagname);
+        for (const tag of Object.values(this.#tags)) {
+            this.check_tag(tag);
         }
-    }
-
-    /**
-     * Replaces the internal buffer with the provided buffer.
-     *
-     * @param {Buffer} buffer - The buffer to replace the internal buffer with.
-     */
-    replace_buffer(buffer, start = 0) {
-        buffer.copy(this.#buffer, start);
-        this.check_all_tags();
     }
 
     #poll; // polling function from driver
@@ -91,7 +70,7 @@ export class TData extends EventEmitter {
      */
     set_IO(driver, options, ...extras) {
         if (typeof this.#poll === 'function') { // remove previous polling listener
-            this?.driver?.on("tick", this.#poll);
+            this?.driver?.off("tick", this.#poll);
         }
         if (typeof this.#push === 'function') { // remove previous pushing listener
             this.off("change", this.#push);
@@ -139,108 +118,173 @@ export class TData extends EventEmitter {
         this.#push = (tagname) => {
             const key = `${this.name}:${tagname}`;
             debounce(key, async () => {
-                const tag_info = this.get_tag_info(tagname);
-                assert(tag_info != null);
-                await this.IO_write(tag_info);
+                const tag = this.get(tagname);
+                assert(tag != null);
+                const { byte_offset: start, length } = tag;
+                await this.IO_write({ start, length });
             }, 200);
         };
         if (options.push) this.on("change", this.#push);
     }
 
-    init(item) {
-        const offset = item.offset;
-        const type = item.type.toLowerCase();
-        const name = item.name;
+    init(_item) {
+        const offset = _item.offset;
+        const type = _item.type.toLowerCase();
+        const name = _item.name;
+        const value = _item.init_value;
+        if (this[name]) throw new Error(`new tag has duplicated name: ${name}`);
         let byte_offset = offset >> 3;
         const byte_remainder = byte_offset % 2;
         const bit_offset = offset % 8;
-        const bit_number = 1 << bit_offset;
-        const tag_info = {
-            start: byte_offset,
+        const bit_mask = 1 << bit_offset;
+        const tag = {
+            name, type, value,
+            byte_offset, bit_offset, bit_mask,
             length: 2,
         }
-        if (type === "bool" || type === "byte") {
-            if (type === "byte") assert(bit_offset === 0);
-            byte_offset += 1 - byte_remainder * 2; // swap high and low bytes for big_endian
-        } else {
+        if (type === "byte") assert(bit_offset === 0);
+        if (type !== "bool" && type !== "byte") {
             // Byte index value with word units as delimiters
             assert(byte_remainder === 0 && bit_offset === 0);
         }
-        this.#couplings[name] = item.coupling;
+        this.#couplings[name] = _item.coupling.map(cp => cp.name);
 
-        assert(this.#tags_info[name] == null);
-        this.#tags_info[name] = tag_info;
-        const getters = this.#getters;
-        assert(getters[name] == null);
-        const setters = this.#setters;
-        assert(setters[name] == null);
+        if (this.#tags[name]) console.log(name);
+        assert(this.#tags[name] == null);
+        let self = this;
         switch (type) {
             case 'bool':
-                getters[name] = () => (this.#buffer.readUInt8(byte_offset) & bit_number) > 0;
-                setters[name] = (value) => {
-                    let byte = this.#buffer.readUInt8(byte_offset);
-                    if (value) byte = byte | bit_number;
-                    else byte = byte & ~bit_number;
-                    this.#buffer.writeUInt8(byte, byte_offset);
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return (self.#buffer.readUInt8(byte_offset) & bit_mask) > 0;
+                    },
+                    set _value(v) {
+                        let byte = self.#buffer.readUInt8(byte_offset);
+                        if (v) byte = byte | bit_mask;
+                        else byte = byte & ~bit_mask;
+                        self.#buffer.writeUInt8(byte, byte_offset);
+                    },
+                    length: 1,
                 };
                 break;
             case 'byte':
-                getters[name] = () => this.#buffer.readUInt8(byte_offset);
-                getters[name] = () => this.#buffer.wirteUInt8(byte_offset);
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return self.#buffer.readUInt8(byte_offset);
+                    },
+                    set _value(v) {
+                        self.#buffer.wirteUInt8(v, byte_offset);
+                    },
+                    length: 1,
+                };
                 break;
             case 'int':
-                getters[name] = () => this.#buffer.readInt16BE(byte_offset);
-                setters[name] = (value) => {
-                    this.#buffer.writeInt16BE(value, byte_offset);
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return self.#buffer.readInt16BE(byte_offset);
+                    },
+                    set _value(v) {
+                        self.#buffer.writeInt16BE(v, byte_offset);
+                    },
                 };
                 break;
             case 'uint':
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return self.#buffer.readUInt16BE(byte_offset);
+                    },
+                    set _value(v) {
+                        self.#buffer.writeUInt16BE(v, byte_offset);
+                    },
+                };
+                break;
             case 'word':
-                getters[name] = () => this.#buffer.readUInt16BE(byte_offset);
-                setters[name] = (value) => {
-                    this.#buffer.writeUInt16BE(value, byte_offset);
+                // For the combination of bits and bytes, use little_endian
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return self.#buffer.readUInt16LE(byte_offset);
+                    },
+                    set _value(v) {
+                        self.#buffer.writeUInt16LE(v, byte_offset);
+                    },
                 };
                 break;
             case 'dint':
-                getters[name] = () => this.#buffer.readInt32BE(byte_offset);
-                tag_info.length = 4;
-                setters[name] = (value) => {
-                    this.#buffer.writeInt32BE(value, byte_offset);
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return self.#buffer.readInt32BE(byte_offset);
+                    },
+                    set _value(v) {
+                        self.#buffer.writeInt32BE(v, byte_offset);
+                    },
+                    length: 4,
                 };
                 break;
             case 'udint':
-                getters[name] = () => this.#buffer.readUInt32BE(byte_offset);
-                tag_info.length = 4;
-                setters[name] = (value) => {
-                    this.#buffer.writeUInt32BE(value, byte_offset);
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return self.#buffer.readUInt32BE(byte_offset);
+                    },
+                    set _value(v) {
+                        self.#buffer.writeUInt32BE(v, byte_offset);
+                    },
+                    length: 4,
                 };
                 break;
+            case 'dword':
+                // For the combination of bits and bytes, use little_endian
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return self.#buffer.readUInt32LE(byte_offset);
+                    },
+                    set _value(v) {
+                        self.#buffer.writeUInt32LE(v, byte_offset);
+                    },
+                    length: 4,
+                }
             case 'real':
-                getters[name] = () => this.#buffer.readFloatBE(byte_offset);
-                setters[name] = (value) => {
-                    this.#buffer.writeFloatBE(value, byte_offset);
+                this.#tags[name] = {
+                    ...tag,
+                    get _value() {
+                        return self.#buffer.readFloatBE(byte_offset);
+                    },
+                    set _value(v) {
+                        self.#buffer.writeFloatBE(v, byte_offset);
+                    },
+                    length: 4,
                 };
-                tag_info.length = 4;
                 break;
             default:
                 break;
         }
-        this.#values[name] = getters[name]();
-        const self = this;
         Object.defineProperty(self, name, {
             get() {
-                return self.#values[name];
+                return self.#tags[name].value;
             },
             set(value) {
-                self.set(name, value);
+                const tag = self.#tags[name];
+                tag._value = value;
+                self.check_tag(name);
+                debounce(`${self.name}_${name}_inner_setter`, () => {
+                    self.check_coupling(name);
+                }, 100);
             },
             enumerable: true,
             configurable: false,
         });
     }
 
-    constructor(data_struct) {
+    constructor(data_struct, name) {
         super();
+        this.name = name;
         const size = data_struct.length >> 3;
         const buffer = Buffer.alloc(size, 0);
         this.setMaxListeners(100);

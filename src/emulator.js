@@ -14,9 +14,9 @@ function loop_actuator(actuator) {
         data.pump_run_2 = false;
         data.pump_run_3 = false;
         data.pump_run_4 = false;
-        data.response_code |= 0x1;
+        data.stop_pumps = true;
     } else {
-        data.response_code &= 0xfffe;
+        data.stop_pumps = false;
     }
     if (actuator.write_paras) {
         const data_para_start = data.groups.paras.start >> 3;
@@ -24,7 +24,7 @@ function loop_actuator(actuator) {
         const cmd_para_end = command.groups.paras.end >> 3;
         command.buffer.copy(data.buffer, data_para_start, cmd_para_start, cmd_para_end);
         data.check_all_tags();
-        data.response_code |= 0x80;
+        data.write_paras = true;
         actuator.write_paras = false;
     }
 }
@@ -47,13 +47,13 @@ function actuator_init(actuator) {
             }, data.pump_change_delay);
             return;
         }
-        if (tagname === 'command_word') {
+        if (tagname === 'commands') {
             if (new_value == 0) data.response_code = 0;
         }
         if (tagname === 'pressure') {
-            const enable_pressure_alarm = data.enable_pressure_alarm;
-            data.pressure_WH_F = enable_pressure_alarm && (new_value > data.pressure_WH);
-            data.pressure_AH_F = enable_pressure_alarm && (new_value > data.pressure_AH);
+            const pressure_enabled = data.pressure_enabled;
+            data.pressure_WH_F = pressure_enabled && (new_value > data.pressure_WH);
+            data.pressure_AH_F = pressure_enabled && (new_value > data.pressure_AH);
         }
     });
     data.ID = id;
@@ -63,7 +63,7 @@ function actuator_init(actuator) {
     data.pressure_SD_F = pressure_SD;
     data.comm_OK = true;
     data.work_OK = true;
-    data.enable_pressure_alarm = true;
+    data.pressure_enabled = true;
     data.temperature_zero_raw = 0;
     data.temperature_span_raw = 27648;
     data.temperature_underflow = -500;
@@ -89,18 +89,18 @@ function actuator_init(actuator) {
         if (tagname === 'enable_pressure_SD') {
             if (new_value) {
                 data.pressure_SD_F = true;
-                data.response_code |= 0x10;
+                data.enable_pressure_SD = true;
             } else {
-                data.response_code &= 0xFFEF;
+                data.enable_pressure_SD = false;
             }
             return;
         }
         if (tagname === 'disable_pressure_SD') {
             if (new_value) {
                 data.pressure_SD_F = false;
-                data.response_code |= 0x20;
+                data.disable_pressure_SD = true;
             } else {
-                data.response_code &= 0xFFDF;
+                data.disable_pressure_SD = false;
             }
             return;
         }
@@ -108,28 +108,28 @@ function actuator_init(actuator) {
             if (new_value) {
                 // When write_paras changes,
                 // the relevant parameters may not be ready,
-                // so the copy operation is placed at the next tick.
+                // so the operation is placed at the next tick.
                 actuator.write_paras = true;
             } else {
-                data.response_code &= 0xFF7F;
+                data.write_paras = false;
             }
             return;
         }
         if (tagname === 'enable') {
             if (new_value) {
                 data.work_OK = true;
-                data.response_code |= 0x400;
+                data.enable = true;
             } else {
-                data.response_code &= 0xFBFF;
+                data.enable = false;
             }
             return;
         }
         if (tagname === 'disable') {
             if (new_value) {
                 data.work_OK = false;
-                data.response_code |= 0x800;
+                data.disable = true;
             } else {
-                data.response_code &= 0xF7FF;
+                data.disable = false;
             }
             return;
         }
@@ -140,13 +140,21 @@ function actuator_init(actuator) {
 const unit_map_poll = {};
 const actuators = [];
 
+function init_tdata(tdata, info, offset) {
+    const unit_id = info.unit_id;
+    const port = info.port;
+    unit_map_poll[port] ??= {};
+    const unit_map = unit_map_poll[port];
+    attach_unit(unit_map, unit_id, tdata, info.start, offset);
+}
+
 function prepare_actuator(name) {
     const cfg_actuator = cfg_actuators[name];
     if (cfg_actuator == undefined) {
         return null;
     }
     const {
-        id, IP, pumps,
+        id, pumps,
         pressure_AH,
         pressure_WH,
         pressure_AI,
@@ -156,21 +164,17 @@ function prepare_actuator(name) {
         pressure_AL,
         modbus_server,
     } = cfg_actuator;
-    const unit_id = modbus_server.unit_id;
-    const port = modbus_server.port;
-    unit_map_poll[port] ??= {};
-    const unit_map = unit_map_poll[port];
+    if (modbus_server == undefined) return null;
+    const data = new TData(NODE);
+    const command = new TData(COMMAND);
+    init_tdata(data, modbus_server.data, 0);
+    init_tdata(command, modbus_server.commands, 16);
 
     const has_pumps = pumps != undefined;
-    let write_paras = false;
-    const data = new TData(NODE);
-    attach_unit(unit_map, unit_id, data, 0);
-    const command = new TData(COMMAND);
-    attach_unit(unit_map, unit_id, command, 200 - 16);
+    const write_paras = false;
     const actuator = {
         id, name,
         data, command,
-        IP, port, unit_id, unit_map,
         has_pumps, write_paras,
         pressure_AH,
         pressure_WH,
@@ -199,8 +203,6 @@ export async function run(running_actuator_names) {
 
     // start modbus TCP server
     for (const [port, unit_map] of Object.entries(unit_map_poll)) {
-        // console.log(port); //@debug
-        // console.log(unit_map); //@debug
         const server = createMTServer('0.0.0.0', port, unit_map);
         server.on("close", () => {
             console.log("connection closed!");

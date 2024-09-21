@@ -87,6 +87,7 @@ const get_register_info = (addr, units) => {
     const byte_offset = addr * 2;
     for (const { tdata, start, offset, end } of units) {
         if (tdata.buffer && byte_offset >= start && byte_offset < end) {
+            // return.offset: the index in the buffer
             return { tdata, offset: byte_offset + offset - start };
         }
     }
@@ -175,6 +176,16 @@ function new_blank_unit(unit_id) {
     return unit;
 }
 
+/**
+ * Attaches a unit to the unit map.
+ *
+ * @param {Object} unit_map - The map of units.
+ * @param {number} unit_id - The ID of the unit.
+ * @param {TData} tdata - The TData object that contains the data associated with the unit.
+ * @param {number} [start=0] - The starting index of the unit's data.
+ * @param {number} [offset=0] - The starting index of the TData object.
+ * @return {void} This function does not return anything.
+ */
 export function attach_unit(unit_map, unit_id, tdata, start = 0, offset = 0) {
     unit_map[unit_id] ??= new_blank_unit(unit_id);
     unit_map[unit_id].push({

@@ -38,6 +38,7 @@
     "build": "rollup -c",
     "dev": "cd example && node ../src/main.js JSC",
     "watch": "cd example && nodemon ../src/main.js JSC --watch ../src --ext js",
+    "emu": "cd example && nodemon ../src/emulator.js GD9 KX JX7 JX1 SC DY9 --watch ../src/emulator.js --ext js",
     "prepare": "pnpm build"
   },
   "bin": {

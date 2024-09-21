@@ -110,11 +110,11 @@ export function section_loop(section) {
     const flow_diff = flow_begin - flow_end;
     data.flow_diff = flow_diff;
     const flow_warning_trigger = (flow_diff > data.flow_diff_WH) && !bypass;
-    data.flowWarningTrigger = flow_warning_trigger;
+    data.flow_warning_trigger = flow_warning_trigger;
     if (flow_warning_trigger) section.flow_warning_count += MAIN_PERIOD;
     else section.flow_warning_count = 0;
     const flow_alarm_trigger = (flow_diff > data.flow_diff_AH) && !bypass;
-    data.flowAlarmTrigger = flow_alarm_trigger;
+    data.flow_alarm_trigger = flow_alarm_trigger;
     if (flow_alarm_trigger) section.flow_alarm_count += MAIN_PERIOD;
     else section.flow_alarm_count = 0;
     const flow_warning_F = section.flow_warning_count > data.flow_diff_WH_delay;

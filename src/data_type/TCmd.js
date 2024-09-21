@@ -1,95 +1,25 @@
+import { node_commands, complete_structure } from "./TShare.js";
+
 export const COMMAND = {
     name: "COMMAND",
-    length: 1184,
     groups: {
         status: { start: 128, end: 160 },
         paras: { start: 160, end: 1184 },
     },
     items: [
-        { name: "response_code", type: "UInt", offset: 0, length: 16, init_value: 0 }, // 节点执行后的应答代码
-        { name: "overtime", type: "Int", offset: 16, length: 16, init_value: 5000 }, // 应答超时设定(毫秒)
-        { name: "has_commands", type: "Bool", offset: 48, length: 1, init_value: false }, // 当前有命令需要发送
-        { name: "reset_paras", type: "Bool", offset: 64, length: 1, init_value: false }, // 将命令参数值重置为节点参数值
-        { name: "ID", type: "UInt", offset: 128, length: 16, init_value: 8012 }, // 节点ID
-        {   // 命令字
-            name: "command_word", type: "Word", offset: 144, length: 16, init_value: 0,
+        { name: "response_code", type: "Word", offset: 0, length: 16, init_value: 0 }, // 已无作用
+        { name: "overtime", type: "Int", offset: 16, length: 16, init_value: 5000 }, // 应答超时设定(毫秒) 暂无作用
+        {   // 扩展命令
+            name: "extra_commands", type: "Word", offset: 48, length: 16, init_value: 0,
             coupling: [
-                "stop_pumps",
-                "cancel_stop",
-                "horn",
-                "reset_horn",
-                "enable_pressure_SD",
-                "disable_pressure_SD",
-                "read_paras",
-                "write_paras",
-                "enable_pressure_alarm",
-                "disable_pressure_alarm",
-                "enable",
-                "disable",
-                "reset_CPU",
-                "reset_conn",
-                "executing",
-            ]
+                { name: "has_commands", type: "Bool", offset: 0, length: 1, init_value: false }, // 当前有命令需要发送
+                { name: "reset_paras", type: "Bool", offset: 1, length: 1, init_value: false }, // 将命令参数值重置为节点参数值
+            ],
         },
-        {   // 停泵命令
-            name: "stop_pumps", type: "Bool", offset: 144, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 取消停泵
-            name: "cancel_stop", type: "Bool", offset: 145, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 输出报警
-            name: "horn", type: "Bool", offset: 146, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 停止报警
-            name: "reset_horn", type: "Bool", offset: 147, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 设置压力联锁停泵
-            name: "enable_pressure_SD", type: "Bool", offset: 148, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 取消压力联锁停泵
-            name: "disable_pressure_SD", type: "Bool", offset: 149, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 读取所有参数
-            name: "read_paras", type: "Bool", offset: 150, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 写参数命令
-            name: "write_paras", type: "Bool", offset: 151, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 允许压力报警
-            name: "enable_pressure_alarm", type: "Bool", offset: 152, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 禁止压力报警
-            name: "disable_pressure_alarm", type: "Bool", offset: 153, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 允许该节点工作
-            name: "enable", type: "Bool", offset: 154, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 禁止该节点工作
-            name: "disable", type: "Bool", offset: 155, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 重置CPU
-            name: "reset_CPU", type: "Bool", offset: 156, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 重置连接
-            name: "reset_conn", type: "Bool", offset: 157, length: 1, init_value: false,
-            coupling: ["command_word"]
-        },
-        {   // 正在执行
-            name: "executing", type: "Bool", offset: 159, length: 1, init_value: false,
-            coupling: ["command_word"]
+        { name: "ID", type: "UInt", offset: 128, length: 16, init_value: 8012 }, // 节点ID
+        {   // 命令
+            name: "commands", type: "Word", offset: 144, length: 16, init_value: 0,
+            coupling: node_commands,
         },
         { name: "temperature_zero_raw", type: "Int", offset: 160, length: 16, init_value: 0 }, // 温度原始零点值
         { name: "temperature_span_raw", type: "Int", offset: 176, length: 16, init_value: 27648 }, // 温度原始量程值
@@ -130,20 +60,4 @@ export const COMMAND = {
     ]
 };
 
-export const command_code = {
-    stop_pumps: 1,
-    cancel_stop: 2,
-    horn: 4,
-    reset_horn: 8,
-    enable_pressure_SD: 16,
-    disable_pressure_SD: 32,
-    read_paras: 64,
-    write_paras: 128,
-    enable_pressure_alarm: 256,
-    disable_pressure_alarm: 512,
-    enable_temperature_alarm: 1024,
-    disable_temperature_alarm: 2048,
-    reset_CPU: 4096,
-    reset_conn: 8192,
-    executing: 32768,
-}
+complete_structure(COMMAND);

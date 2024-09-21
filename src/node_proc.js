@@ -52,28 +52,33 @@ export function node_init(actuator) {
         commands_extras.push(commands.area, commands.db);
     }
 
+
     data.ID = ID;
+    const start = 0; // The local buffer start address where data needs to be copied
     data.set_IO(data_driver, {
         remote_start: driver_info.data.start,
+        start,
         length: data.size,
         poll: true,
     }, ...data_extras);
-    const start = (data.groups.status.start >> 3) + 2;
-    const end = data.groups.paras.end >> 3;
-    data.on('data', buffer => { // when driver's data buffer coming
-        // comm_OK tag offset
-        const word_offset = 2;  // Exclude ID tag
-        const bit_offset = 0;
+
+    // Copy a specific portion of the data when it arrives.
+    const local_start = (data.groups.status.start >> 3) + 2/* skip copying ID which ending in 2 */;
+    const data_start = local_start - start/* current value is 0 */;
+    const data_end = (data.groups.paras.end >> 3) - start;
+    data.on('data', buffer => {
+        // when driver's data buffer coming
         // keep the value of comm_OK tag as 1
-        buffer.writeUInt16BE(buffer.readUInt16BE(word_offset) | (1 << bit_offset), word_offset);
-        buffer.copy(data.buffer, start, start, end);
+        buffer.copy(data.buffer, local_start, data_start, data_end);
+        data.comm_OK = true;
         data.check_all_tags();
         // @delete temporary code
         // because the PLC is not completed,
         // except stop_pumps enable_pressure_SD disable_pressure_SD and write_paras
         // all commands in response_code are ignored.
-        command.command_word = command.command_word & 0xB1;
+        command.commands = command.commands & 0xB1;
     });
+
     data.on("change", (tagname, old_value, new_value) => {
         // handle command response_code
         // valid: (handled in PLC)
@@ -86,10 +91,9 @@ export function node_init(actuator) {
         //     enable_temperature_alarm disable_temperature_alarm
         //     reset_CPU reset_conn
         if (tagname === 'response_code' && new_value) {
-            // Reset the corresponding bit in command_word according to response_code
-            let command_word = command.command_word;
-            command_word = ~new_value & command_word & 0x7fff;
-            command.command_word = command_word;
+            // Reset the corresponding bit in commands according to response_code
+            command.commands = ~new_value & command.commands;
+            command.executing = false;
             if (data.response_code !== 0) debounce_send_commands();
             return;
         }
@@ -108,6 +112,7 @@ export function node_init(actuator) {
         }
     });
 
+
     command.ID = ID;
     command.set_IO(command_driver, {
         remote_start: driver_info.commands.start,
@@ -122,7 +127,7 @@ export function node_init(actuator) {
             }, 500);
             return;
         }
-        if (tagname === 'command_word') {
+        if (tagname === 'commands') {
             command.has_commands = new_value > 0;
             debounce_send_commands();
             return;
@@ -130,7 +135,7 @@ export function node_init(actuator) {
     });
 
     data_driver.start();
-    if(!command_driver.is_connected) command_driver.start();
+    if (!command_driver.is_connected) command_driver.start();
 }
 
 export function node_loop(actuator) {
