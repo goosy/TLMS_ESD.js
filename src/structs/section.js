@@ -1,4 +1,4 @@
-import { complete_structure } from "./TShare.js";
+import { complete_structure } from "./share.js";
 
 const section_status = [
     { name: "comm_OK", type: "Bool", offset: 0, length: 1, init_value: false }, // 本段所有节点通讯正常
