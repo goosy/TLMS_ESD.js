@@ -45,8 +45,8 @@ function add_conf(doc) {
             const unit_id = modbus_server.unit_id ?? 1;
             const start = modbus_server.start ?? 0;
             const length = modbus_server.length;
-            const endian = modbus_server.endian ?? 'big';
-            const combined_endian = modbus_server.combined_endian ?? 'little';
+            const endian = modbus_server.endian ?? 'BE';
+            const combined_endian = modbus_server.combined_endian ?? 'LE';
 
             const data = modbus_server.data ?? {};
             data.port ??= port;
@@ -67,8 +67,8 @@ function add_conf(doc) {
             const db = s7_server.db ?? 10;
             const start = s7_server.start ?? 0;
             const length = s7_server.length;
-            const endian = s7_server.endian ?? 'big';
-            const combined_endian = s7_server.combined_endian ?? 'little';
+            const endian = s7_server.endian ?? 'BE';
+            const combined_endian = s7_server.combined_endian ?? 'LE';
 
             const data = s7_server.data ?? {};
             data.area ??= area;

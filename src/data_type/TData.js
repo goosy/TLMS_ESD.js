@@ -2,14 +2,27 @@ import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
 import { logger } from "../util.js";
 
+const reverse_endians = {
+    big: 'LE',
+    BE: 'LE',
+    little: 'BE',
+    LE: 'BE',
+    BEBS: 'LEBS',
+    LEBS: 'BEBS',
+}
+
 export class TData extends EventEmitter {
-    // only read
-    #buffer;
     /**
-     * get the internal buffer
+     * @type {Buffer}
+     * @readonly
+     * @description Internal buffer
      * all data items are stored in Big-Endian format.
      * word items are an exception and are stored in Little-Endian format
      * because they are considered to be a combination of bits or bytes in sequence.
+     */
+    #buffer;
+    /**
+     * get the internal buffer
      *
      * @return {Buffer} - the internal buffer.
      */
@@ -17,6 +30,15 @@ export class TData extends EventEmitter {
     get size() {
         return this.#buffer.length;
     }
+    /**
+     * @type {Buffer|null}
+     * @description IO buffer for data exchange with the driver.
+     * The endianness (BE, LE, BEBS, or LEBS) is determined by the driver.
+     * BE: Big Endian
+     * LE: Little Endian
+     * BEBS: Big Endian Byte Swap
+     * LEBS: Little Endian Byte Swap
+     */
     #IO_buffer = null;
     get IO_buffer() { return this.#IO_buffer; }
 
@@ -65,6 +87,8 @@ export class TData extends EventEmitter {
      * @param {number} [options.start=0] The starting address on the instance buffer, default is 0
      * @param {number} [options.remote_start=0] The starting address of the buffer on the remote device, default is 0
      * @param {number} [options.length] The effective length of the exchange data area, defaults to the remaining length of the buffer
+     * @param {string} [options.endian] - Endianness for data interpretation
+     * @param {boolean} [options.combined_endian] - Whether to use combined endianness
      * @return {void}
      */
     set_IO(driver, options, ...extras) {
@@ -77,11 +101,14 @@ export class TData extends EventEmitter {
         }
         this.driver = driver;
 
+        // starting position of exchange data segment in the current TData buffer.
         const IO_start = options.start ?? 0;
+        // starting position of exchange data segment in the driver.
         const remote_start = options.remote_start ?? 0;
+        // length of the exchange data segment
         const IO_length = options.length ?? this.#buffer.length - IO_start;
-        const endian = options.endian ?? "big";
-        const combined_endian = options.combined_endian ?? "little";
+        const endian = options.endian ?? "BE";
+        const combined_endian = options.combined_endian ?? "LE";
         this.create_tag_group = () => new Tag_Group(
             this,
             { IO_start, remote_start, IO_length, endian, combined_endian }
@@ -120,7 +147,6 @@ export class TData extends EventEmitter {
             await driver.write(buffer, { start }, ...extras);
             return true;
         }
-
         this.read_all = async () => {
             const start = remote_start;
             const length = IO_length;
@@ -163,7 +189,7 @@ export class TData extends EventEmitter {
             logger.error(`duplicated tag name: ${name}`);
             process.exit(1);
         }
-        
+
         const tag = {
             name, type, value,
             byte_offset, bit_offset, bit_mask,
@@ -323,27 +349,76 @@ class Tag_Group {
 
     constructor(tdata, options) {
         this.tdata = tdata;
-        this.buffer = tdata.buffer;
         this.IO_start = options.IO_start;
-        this.remote_offset = options.remote_start - this.IO_start;
         this.IO_length = options.IO_length;
-        this.skip_endian = options.endian === 'big';
-        this.skip_combined = options.combined_endian === 'little';
+        this.endian = options.endian;
+        this.combined_endian = options.combined_endian;
     }
 
+    /**
+     * Converts the endianness of a specific tag in the buffer between the specified endian format and Big Endian (BE).
+     *
+     * This method performs bidirectional conversion:
+     * - If the data is not in BE, it converts it to BE.
+     * - If the data is in BE, it converts it to the specified endian format.
+     *
+     * The method handles different endian formats:
+     * - LE (Little Endian): DCBA <-> ABCD
+     * - BEBS (Big Endian Byte Swap): BADC <-> ABCD
+     * - LEBS (Little Endian Byte Swap): CDAB <-> ABCD
+     *
+     * @param {Buffer} buffer - The buffer containing the data to be converted.
+     * @param {Object} tag - The tag object containing information about the data to be converted.
+     * @param {string} tag.type - The data type of the tag (e.g., 'bit', 'byte', 'word', 'dword').
+     * @param {number} tag.byte_offset - The offset in the buffer where the tag data starts.
+     * @param {number} tag.length - The length of the tag data in bytes.
+     *
+     * @returns {void} This method modifies the buffer in place and does not return a value.
+     */
     convert_tag_endian(buffer, tag) {
         if (tag.type === 'bit' || tag.type === 'byte') return;
-        if (tag.type === 'word' || tag.type === 'dword') {
-            if (this.skip_combined) return;
-        } else {
-            if (this.skip_endian) return;
-        }
+
         const index = tag.byte_offset;
+        const is_combined = tag.type === 'word' || tag.type === 'dword';
+        const endian = is_combined ? reverse_endians[this.combined_endian] : this.endian;
+
+        if (endian === 'BE' || endian === 'big') return;
+
         if (tag.length === 2) {
-            buffer.writeUInt16BE(buffer.readUInt16LE(index), index);
-        }
-        if (tag.length === 4) {
-            buffer.writeUInt32BE(buffer.readUInt32LE(index), index);
+            switch (endian) {
+                case 'LE':
+                case 'little': // BA
+                case 'BEBS': // BA
+                    const value = buffer.readUInt16LE(index);
+                    buffer.writeUInt16BE(value, index);
+                    break;
+                case 'LEBS': // AB
+                // LEBS for 2 bytes is the same as BE
+                default:
+                    break;
+            }
+        } else if (tag.length === 4) {
+            switch (endian) {
+                case 'LE':
+                case 'little': // DCBA <-> ABCD
+                    const value = buffer.readUInt32LE(index);
+                    buffer.writeUInt32BE(value, index);
+                    break;
+                case 'BEBS': // BADC <-> ABCD
+                    const LE0 = buffer.readUInt16LE(index);
+                    const LE1 = buffer.readUInt16LE(index + 2);
+                    buffer.writeUInt16BE(LE0, index);
+                    buffer.writeUInt16BE(LE1, index + 2);
+                    break;
+                case 'LEBS': // CDAB <-> ABCD
+                    const BE0 = buffer.readUInt16BE(index);
+                    const BE1 = buffer.readUInt16BE(index + 2);
+                    buffer.writeUInt16BE(BE0, index + 2);
+                    buffer.writeUInt16BE(BE1, index);
+                    break;
+                default:
+                    break;
+            }
         }
     }
 
@@ -351,21 +426,9 @@ class Tag_Group {
         return Buffer.from(this.tdata.buffer);
     }
 
-    /**
-     * Asynchronously reads the IO buffer if the driver is connected, otherwise logs an error and returns null.
-     *
-     * @return {Promise<Buffer|null>} The IO buffer if the driver is connected, otherwise null.
-     */
-    async read_IO_buffer() {
-        if (await this.tdata.read_all()) {
-            return this.tdata.IO_buffer;
-        }
-        return null;
-    }
-
     async read() {
-        const IO_buffer = await this.read_IO_buffer();
-        if (IO_buffer === null) return;
+        if (!await this.tdata.read_all()) return;
+        const IO_buffer = this.tdata.IO_buffer;
         this.#tags.forEach(tag => this.convert_tag_endian(IO_buffer, tag));
         this.#areas.forEach(area => {
             const { start, end } = area;
@@ -386,11 +449,11 @@ class Tag_Group {
 
     #add(tagname) {
         const tag = this.tdata.get(tagname);
-        this.#tags.push(tag);
         if (!tag) {
             logger.error('Invalid tag configuration');
             process.exit(1);
         }
+        this.#tags.push(tag);
         const tag_start = tag.byte_offset;
         const length = tag.length;
         if (typeof tag_start !== 'number' || typeof length !== 'number' || length < 0) {
