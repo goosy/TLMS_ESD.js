@@ -205,7 +205,7 @@ export class Unit_Map {
      * Attaches a unit to the unit map.
      *
      * @param {number} unit_id - The ID of the unit.
-     * @param {import('../data_type/TData.js').TData} tdata - The TData object that contains the data associated with the unit.
+     * @param {import('../typed_data/TData.js').TData} tdata - The TData object that contains the data associated with the unit.
      * @param {number} [start=0] - The starting index of the unit's data.
      * @param {number} [offset=0] - The starting index of the TData object.
      * @return {void} This function does not return anything.

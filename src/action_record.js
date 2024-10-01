@@ -1,8 +1,8 @@
 import { access, writeFile, appendFile } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import csv_parser from 'csv-parser';
-import { TData } from './data_type/TData.js';
-import { RECORD } from './data_type/TRecord.js';
+import { TData } from './typed_data/TData.js';
+import { RECORD } from './structs/record.js';
 import { logger } from './util.js';
 
 const HEADERS = RECORD.items
