@@ -1,4 +1,4 @@
-import { complete_structure } from "./TShare.js";
+import { complete_structure } from "./share.js";
 
 export const RECORD = {
     name: "RECORD",

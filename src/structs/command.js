@@ -1,4 +1,4 @@
-import { node_commands, complete_structure } from "./TShare.js";
+import { node_commands, complete_structure } from "./share.js";
 
 export const COMMAND = {
     name: "COMMAND",

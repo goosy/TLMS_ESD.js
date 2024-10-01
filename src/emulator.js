@@ -1,7 +1,7 @@
 import { Unit_Map, createMTServer } from "./drivers/modbusTCP.js";
-import { TData } from "./data_type/TData.js";
-import { NODE } from "./data_type/TNode.js";
-import { COMMAND } from "./data_type/TCmd.js";
+import { TData } from "./typed_data/TData.js";
+import { NODE } from "./structs/node.js";
+import { COMMAND } from "./structs/command.js";
 import { read_config, cfg_actuators, MAIN_PERIOD } from "./config.js";
 import { debounce, logger } from './util.js';
 
