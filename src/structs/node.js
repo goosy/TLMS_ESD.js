@@ -1,4 +1,4 @@
-import { node_commands, complete_structure } from "./TShare.js";
+import { node_commands, complete_structure } from "./share.js";
 
 const node_status = [
     { name: "comm_OK", type: "Bool", offset: 0, length: 1, init_value: true }, // 用于维护节点通讯状态
