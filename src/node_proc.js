@@ -63,7 +63,7 @@ export function node_init(actuator) {
         'pressure_zero', 'pressure_span',
         'pressure_AH', 'pressure_WH', 'pressure_WL', 'pressure_AL',
         'pressure_DZ', 'pressure_FT',
-        'flow1', 'flow2', 'flow3', 'flow4', 'flow5',
+        'delay_protect_time',
         'flow_smooth_factor',
         'equS1', 'equS2', 'equS3', 'equS4', 'equS5',
         'pump_change_delay',
@@ -168,7 +168,7 @@ export function node_init(actuator) {
         'pressure_zero', 'pressure_span',
         'pressure_AH', 'pressure_WH', 'pressure_WL', 'pressure_AL',
         'pressure_DZ', 'pressure_FT',
-        'flow1', 'flow2', 'flow3', 'flow4', 'flow5',
+        'delay_protect_time',
         'flow_smooth_factor',
         'equS1', 'equS2', 'equS3', 'equS4', 'equS5',
         'pump_change_delay',
@@ -197,27 +197,31 @@ export function node_init(actuator) {
 }
 
 let no_response_count = 0;
+let disconnect_count = 0;
 
 export function node_loop(actuator) {
     const { data, command, data_driver } = actuator;
-    const is_connected = data_driver.is_connected;
-    data.comm_OK = is_connected;
-    if (is_connected) {
+    if (data_driver.is_connected) {
+        if (!data.comm_OK) data.comm_OK = true;
+        disconnect_count = 0;
         // read a node data.
         actuator.data_payload.read();
         // @TODO check the correctness of the ID
-        data.comm_OK = true;
         // @delete temporary code
-        // because the PLC is not completed,
+        // because the PLC program is not completed,
         // all commands except stop_pumps enable_pressure_SD disable_pressure_SD and write_paras
         // will reset unconditionally.
         command.commands = command.commands & 0xB1;
     } else {
-        data.work_OK = false;
+        if (data.comm_OK) data.comm_OK = false;
+        disconnect_count++;
+    }
+    if (disconnect_count * 1000 > data.delay_protect_time && data.delay_protect) {
+        data.delay_protect = false;
     }
     if (command.has_commands === true) no_response_count++;
     else no_response_count = 0;
-    if (no_response_count > 2) {
+    if (no_response_count > 3) {
         actuator.debounce_send_commands();
     }
 }

@@ -43,7 +43,7 @@ export function section_init(section) {
     section.update_comm_OK = get_update_fn(
         'AND',
         section, 'comm_OK',
-        all_nodes
+        all_nodes, 'delay_protect'
     );
     section.update_work_OK = get_update_fn(
         'AND',
