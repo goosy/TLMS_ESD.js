@@ -45,11 +45,11 @@ export const COMMAND = {
         { name: "pressure_AL", type: "Real", offset: 704, length: 32, init_value: 0 }, // 压力低低值
         { name: "pressure_DZ", type: "Real", offset: 736, length: 32, init_value: 0.05 }, // 压力比较死区
         { name: "pressure_FT", type: "UDInt", offset: 768, length: 32, init_value: 0 }, // 压力比较容错时间
-        { name: "flow1", type: "Real", offset: 800, length: 32, init_value: 0 }, // 流量1
-        { name: "flow2", type: "Real", offset: 832, length: 32, init_value: 0 }, // 流量2
-        { name: "flow3", type: "Real", offset: 864, length: 32, init_value: 0 }, // 流量3
-        { name: "flow4", type: "Real", offset: 896, length: 32, init_value: 0 }, // 流量4
-        { name: "flow5", type: "Real", offset: 928, length: 32, init_value: 0 }, // 流量5
+        { name: "reserve1", type: "Real", offset: 800, length: 32, init_value: 0 }, // 预留1
+        { name: "reserve2", type: "Real", offset: 832, length: 32, init_value: 0 }, // 预留2
+        { name: "reserve3", type: "Real", offset: 864, length: 32, init_value: 0 }, // 预留3
+        { name: "reserve4", type: "Real", offset: 896, length: 32, init_value: 0 }, // 预留4
+        { name: "delay_protect_time", type: "UDInt", offset: 928, length: 32, init_value: 5000 }, //通讯中断延后挂起时间
         { name: "flow_smooth_factor", type: "Real", offset: 960, length: 32, init_value: 0.9 }, // 流量平滑权值
         { name: "equS1", type: "DInt", offset: 992, length: 32, init_value: 10000 }, // 流量1当量
         { name: "equS2", type: "DInt", offset: 1024, length: 32, init_value: 10000 }, // 流量2当量
@@ -57,7 +57,7 @@ export const COMMAND = {
         { name: "equS4", type: "DInt", offset: 1088, length: 32, init_value: 10000 }, // 流量4当量
         { name: "equS5", type: "DInt", offset: 1120, length: 32, init_value: 10000 }, // 流量5当量
         { name: "pump_change_delay", type: "UDInt", offset: 1152, length: 32, init_value: 180000 }, // 泵操作延时
-    ]
+    ],
 };
 
 complete_structure(COMMAND);
