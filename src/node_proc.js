@@ -19,6 +19,11 @@ export function node_init(actuator) {
     actuator.reset_parameters = () => {
         actuator.commands_payload.copy_from(data);
     };
+    actuator.write_parameters = async () => {
+        actuator.data_parameters.copy_from(command);
+        return actuator.data_parameters.write();
+    };
+
     if (has_pumps) actuator.update_pump_run = () => {
         data.pump_run = data.pump_run_1 || data.pump_run_2 || data.pump_run_3 || data.pump_run_4;
     }
@@ -70,6 +75,7 @@ export function node_init(actuator) {
         'response_code',
         ...parameters_tags
     );
+    actuator.data_parameters = data.create_tag_group(...parameters_tags);
 
     data.on("change", (tagname, old_value, new_value) => {
         logger.debug(`actuator_${name}_data: ${tagname} ${old_value} => ${new_value}`);
@@ -165,12 +171,17 @@ export function node_init(actuator) {
     command.on("change", (tagname, old_value, new_value) => {
         logger.debug(`actuator_${name}_command: ${tagname} ${old_value} => ${new_value}`);
     });
-    command.get('reset_paras').on("change", (_, new_value) => {
+    command.get('read_paras').on("change", (_, new_value) => {
         if (new_value) {
             actuator.reset_parameters();
-            setTimeout(() => {
-                command.reset_paras = false;
-            }, 500);
+            process.nextTick(() => {command.read_paras = false});
+        }
+    });
+    command.get('write_paras').on("change", (_, new_value) => {
+        if (new_value) {
+            actuator.write_parameters().then(() => {
+                command.write_paras = false;
+            });
         }
     });
     command.get('commands').on("change", (_, new_value) => {
