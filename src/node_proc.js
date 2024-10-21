@@ -26,9 +26,13 @@ export function node_init(actuator) {
     }
 
     const { endian, combined_endian } = driver_info;
-    data_driver.on("data_error", () => {
-        data.work_OK = false;
+    data_driver.on("data_error", (e) => {
+        logger.debug(`actuator ${name} ${e}`);
     });
+    data_driver.on('connfailed', (e) => {
+        data.work_OK = false;
+        logger.error(`actuator ${name} connection failed: ${e}`);
+    })
     data_driver.on("connect", () => {
         // reset parameter
         setTimeout(actuator.reset_parameter, 2000);

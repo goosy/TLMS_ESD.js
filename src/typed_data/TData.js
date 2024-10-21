@@ -136,16 +136,13 @@ export class TData extends EventEmitter {
             if (buffer) {
                 buffer.copy(this.#IO_buffer, range.start, /*start*/0, /*end*/length);
                 return true;
-            } else {
-                this.emit("read_error");
-                return false;
             }
+            return false;
         }
         this.IO_write = async (buffer, range) => {
             if (!check_driver(range)) return false;
             const start = range.start + offset;
-            await driver.write(buffer, { start }, ...extras);
-            return true;
+            return await driver.write(buffer, { start }, ...extras);
         }
         this.IO_read_all = async () => {
             const start = remote_start;
@@ -156,10 +153,8 @@ export class TData extends EventEmitter {
                 buffer.copy(this.#IO_buffer, IO_start);
                 this.emit("data", buffer);
                 return true;
-            } else {
-                this.emit("read_error");
-                return false;
             }
+            return false;
         }
     }
 
