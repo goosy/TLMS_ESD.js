@@ -2,10 +2,12 @@ import { Unit_Map, createMTServer } from "./drivers/modbusTCP.js";
 import { TData } from "./typed_data/TData.js";
 import { NODE } from "./structs/node.js";
 import { COMMAND } from "./structs/command.js";
+import { node_parameters } from "./structs/share.js";
 import { read_config, cfg_actuators, MAIN_PERIOD } from "./config.js";
 import { debounce, logger } from './util.js';
 
 logger.category = 'console';
+const parameters_tags = node_parameters.map(item => item.name);
 
 function loop_actuator(actuator) {
     // host_actuator(actuator);
@@ -20,11 +22,7 @@ function loop_actuator(actuator) {
         data.stop_pumps = false;
     }
     if (actuator.write_paras) {
-        const data_para_start = data.groups.paras.start >> 3;
-        const cmd_para_start = command.groups.paras.start >> 3;
-        const cmd_para_end = command.groups.paras.end >> 3;
-        command.buffer.copy(data.buffer, data_para_start, cmd_para_start, cmd_para_end);
-        data.check_all_tags();
+        actuator.data_parameters.copy_from(command);
         data.write_paras = true;
         actuator.write_paras = false;
     }
@@ -38,6 +36,8 @@ function actuator_init(actuator) {
         pressure_WH,
         pressure_SD,
     } = actuator;
+    actuator.data_parameters = data.create_tag_group(...parameters_tags);
+
     data.on('change', (tagname, old_value, new_value) => {
         logger.debug(`${name}: ${tagname} ${old_value} => ${new_value}`);
         if (tagname === 'pump_run_1' || tagname === 'pump_run_2' || tagname === 'pump_run_3' || tagname === 'pump_run_4') {
