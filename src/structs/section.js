@@ -1,4 +1,4 @@
-import { complete_structure } from "./share.js";
+import { build_structure } from "./share.js";
 
 const section_status = [
     { name: "comm_OK", type: "Bool", offset: 0, length: 1, init_value: false }, // 本段所有节点通讯正常
@@ -25,32 +25,31 @@ const inner_tags = [
     { name: "stop_pumps", type: "Bool", offset: 3, length: 1, init_value: false }, // 本段执行停泵
 ];
 
-export const SECTION = {
-    name: "SECTION",
-    items: [
-        { name: "ID", type: "UInt", offset: 0, length: 16, init_value: 0 }, // 段号
-        {   // bypass word
-            name: "bypass_word", type: "Word", offset: 16, length: 16, init_value: 0,
-            coupling: [{ name: "bypass", type: "Bool", offset: 0, length: 1, init_value: false }], // 中间站点是否有越站
-        },
-        {   // status word
-            name: "status", type: "Word", offset: 32, length: 16, init_value: 0,
-            coupling: section_status,
-        },
-        { name: "flow_begin", type: "Real", offset: 48, length: 32, init_value: 0 }, // 起节点流量合计
-        { name: "flow_end", type: "Real", offset: 80, length: 32, init_value: 0 }, // 终节点流量合计
-        { name: "flow_diff", type: "Real", offset: 112, length: 32, init_value: 0 }, // 流量差
-        { name: "flow_diff_WH", type: "Real", offset: 144, length: 32, init_value: 20 }, // 流量警告差上限值
-        { name: "flow_diff_WH_delay", type: "DInt", offset: 176, length: 32, init_value: 3000 }, // 流量警告容错时间（单位毫秒）
-        { name: "flow_diff_AH", type: "Real", offset: 208, length: 32, init_value: 50 }, // 流量差报警上限值（动作）
-        { name: "flow_diff_AH_delay", type: "DInt", offset: 240, length: 32, init_value: 3000 }, // 流量报警容错时间（单位毫秒）
-        { name: "action_time", type: "DInt", offset: 272, length: 32, init_value: 60000 }, // 联锁动作时间（单位毫秒）
-        { name: "countdown", type: "Int", offset: 304, length: 16, init_value: 0 }, // 联锁动作倒计时（单位秒）
-        {   // inner word
-            name: "inner_word", type: "Word", offset: 320, length: 16, init_value: 0,
-            coupling: inner_tags,
-        },
-    ]
-};
+const items = [
+    { name: "ID", type: "UInt", offset: 0, length: 16, init_value: 0 }, // 段号
+    {   // bypass word
+        name: "bypass_word", type: "Word", offset: 16, length: 16, init_value: 0,
+        is_combined: true, coupling: [
+            { name: "bypass", type: "Bool", offset: 0, length: 1, init_value: false } // 中间站点是否有越站
+        ],
+    },
+    {   // status word
+        name: "status", type: "Word", offset: 32, length: 16, init_value: 0,
+        is_combined: true, coupling: section_status,
+    },
+    { name: "flow_begin", type: "Real", offset: 48, length: 32, init_value: 0 }, // 起节点流量合计
+    { name: "flow_end", type: "Real", offset: 80, length: 32, init_value: 0 }, // 终节点流量合计
+    { name: "flow_diff", type: "Real", offset: 112, length: 32, init_value: 0 }, // 流量差
+    { name: "flow_diff_WH", type: "Real", offset: 144, length: 32, init_value: 20 }, // 流量警告差上限值
+    { name: "flow_diff_WH_delay", type: "DInt", offset: 176, length: 32, init_value: 3000 }, // 流量警告容错时间（单位毫秒）
+    { name: "flow_diff_AH", type: "Real", offset: 208, length: 32, init_value: 50 }, // 流量差报警上限值（动作）
+    { name: "flow_diff_AH_delay", type: "DInt", offset: 240, length: 32, init_value: 3000 }, // 流量报警容错时间（单位毫秒）
+    { name: "action_time", type: "DInt", offset: 272, length: 32, init_value: 60000 }, // 联锁动作时间（单位毫秒）
+    { name: "countdown", type: "Int", offset: 304, length: 16, init_value: 0 }, // 联锁动作倒计时（单位秒）
+    {   // inner word
+        name: "inner_word", type: "Word", offset: 320, length: 16, init_value: 0,
+        coupling: inner_tags,
+    },
+];
 
-complete_structure(SECTION);
+export const SECTION = build_structure({ name: "SECTION" }, items);

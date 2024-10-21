@@ -165,7 +165,7 @@ export class TData extends EventEmitter {
 
     LE_list = [];
     init(_item) {
-        const { offset, type, name, init_value, coupling } = _item;
+        const { offset, type, name, init_value, coupling, is_combined } = _item;
         if (this[name] || this.#tags[name] != null) {
             logger.error(`new tag name is duplicated or not allowed: ${name}`);
             process.exit(1);
@@ -173,11 +173,11 @@ export class TData extends EventEmitter {
 
         const tag = new TTag(this.buffer, name, type, offset, init_value);
         this.#tags[name] = tag;
-        this.#couplings[name] = coupling.map(cp => cp.name);
+        this.#couplings[name] = coupling;
 
-        if (tag.type === 'word' || tag.type === 'dword') {
+        if (is_combined) {
             this.LE_list.push(tag.byte_offset);
-            if (tag.type === 'dword') {
+            if (tag.length === 4) {
                 this.LE_list.push(tag.byte_offset + 2);
             }
         }
