@@ -22,7 +22,6 @@ function loop_actuator(actuator) {
         data.stop_pumps = false;
     }
     if (actuator.write_paras) {
-        actuator.data_parameters.copy_from(command);
         data.write_paras = true;
         actuator.write_paras = false;
     }
@@ -106,14 +105,7 @@ function actuator_init(actuator) {
         }
     });
     command.get('write_paras').on("change", (_, new_value) => {
-        if (new_value) {
-            // When write_paras changes,
-            // the relevant parameters may not be ready,
-            // so the operation is placed at the next tick.
-            actuator.write_paras = true;
-        } else {
-            data.write_paras = false;
-        }
+        data.write_paras = new_value;
     });
     command.get('enable').on("change", (_, new_value) => {
         if (new_value) {
