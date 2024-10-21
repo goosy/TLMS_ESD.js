@@ -17,7 +17,7 @@
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@st-one-io/nodes7": "^1.1.0",
     "csv-parser": "^3.0.0",
-    "es-modbus": "^0.1.4",
+    "es-modbus": "^0.2.1",
     "log4js": "^6.9.1",
     "mri": "^1.2.0",
     "nodemon": "^3.1.7",

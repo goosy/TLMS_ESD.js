@@ -65,48 +65,55 @@ export class S7Client extends S7Endpoint {
 
     get is_connected() { return super.isConnected; }
     on_error(error) {
-        if (!this.connfailed) logger.error(`${this.conn_str}: ${error ?? "unknown error"}`);
+        if (!this.connfailed) {
+            this.emit("connfailed", error ?? "unknown error");
+        }
         this.connfailed = true;
-        this.emit("connfailed");
     };
 
     // connect() inherited from superclass
     // disconnect() inherited from superclass
 
     /**
-     * Reads the holding registers within the specified area asynchronously.
-     *
+     * Asynchronously reads the holding registers within the specified area.
+     * 
      * @param {{start:number, length:number}} range - The area to read from, specified as an object with start and length properties with unit byte.
-     * @return {Promise<Buffer>} A promise that resolves with the buffer containing the read data, or rejects with an error if the read operation fails.
+     * @param {string} area - The area type to read from (e.g., 'DB', 'MB', etc.).
+     * @param {number} db_no - The DB number to read from.
+     * @return {Promise<Buffer|null>} A promise that resolves with the buffer containing the read data, or null if the read operation fails.
      */
-    async read(range, area, db_no) {
+    read(range, area, db_no) {
         const { start, length } = range;
-        try {
-            const buffer = await this.readArea(
-                area_map[area],
-                start, length,
-                db_no
-            );
-            this.emit_data_ok();
-            return buffer;
-        } catch (error) {
-            this.emit_data_error();
-            return null;
-        }
+        const resolve = this.emit_data_ok.bind(this);
+        const reject = this.emit_data_error.bind(this);
+        return this.readArea(
+            area_map[area],
+            start, length,
+            db_no
+        ).then(resolve, reject);
     }
     /**
      * Writes the given buffer to the specified area asynchronously.
      *
      * @param {Buffer} buffer - The buffer containing the data to be written.
      * @param {{start:number, length:number}} range - The area to write to, specified as an object with start and length properties with unit byte.
-     * @return {Promise<void>} A promise that resolves when the write operation is complete, or rejects with an error if the write operation fails.
+     * @param {string} area - The area type to read from (e.g., 'DB', 'MB', etc.).
+     * @param {number} db_no - The DB number to read from.
+     * @return {Promise<boolean>} A promise that resolves when the write operation is complete.
      */
-    async write(buffer, range, area, db_no) {
-        try {
-            await this.writeArea(area_map[area], range.start, buffer, db_no);
+    write(buffer, range, area, db_no) {
+        const resolve = () => {
             this.emit_data_ok();
-        } catch (error) {
-            this.emit_data_error();
+            return true;
         }
+        const reject = (e) => {
+            this.emit_data_error(e);
+            return false;
+        }
+        return this.writeArea(
+            area_map[area], range.start,
+            buffer,
+            db_no
+        ).then(resolve, reject);
     }
 }
