@@ -56,9 +56,9 @@ export const node_parameters = [
 ];
 
 export const command_code = { none: 0 };
-node_commands.forEach(item => {
+for (const item of node_commands) {
     command_code[item.name] = 1 << item.offset;
-});
+}
 
 function add_item(data_struct, item, base_offset, name_prefix) {
     const items = data_struct.items;
@@ -72,9 +72,9 @@ function add_item(data_struct, item, base_offset, name_prefix) {
 
     const includes = item.includes;
     if (includes && Array.isArray(includes)) {
-        includes.forEach(_item => {
+        for (const _item of includes) {
             add_item(data_struct, { ..._item }, item.offset, item.name_prefix);
-        });
+        }
         // The "includes" and "coupling" attributes can only be chosen one at a time.
         return;
     }
@@ -82,13 +82,13 @@ function add_item(data_struct, item, base_offset, name_prefix) {
     const coupling = [];
     const _coupling = item.coupling;
     if (_coupling && Array.isArray(_coupling)) {
-        _coupling.forEach(_cp => {
+        for (const _cp of _coupling) {
             const cp = { ..._cp };
             add_item(data_struct, cp, item.offset, item.name_prefix);
             cp.coupling ??= [];
             cp.coupling.push(item.name);
             coupling.push(cp);
-        });
+        }
     }
     item.coupling = coupling.map(item => item.name);
 }
@@ -97,6 +97,8 @@ export function build_structure(data_struct, items) {
     data_struct.length = 0;
     data_struct.items = [];
     if (!items) return;
-    items.forEach(item => add_item(data_struct, item, 0));
+    for (const item of items) {
+        add_item(data_struct, item, 0);
+    }
     return data_struct;
 }

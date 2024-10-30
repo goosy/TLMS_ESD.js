@@ -29,12 +29,12 @@ export class TGroup {
         const read_OK = await this.tdata.IO_read_all();
         if (!read_OK) return false;
         const IO_buffer = this.tdata.IO_buffer;
-        this.#tags.forEach(tag => {
+        for (const tag of this.#tags) {
             const endian = tag.type === 'word' || tag.type === 'dword'
                 ? this.combined_endian
                 : this.endian;
             tag.read_from(IO_buffer, endian);
-        });
+        }
         this.tdata.check_all_tags();
         return true;
     }
@@ -47,12 +47,12 @@ export class TGroup {
     async write() {
         let write_OK = true;
         const IO_buffer = this.tdata.IO_buffer;
-        this.#tags.forEach(tag => {
+        for (const tag of this.#tags) {
             const endian = tag.type === 'word' || tag.type === 'dword'
                 ? this.combined_endian
                 : this.endian;
             tag.write_to(IO_buffer, endian);
-        });
+        }
         for (const area of this.#areas) {
             const { start, end } = area;
             const length = end - start;
@@ -92,25 +92,26 @@ export class TGroup {
             if (tag_start > area.end) {
                 left = mid + 1;
                 continue;
-            } else if (tag_end < area.start) {
+            }
+            if (tag_end < area.start) {
                 right = mid - 1;
                 continue;
             }
-            if (tag_start == area.end) {
+            if (tag_start === area.end) {
                 // Merge right side
                 area.end = tag_end;
                 const next = areas[mid + 1];
-                if (next && tag_end == next.start) {
+                if (next && tag_end === next.start) {
                     area.end = next.end;
                     areas.splice(mid + 1, 1);
                 }
                 return mid;
             }
-            if (tag_end == area.start) {
+            if (tag_end === area.start) {
                 // Merge left side
                 area.start = tag_start;
                 const prev = areas[mid - 1];
-                if (prev && tag_start == prev.end) {
+                if (prev && tag_start === prev.end) {
                     area.start = prev.start;
                     areas.splice(mid - 1, 1);
                 }
@@ -132,9 +133,9 @@ export class TGroup {
     }
 
     copy_from(tdata) {
-        this.#tags.forEach(tag => {
+        for (const tag of this.#tags) {
             const value = tdata[tag.name];
             if (value !== undefined) tag.set_value(value);
-        })
+        }
     }
 }
