@@ -49,7 +49,7 @@ function actuator_init(actuator) {
         }
     });
     data.get('commands').on("change", (_, new_value) => {
-        if (new_value == 0) data.response_code = 0;
+        if (new_value === 0) data.response_code = 0;
     });
     data.get('pressure').on("change", (_, new_value) => {
         const pressure_enabled = data.pressure_enabled;
@@ -122,7 +122,7 @@ function actuator_init(actuator) {
             data.disable = false;
         }
     });
-    command.name = name + '_CMD';
+    command.name = `${name}_CMD`;
 }
 
 const unit_map_list = new Map();
@@ -138,7 +138,7 @@ function init_tdata(tdata, mb_info, offset) {
 
 function prepare_actuator(name) {
     const cfg_actuator = cfg_actuators[name];
-    if (cfg_actuator == undefined) {
+    if (cfg_actuator === undefined) {
         return null;
     }
     const {
@@ -152,12 +152,13 @@ function prepare_actuator(name) {
         pressure_AL,
         modbus_server,
     } = cfg_actuator;
-    if (modbus_server == undefined) return null;
+    if (modbus_server === undefined) return null;
     const data = new TData(NODE);
     const command = new TData(COMMAND);
     init_tdata(data, modbus_server.data, 0);
     init_tdata(command, modbus_server.commands, 16);
 
+    // biome-ignore lint/suspicious/noDoubleEquals: the value may be null
     const has_pumps = pumps != undefined;
     const write_paras = false;
     const actuator = {
@@ -185,9 +186,9 @@ export async function run(running_actuator_names) {
         }
     }
 
-    actuators.forEach(actuator => {
+    for (const actuator of actuators) {
         actuator_init(actuator);
-    });
+    }
 
     // start modbus TCP server
     for (const [port, unit_map] of unit_map_list) {
@@ -196,7 +197,9 @@ export async function run(running_actuator_names) {
 
     // main loop
     setInterval(() => {
-        actuators.forEach(actuator => loop_actuator(actuator));
+        for (const actuator of actuators) {
+            loop_actuator(actuator);
+        }
     }, MAIN_PERIOD);
 }
 

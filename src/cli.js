@@ -106,7 +106,7 @@ if (argv.version) {
 } else if (cmd === 'stop') {
     exec('pm2 delete "tlms_esd"');
 } else if (cmd === 'list') {
-    exec(`pm2 list`, (error, stdout, _) => {
+    exec('pm2 list', (error, stdout, _) => {
         if (error) {
             console.error(`exec error: ${error}`);
             return;
@@ -121,9 +121,9 @@ if (argv.version) {
     process.argv = [process.argv[0], process.argv[1], ...acturator_names];
     import('./emulator.js');
 } else if (cmd === 'log') {
-    exec(`pm2 log`);
+    exec('pm2 log');
 } else if (cmd === 'flush') {
-    exec(`pm2 flush`);
+    exec('pm2 flush');
 } else {
     show_help();
 }
