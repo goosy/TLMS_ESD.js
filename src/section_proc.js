@@ -138,8 +138,8 @@ export function section_init(section) {
             AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
             AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
             AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
-            AR_data.press_action = data.flow_alarm_F;
-            AR_data.flow_action = data.press_alarm_F;
+            AR_data.press_action = data.press_alarm_F;
+            AR_data.flow_action = data.flow_alarm_F;
             AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
             AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
             AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
