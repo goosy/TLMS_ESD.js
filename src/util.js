@@ -101,7 +101,7 @@ Object.mixin = function (obj, ...mixin_items) {
 }
 
 // Create an object to store timers for each tag
-const timers = {};
+const debounce_timers = {};
 
 /**
  * @param {string} key - The tag to identify the debounced function
@@ -110,16 +110,23 @@ const timers = {};
  * @returns {Function} The debounced function
  */
 export function debouncify(key, fn, delay) {
+    // Check if the key is a string
+    // Check if the function is a valid function
+    if (typeof key !== 'string' || typeof fn !== 'function') {
+        return () => { };
+    }
+
     return function (...args) {
         // If the timer for this tag already exists, clear it
-        if (timers[key]) {
-            clearTimeout(timers[key]);
+        const timer = debounce_timers[key];
+        if (timer) {
+            clearTimeout(timer);
         }
 
         // Set a new timer for this tag
-        timers[key] = setTimeout(() => {
+        debounce_timers[key] = setTimeout(() => {
             fn.apply(this, args);
-            delete timers[key];
+            delete debounce_timers[key];
         }, delay);
     }
 }
@@ -131,14 +138,21 @@ export function debouncify(key, fn, delay) {
  * @returns {Function} The debounced function
  */
 export function debounce(key, fn, delay) {
+    // Check if the key is a string
+    // Check if the function is a valid function
+    if (typeof key !== 'string' || typeof fn !== 'function') {
+        return;
+    }
+
     // If the timer for this tag already exists, clear it
-    if (timers[key]) {
-        clearTimeout(timers[key]);
+    const timer = debounce_timers[key];
+    if (timer) {
+        clearTimeout(timer);
     }
 
     // Set a new timer for this tag
-    timers[key] = setTimeout(() => {
+    debounce_timers[key] = setTimeout(() => {
         fn();
-        delete timers[key];
+        delete debounce_timers[key];
     }, delay);
 }
