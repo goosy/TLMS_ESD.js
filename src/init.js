@@ -8,8 +8,10 @@ import { Action_Record } from "./action_record.js";
 
 function add_actuator(section, cfg_node) {
     const ID = cfg_node.id;
-    const name = cfg_node.name;
-    const IP = cfg_node.IP;
+    const {
+        name, IP,
+        is_begin, is_end, has_pumps,
+    } = cfg_node
     let driver_info = null;
     if (cfg_node.modbus_server) {
         driver_info = {
@@ -27,10 +29,14 @@ function add_actuator(section, cfg_node) {
     const data = new TData(NODE, name);
     const command = new TData(COMMAND, name);
 
-    const actuator = { ID, name, data, command, driver_info, section };
-    if (cfg_node.is_begin) section.begin_nodes.push(actuator);
-    if (cfg_node.is_end) section.end_nodes.push(actuator);
-    if (cfg_node.has_pumps) section.pump_nodes.push(actuator);
+    const actuator = {
+        ID, name, data, command,
+        driver_info,
+        is_begin, is_end, has_pumps, section
+    };
+    if (is_begin) section.begin_nodes.push(actuator);
+    if (is_end) section.end_nodes.push(actuator);
+    if (has_pumps) section.pump_nodes.push(actuator);
 }
 
 export async function prepare_controller(controller_name) {

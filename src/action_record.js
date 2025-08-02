@@ -88,6 +88,7 @@ export class Action_Record {
     read_records_from_csv() {
         return new Promise((resolve, reject) => {
             const records = this.records;
+            records.length = 0;
             createReadStream(this.file)
                 .pipe(csv_parser())
                 .on('error', error => reject(error))

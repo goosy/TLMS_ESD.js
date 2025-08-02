@@ -16,7 +16,7 @@ export const COMMAND = {
                 { name: "reset_paras", type: "Bool", offset: 1, length: 1, init_value: false }, // 将命令参数值重置为节点参数值
             ],
         },
-        { name: "ID", type: "UInt", offset: 128, length: 16, init_value: 8012 }, // 节点ID
+        { name: "ID", type: "UInt", offset: 128, length: 16, init_value: 0 }, // 节点ID
         {   // 命令
             name: "commands", type: "Word", offset: 144, length: 16, init_value: 0,
             coupling: node_commands,

@@ -1,6 +1,6 @@
 import { prepare_controller } from "./init.js";
 import { read_config, MAIN_PERIOD } from "./config.js";
-import { line_loop, line_init } from "./line_proc.js";
+import { line_init } from "./line_proc.js";
 import { section_loop, section_init } from './section_proc.js';
 import { node_loop, node_init } from './node_proc.js';
 import { MTClient, attach_unit, createMTServer } from "./drivers/modbusTCP.js";
@@ -98,7 +98,7 @@ function run_controller(controller) {
 
     // main loop
     setInterval(() => {
-        running_lines.forEach(line => line_loop(line));
+        // running_lines.forEach(line => line_loop(line));
         running_sections.forEach(section => section_loop(section));
         running_nodes.forEach(node => node_loop(node));
     }, MAIN_PERIOD);
