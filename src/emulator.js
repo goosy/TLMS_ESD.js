@@ -48,14 +48,11 @@ function actuator_init(actuator) {
             }, data.pump_change_delay);
             return;
         }
-        if (tagname === 'commands') {
-            if (new_value == 0) data.response_code = 0;
-        }
-        if (tagname === 'pressure') {
-            const pressure_enabled = data.pressure_enabled;
-            data.pressure_WH_F = pressure_enabled && (new_value > data.pressure_WH);
-            data.pressure_AH_F = pressure_enabled && (new_value > data.pressure_AH);
-        }
+    });
+    data.get('pressure').on("change", (_, new_value) => {
+        const pressure_enabled = data.pressure_enabled;
+        data.pressure_WH_F = pressure_enabled && (new_value > data.pressure_WH);
+        data.pressure_AH_F = pressure_enabled && (new_value > data.pressure_AH);
     });
     data.ID = id;
     data.name = name;
@@ -88,52 +85,50 @@ function actuator_init(actuator) {
 
     command.on("change", (tagname, old_value, new_value) => {
         logger.debug(`${name}_CMD: ${tagname} ${old_value} => ${new_value}`);
-        if (tagname === 'enable_pressure_SD') {
-            if (new_value) {
-                data.pressure_SD_F = true;
-                data.enable_pressure_SD = true;
-            } else {
-                data.enable_pressure_SD = false;
-            }
-            return;
+    });
+    command.get('commands').on("change", (_, new_value) => {
+        if (new_value === 0) data.response_code = 0;
+    });
+    command.get('enable_pressure_SD').on("change", (_, new_value) => {
+        if (new_value) {
+            data.pressure_SD_F = true;
+            data.enable_pressure_SD = true;
+        } else {
+            data.enable_pressure_SD = false;
         }
-        if (tagname === 'disable_pressure_SD') {
-            if (new_value) {
-                data.pressure_SD_F = false;
-                data.disable_pressure_SD = true;
-            } else {
-                data.disable_pressure_SD = false;
-            }
-            return;
+    });
+    command.get('disable_pressure_SD').on("change", (_, new_value) => {
+        if (new_value) {
+            data.pressure_SD_F = false;
+            data.disable_pressure_SD = true;
+        } else {
+            data.disable_pressure_SD = false;
         }
-        if (tagname === 'write_paras') {
-            if (new_value) {
-                // When write_paras changes,
-                // the relevant parameters may not be ready,
-                // so the operation is placed at the next tick.
-                actuator.write_paras = true;
-            } else {
-                data.write_paras = false;
-            }
-            return;
+    });
+    command.get('write_paras').on("change", (_, new_value) => {
+        if (new_value) {
+            // When write_paras changes,
+            // the relevant parameters may not be ready,
+            // so the operation is placed at the next tick.
+            actuator.write_paras = true;
+        } else {
+            data.write_paras = false;
         }
-        if (tagname === 'enable') {
-            if (new_value) {
-                data.work_OK = true;
-                data.enable = true;
-            } else {
-                data.enable = false;
-            }
-            return;
+    });
+    command.get('enable').on("change", (_, new_value) => {
+        if (new_value) {
+            data.work_OK = true;
+            data.enable = true;
+        } else {
+            data.enable = false;
         }
-        if (tagname === 'disable') {
-            if (new_value) {
-                data.work_OK = false;
-                data.disable = true;
-            } else {
-                data.disable = false;
-            }
-            return;
+    });
+    command.get('disable').on("change", (_, new_value) => {
+        if (new_value) {
+            data.work_OK = false;
+            data.disable = true;
+        } else {
+            data.disable = false;
         }
     });
     command.name = name + '_CMD';
