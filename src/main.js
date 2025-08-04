@@ -102,9 +102,12 @@ function run_controller(controller) {
             const data = new TData(SECTION, name);
             section.data = data;
             unit_map.attach_unit(unit_id_map[name], data, 0);
-            [...section.begin_nodes, ...section.end_nodes].forEach(node => { // nodes
+            for (const node of section.begin_nodes) {
                 add_node(node, unit_map);
-            });
+            }
+            for (const node of section.end_nodes) {
+                add_node(node, unit_map);
+            }
             section_init(section);
             running_sections.push(section);
         }
@@ -116,9 +119,9 @@ function run_controller(controller) {
 
     // main loop
     setInterval(() => {
-        // running_lines.forEach(line => line_loop(line));
-        running_sections.forEach(section => section_loop(section));
-        running_nodes.forEach(node => node_loop(node));
+        // for (const line of running_lines) line_loop(line);
+        for (const section of running_sections) section_loop(section);
+        for (const node of running_nodes) node_loop(node);
     }, MAIN_PERIOD);
 }
 

@@ -104,7 +104,7 @@ function add_conf(doc) {
         actuator.temperature_WL ??= actuator.temperature_zero;
         actuator.temperature_AL ??= actuator.temperature_zero;
         cfg_actuators[actuator.name] = actuator;
-        cfg_actuators['ID' + actuator.id] = actuator;
+        cfg_actuators[`ID${actuator.id}`] = actuator;
         cfg_actuators.push(actuator);
     }
     for (const _section of _sections) {
@@ -112,14 +112,14 @@ function add_conf(doc) {
         const name = section.name;
         const ID = section.id;
         cfg_sections[name] = section;
-        cfg_sections['ID' + ID] = section;
+        cfg_sections[`ID${ID}`] = section;
         cfg_sections.push(section);
     }
     for (const _line of _lines) {
         const name = _line.name;
         const ID = _line.id;
         cfg_lines[name] = _line;
-        cfg_lines['ID' + ID] = _line;
+        cfg_lines[`ID${ID}`] = _line;
         cfg_lines.push(_line);
     }
 }

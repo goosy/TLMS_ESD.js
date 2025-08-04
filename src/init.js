@@ -19,17 +19,17 @@ function add_actuator(section, cfg_node) {
 
 export async function prepare_controller(controller_name) {
     // if controller_name is '', '0', 0, null, undefined, or not given, use the first one
-    const controller = controller_name == 0 || !controller_name
+    const controller = controller_name === 0 || !controller_name
         ? cfg_controllers[0]
         : cfg_controllers.find(c => c.name === controller_name);
+    // biome-ignore lint/suspicious/noDoubleEquals: the value may be null
     if (controller == undefined) {
         return null;
     }
-    controller_name = controller.name;
     controller.lines = [];
 
     for (const cfg_line of cfg_lines) {
-        if (cfg_line.controller.name !== controller_name) continue;
+        if (cfg_line.controller.name !== controller.name) continue;
         const ID = cfg_line.id;
         const name = cfg_line.name;
         const line = { ID, name, controller, sections: [] };
@@ -56,16 +56,16 @@ export async function prepare_controller(controller_name) {
                 flow_diff_AH_delay,
                 action_time,
             };
-            cfg_section.begin_nodes.forEach(node_name => {
+            for (const node_name of cfg_section.begin_nodes) {
                 const cfg_node = cfg_actuators[node_name];
                 cfg_node.is_begin = true;
                 add_actuator(section, cfg_node);
-            });
-            cfg_section.end_nodes.forEach(node_name => {
+            }
+            for (const node_name of cfg_section.end_nodes) {
                 const cfg_node = cfg_actuators[node_name];
                 cfg_node.is_end = true;
                 add_actuator(section, cfg_node);
-            });
+            };
             line.sections.push(section);
         }
     }

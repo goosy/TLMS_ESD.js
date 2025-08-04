@@ -10,7 +10,7 @@ export function node_init(actuator) {
         section, is_begin, is_end, has_pumps,
         data_driver, command_driver, driver_info
     } = actuator;
-    command.name = name + '_CMD';
+    command.name = `${name}_CMD`;
     data.name = name;
     actuator.debounce_send_commands = debouncify(`SC4RespCodeOrCmdChan_${name}`, () => {
         if (command_driver.is_connected === false) return;
@@ -174,7 +174,9 @@ export function node_init(actuator) {
     command.get('read_paras').on("change", (_, new_value) => {
         if (new_value) {
             actuator.reset_parameters();
-            process.nextTick(() => {command.read_paras = false});
+            process.nextTick(() => {
+                command.read_paras = false;
+            });
         }
     });
     command.get('write_paras').on("change", (_, new_value) => {

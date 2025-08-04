@@ -60,7 +60,7 @@ export class TData extends EventEmitter {
         const name = tag.name ?? tag;
         const _tag = this.#tags[name];
         if (_tag == null) {
-            logger.debug(`${this.name} has no tag named ` + tagname);
+            logger.debug(`${this.name} has no tag named ${tagname}`);
             return;
         }
         _tag.check_change();

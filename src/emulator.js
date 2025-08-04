@@ -123,7 +123,7 @@ function actuator_init(actuator) {
             data.disable = false;
         }
     });
-    command.name = name + '_CMD';
+    command.name = `${name}_CMD`;
 }
 
 const unit_map_list = new Map();
@@ -187,9 +187,9 @@ export async function run(running_actuator_names) {
         }
     }
 
-    actuators.forEach(actuator => {
+    for (const actuator of actuators) {
         actuator_init(actuator);
-    });
+    }
 
     // start modbus TCP server
     for (const [port, unit_map] of unit_map_list) {
@@ -198,7 +198,9 @@ export async function run(running_actuator_names) {
 
     // main loop
     setInterval(() => {
-        actuators.forEach(actuator => loop_actuator(actuator));
+        for (const actuator of actuators) {
+            loop_actuator(actuator);
+        }
     }, MAIN_PERIOD);
 }
 
