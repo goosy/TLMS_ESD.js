@@ -50,11 +50,11 @@ options:
 
 Examples:
 tlms start                   Run the first controller with the configuration file in the current directory
-tlms start JSC               Run the JSC controller with the configuration file in the current directory
+tlms start TC                Run the TC controller with the configuration file in the current directory
 tlms start --path ./conf     Run using the configuration file in the ./conf directory
-tlms start JSC --path ./conf Specify both the controller name and configuration file path
+tlms start TC --path ./conf  Specify both the controller name and configuration file path
 tlms stop                    Stop
-tlms emu GD8 YA1 YA1 DY8     Start an emulator for the specified 4 nodes
+tlms emu BS2 MS1 MS3 ES2     Start an emulator for the specified 4 nodes
 
 用法：
 
@@ -83,11 +83,11 @@ options:
 
 例子:
 tlms start                   以当前目录下的配置文件运行第1个控制器
-tlms start JSC               以当前目录下的配置文件运行 JSC 控制器
+tlms start TC                以当前目录下的配置文件运行 TC 控制器
 tlms start --path ./conf     以 ./conf 目录下的配置文件运行
-tlms start JSC --path ./conf 同时指定控制器名称和配置文件路径
+tlms start TC --path ./conf  同时指定控制器名称和配置文件路径
 tlms stop                    停止
-tlms emu GD8 YA1 YA1 DY8     启动指定4个节点的仿真器
+tlms emu BS2 MS1 MS3 ES2      启动指定4个节点的仿真器
 `);
 }
 
@@ -106,7 +106,7 @@ if (argv.version) {
 } else if (cmd === 'stop') {
     exec('pm2 delete "tlms_esd"');
 } else if (cmd === 'list') {
-    exec(`pm2 list`, (error, stdout, _) => {
+    exec('pm2 list', (error, stdout, _) => {
         if (error) {
             console.error(`exec error: ${error}`);
             return;
@@ -121,9 +121,9 @@ if (argv.version) {
     process.argv = [process.argv[0], process.argv[1], ...acturator_names];
     import('./emulator.js');
 } else if (cmd === 'log') {
-    exec(`pm2 log`);
+    exec('pm2 log');
 } else if (cmd === 'flush') {
-    exec(`pm2 flush`);
+    exec('pm2 flush');
 } else {
     show_help();
 }

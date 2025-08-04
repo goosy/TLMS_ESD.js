@@ -29,9 +29,9 @@
   },
   "scripts": {
     "build": "rollup -c",
-    "dev": "cd example && node ../src/main.js JSC",
-    "watch": "cd example && nodemon ../src/main.js JSC --watch ../src --ext js",
-    "emu": "cd example && nodemon ../src/emulator.js GD9 KX JX7 JX1 SC DY9 --watch ../src/emulator.js --ext js",
+    "dev": "cd example && node ../src/main.js TC",
+    "watch": "cd example && nodemon ../src/main.js TC --watch ../src --ext js",
+    "emu": "cd example && nodemon ../src/emulator.js BS2 MS1 MS3 ES2 BS5 ES1 --watch ../src/emulator.js --ext js",
     "prepare": "pnpm build"
   },
   "bin": {
@@ -44,5 +44,5 @@
   ],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@9.6.0+sha512.38dc6fba8dba35b39340b9700112c2fe1e12f10b17134715a4aa98ccf7bb035e76fd981cf0bb384dfa98f8d6af5481c2bef2f4266a24bfa20c34eb7147ce0b5e"
+  "packageManager": "pnpm@10.13.1+sha512.37ebf1a5c7a30d5fabe0c5df44ee8da4c965ca0c5af3dbab28c3a1681b70a256218d05c81c9c0dcf767ef6b8551eb5b960042b9ed4300c59242336377e01cfad"
 }
