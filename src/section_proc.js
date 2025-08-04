@@ -101,131 +101,122 @@ export function section_init(section) {
 
     data.on("change", (tagname, old_value, new_value) => {
         logger.debug(`section_${name}: ${tagname} ${old_value} => ${new_value}`);
-        if (tagname === "stop_pumps") {// set command
-            if (new_value == true) {
-                pump_nodes.forEach((node) => {
-                    node.command.stop_pumps = node.data.pump_run
-                    logger.info(`send stop_pumps command to ${node.name} actuator`);
-                });
-            } else {
-                pump_nodes.forEach(node => {
-                    node.command.stop_pumps = false;
-                    node.command.cancel_stop = true;
-                    logger.info(`send cancel_stop command to ${node.name} actuator`);
-                });
-            }
-            return;
-        }
-        if (tagname === "action_F") { // log action
-            if (new_value == true) {
-                logger.info(`section ${name}: interlock action`);
-                // logs: ID, flow_begin, flow_end, flow_diff
-                const action_record = line.controller.action_record;
-                const AR_data = action_record.data;
-                AR_data.section_ID = data.ID;
-                AR_data.flow_begin = data.flow_begin;
-                AR_data.flow_end = data.flow_end;
-                AR_data.flow_diff = data.flow_diff;
-                AR_data.node1_press = begin_nodes[0]?.data?.pressure ?? 0;
-                AR_data.node2_press = begin_nodes[1]?.data?.pressure ?? 0;
-                AR_data.node3_press = begin_nodes[2]?.data?.pressure ?? 0;
-                AR_data.node4_press = end_nodes[0]?.data?.pressure ?? 0;
-                AR_data.node1_ID = begin_nodes[0]?.data?.ID ?? 0;
-                AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
-                AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
-                AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
-                AR_data.press_action = data.press_alarm_F;
-                AR_data.flow_action = data.flow_alarm_F;
-                AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
-                AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
-                AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
-                action_record.add_record();
-            } else {
-                logger.info(`section ${name}: reset action flag`);
-            }
-            return;
-        }
-        if (tagname === "pump_run") {
-            // if the alarm disappears while the pump is restarted,
-            // the action_F will be eliminated.
-            // the purpose is to disengage the action_F when the pump is started again.
-            if (
-                new_value && !data.flow_alarm_F && !data.press_alarm_F &&
-                data.action_F &&
-                !data.autoStopCmd && !data.line_action_source
-            ) {
-                // remove action information
-                data.action_F = false;
-                line.data.action_section_ID = 0;
-            }
-            if (!new_value) {
-                data.autoStopCmd = false;
-                data.manStopCmd = false;
-            }
-            section.update_pre_stop_notice();
-            line.update_pump_run();
-            return;
-        }
-        if (tagname === 'flow_warning_F') {
-            if (new_value == true) {
-                logger.warn(`section ${name}: flowmeter warning arrived`);
-            } else {
-                logger.info(`section ${name}: flowmeter warning left`);
-            }
-            return;
-        }
-        if (tagname === 'flow_alarm_F') {
-            if (new_value == true) {
-                logger.error(`section ${name}: flowmeter alarm arrived`);
-            } else {
-                logger.info(`section ${name}: flowmeter alarm left`);
-            }
-            section.update_pre_stop_notice();
-            line.update_alarm_F();
-            return;
-        }
-        if (tagname === 'protect_F') {
-            section.update_pre_stop_notice();
-            return;
-        }
-        if (tagname === 'hangon_MF') {
-            if (new_value == true) {
-                logger.warn(`section ${name}: manually stop protection`);
-            } else {
-                logger.info(`section ${name}: manually resume protection`);
-            }
-            return;
-        }
-        if (tagname === 'hangon_AF') {
-            if (new_value == true) {
-                logger.info(`section ${name}: automatically stop protection`);
-            } else {
-                logger.info(`section ${name}: automatically resume protection`);
-            }
-            return;
-        }
-        if (tagname === 'pre_stop_notice' && new_value == true) {
-            logger.info(`section ${name} start action countdown`);
-            return;
-        }
-        if (tagname === 'press_alarm_F') {
-            if (new_value == true) {
-                logger.error(`section ${name}: pressure alarm arrived`);
-            } else {
-                logger.info(`section ${name}: pressure alarm left`);
-            }
-            line.update_alarm_F();
-            return;
-        }
         if (tagname === 'flow_begin' || tagname === 'flow_end') {
             section.update_flow_diff();
             return;
         }
-        if (tagname === 'flow_diff') {
-            data.flow_warning_trigger = (new_value > data.flow_diff_WH) && !data.bypass;
-            data.flow_alarm_trigger = (new_value > data.flow_diff_AH) && !data.bypass;
-            return;
+    });
+    data.get('stop_pumps').on("change", (_, new_value) => {// set command
+        if (new_value == true) {
+            pump_nodes.forEach((node) => {
+                node.command.stop_pumps = node.data.pump_run
+                logger.info(`send stop_pumps command to ${node.name} actuator`);
+            });
+        } else {
+            pump_nodes.forEach(node => {
+                node.command.stop_pumps = false;
+                node.command.cancel_stop = true;
+                logger.info(`send cancel_stop command to ${node.name} actuator`);
+            });
         }
+    });
+    data.get('action_F').on("change", (_, new_value) => { // log action
+        if (new_value == true) {
+            logger.info(`section ${name}: interlock action`);
+            // logs: ID, flow_begin, flow_end, flow_diff
+            const action_record = line.controller.action_record;
+            const AR_data = action_record.data;
+            AR_data.section_ID = data.ID;
+            AR_data.flow_begin = data.flow_begin;
+            AR_data.flow_end = data.flow_end;
+            AR_data.flow_diff = data.flow_diff;
+            AR_data.node1_press = begin_nodes[0]?.data?.pressure ?? 0;
+            AR_data.node2_press = begin_nodes[1]?.data?.pressure ?? 0;
+            AR_data.node3_press = begin_nodes[2]?.data?.pressure ?? 0;
+            AR_data.node4_press = end_nodes[0]?.data?.pressure ?? 0;
+            AR_data.node1_ID = begin_nodes[0]?.data?.ID ?? 0;
+            AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
+            AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
+            AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
+            AR_data.press_action = data.press_alarm_F;
+            AR_data.flow_action = data.flow_alarm_F;
+            AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
+            AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
+            AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
+            action_record.add_record();
+        } else {
+            logger.info(`section ${name}: reset action flag`);
+        }
+    });
+    data.get('pump_run').on("change", (_, new_value) => {
+        // if the alarm disappears while the pump is restarted,
+        // the action_F will be eliminated.
+        // the purpose is to disengage the action_F when the pump is started again.
+        if (
+            new_value && !data.flow_alarm_F && !data.press_alarm_F &&
+            data.action_F &&
+            !data.autoStopCmd && !data.line_action_source
+        ) {
+            // remove action information
+            data.action_F = false;
+            line.data.action_section_ID = 0;
+        }
+        if (!new_value) {
+            data.autoStopCmd = false;
+            data.manStopCmd = false;
+        }
+        section.update_pre_stop_notice();
+        line.update_pump_run();
+    });
+    data.get('flow_warning_F').on("change", (_, new_value) => {
+        if (new_value == true) {
+            logger.warn(`section ${name}: flowmeter warning arrived`);
+        } else {
+            logger.info(`section ${name}: flowmeter warning left`);
+        }
+    });
+    data.get('flow_alarm_F').on("change", (_, new_value) => {
+        if (new_value == true) {
+            logger.error(`section ${name}: flowmeter alarm arrived`);
+        } else {
+            logger.info(`section ${name}: flowmeter alarm left`);
+        }
+        section.update_pre_stop_notice();
+        line.update_alarm_F();
+    });
+    data.get('protect_F').on("change", (_o, _n) => {
+        section.update_pre_stop_notice();
+    });
+    data.get('hangon_MF').on("change", (_, new_value) => {
+        if (new_value == true) {
+            logger.warn(`section ${name}: manually stop protection`);
+        } else {
+            logger.info(`section ${name}: manually resume protection`);
+        }
+    });
+    data.get('hangon_AF').on("change", (_, new_value) => {
+        if (new_value == true) {
+            logger.info(`section ${name}: automatically stop protection`);
+        } else {
+            logger.info(`section ${name}: automatically resume protection`);
+        }
+    });
+    data.get('pre_stop_notice').on("change", (_, new_value) => {
+        if (new_value == true) {
+            logger.info(`section ${name} start action countdown`);
+        }
+    });
+    data.get('press_alarm_F').on("change", (_, new_value) => {
+        if (new_value == true) {
+            logger.error(`section ${name}: pressure alarm arrived`);
+        } else {
+            logger.info(`section ${name}: pressure alarm left`);
+        }
+        line.update_alarm_F();
+    });
+    data.get('flow_diff').on("change", (_, new_value) => {
+        data.flow_warning_trigger = (new_value > data.flow_diff_WH) && !data.bypass;
+        data.flow_alarm_trigger = (new_value > data.flow_diff_AH) && !data.bypass;
     });
     data.ID = ID;
     data.name = name;
