@@ -4,7 +4,7 @@ import { logger } from "./util.js";
 export function node_init(actuator) {
     const {
         ID, name, data, command,
-        section, is_begin, is_end,
+        section, is_begin, is_end, has_pumps,
         data_driver, command_driver, driver_info
     } = actuator;
     command.name = name + '_CMD';
@@ -21,6 +21,9 @@ export function node_init(actuator) {
         command.check_all_tags();
         command.ID = ID;
     };
+    if (has_pumps) actuator.update_pump_run = () => {
+        data.pump_run = data.pump_run_1 || data.pump_run_2 || data.pump_run_3 || data.pump_run_4;
+    }
 
     const { endian, combined_endian } = driver_info;
 
@@ -83,7 +86,10 @@ export function node_init(actuator) {
 
     data.on("change", (tagname, old_value, new_value) => {
         logger.debug(`actuator_${name}_data: ${tagname} ${old_value} => ${new_value}`);
-        if (tagname === 'response_code' && new_value) {
+    });
+
+    data.get('response_code').on("change", (_, new_value) => {
+        if (new_value) {
             // handle command response_code
             // valid: (handled in PLC)
             //     stop_pumps cancel_stop
@@ -98,58 +104,62 @@ export function node_init(actuator) {
             command.commands = ~new_value & command.commands;
             command.executing = false;
             if (data.response_code !== 0) actuator.debounce_send_commands();
-            return;
         }
-        if (tagname === 'pressure_SD_F') {
-            if (new_value) {
-                command.enable_pressure_SD = false;
-                logger.info(`actuator ${name} allows pressure interlock`);
-            } else {
-                command.disable_pressure_SD = false;
-                logger.info(`actuator ${name} prohibits pressure interlock`);
-            }
-            actuator.debounce_send_commands();
-            return;
+    });
+    data.get('pressure_SD_F').on("change", (_, new_value) => {
+        if (new_value) {
+            command.enable_pressure_SD = false;
+            logger.info(`actuator ${name} allows pressure interlock`);
+        } else {
+            command.disable_pressure_SD = false;
+            logger.info(`actuator ${name} prohibits pressure interlock`);
         }
-        if (tagname === 'comm_OK') {
-            section.update_comm_OK();
-            logger.info(`actuator ${name} communication is ${new_value ? 'normal' : 'lost'}`);
-            return;
-        }
-        if (tagname === 'work_OK') {
-            section.update_work_OK();
-            logger.info(`actuator ${name} ${new_value ? 'resumes normal operation' : 'is not working properly'}`);
-            return;
-        }
-        if (tagname === 'pump_run') {
+        actuator.debounce_send_commands();
+    });
+    data.get('comm_OK').on("change", (_, new_value) => {
+        section.update_comm_OK();
+        logger.info(`actuator ${name} communication is ${new_value ? 'normal' : 'lost'}`);
+    });
+    data.get('work_OK').on("change", (_, new_value) => {
+        section.update_work_OK();
+        logger.info(`actuator ${name} ${new_value ? 'resumes normal operation' : 'is not working properly'}`);
+    });
+    if (has_pumps) {
+        data.get('pump_run').on("change", (_, new_value) => {
             section.update_pump_run();
             if (!new_value) command.stop_pumps = false;
-            return;
-        }
-        if (['pump_run_1', 'pump_run_2', 'pump_run_3', 'pump_run_4'].includes(tagname)) {
-            logger.info(`actuator ${name} pumps status changed: ${tagname}: ${old_value} -> ${new_value}`);
-            data.pump_run = data.pump_run_1 || data.pump_run_2 || data.pump_run_3 || data.pump_run_4;
-            return;
-        }
-        if (tagname === 'pump_change_F') {
+        });
+        data.get('pump_run_1').on("change", (old_value, new_value) => {
+            logger.info(`actuator ${name} pump 1 status changed: ${old_value} -> ${new_value}`);
+            actuator.update_pump_run();
+        });
+        data.get('pump_run_2').on("change", (old_value, new_value) => {
+            logger.info(`actuator ${name} pump 2 status changed: ${old_value} -> ${new_value}`);
+            actuator.update_pump_run();
+        });
+        data.get('pump_run_3').on("change", (old_value, new_value) => {
+            logger.info(`actuator ${name} pump 3 status changed: ${old_value} -> ${new_value}`);
+            actuator.update_pump_run();
+        });
+        data.get('pump_run_4').on("change", (old_value, new_value) => {
+            logger.info(`actuator ${name} pump 4 status changed: ${old_value} -> ${new_value}`);
+            actuator.update_pump_run();
+        });
+        data.get('pump_change_F').on("change", (_o, _n) => {
             section.update_pump_change_F();
-            return;
-        }
-        if (tagname === 'pressure_WH_F') {
-            logger.info(`actuator ${name} pressure warning status changed: ${tagname}: ${old_value} -> ${new_value}`);
-            section.update_press_warning_F();
-            return;
-        }
-        if (tagname === 'pressure_AH_F') {
-            logger.info(`actuator ${name} pressure alarm status changed: ${tagname}: ${old_value} -> ${new_value}`);
-            section.update_press_alarm_F();
-            return;
-        }
-        if (tagname === 'flowmeter') {
-            if (is_begin) section.update_flow_begin();
-            if (is_end) section.update_flow_end();
-            return;
-        }
+        });
+    }
+    data.get('pressure_WH_F').on("change", (old_value, new_value) => {
+        logger.info(`actuator ${name} pressure warning status changed: ${old_value} -> ${new_value}`);
+        section.update_press_warning_F();
+    });
+    data.get('pressure_AH_F').on("change", (old_value, new_value) => {
+        logger.info(`actuator ${name} pressure alarm status changed: ${old_value} -> ${new_value}`);
+        section.update_press_alarm_F();
+    });
+    data.get('flowmeter').on("change", (_o, _n) => {
+        if (is_begin) section.update_flow_begin();
+        if (is_end) section.update_flow_end();
     });
 
     command.ID = ID;
@@ -180,18 +190,18 @@ export function node_init(actuator) {
 
     command.on("change", (tagname, old_value, new_value) => {
         logger.debug(`actuator_${name}_command: ${tagname} ${old_value} => ${new_value}`);
-        if (tagname === 'reset_paras' && new_value) {
+    });
+    command.get('reset_paras').on("change", (_, new_value) => {
+        if (new_value) {
             actuator.reset_parameter();
             setTimeout(() => {
                 command.reset_paras = false;
             }, 500);
-            return;
         }
-        if (tagname === 'commands') {
-            command.has_commands = new_value > 0;
-            actuator.debounce_send_commands();
-            return;
-        }
+    });
+    command.get('commands').on("change", (_, new_value) => {
+        command.has_commands = new_value > 0;
+        actuator.debounce_send_commands();
     });
 
     // The start() function already handles duplicates automatically if the driver is the same.
