@@ -92,15 +92,6 @@ export class TData extends EventEmitter {
      * @return {void}
      */
     set_IO(driver, options, ...extras) {
-        if (driver == null) {
-            this.driver = null;
-            this.buffer_info = null;
-            this.IO_read = null;
-            this.IO_write = null;
-            return;
-        }
-        this.driver = driver;
-
         // starting position of exchange data segment in the current TData buffer.
         const IO_start = options.start ?? 0;
         // starting position of exchange data segment in the driver.
@@ -118,7 +109,13 @@ export class TData extends EventEmitter {
             return tgroup;
         }
 
-        this.buffer_info = options;
+        if (driver == null) {
+            this.driver = null;
+            this.IO_read = this.IO_write = this.IO_read_all = () => { };
+            return;
+        }
+        
+        this.driver = driver;
 
         const offset = remote_start - IO_start;
         const check_driver = (range) => {
