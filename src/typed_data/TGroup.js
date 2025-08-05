@@ -132,4 +132,11 @@ export class TGroup {
             this.#add(tag);
         }
     }
+
+    copy_from(tdata) {
+        this.#tags.forEach(tag => {
+            const value = tdata[tag.name];
+            if (value !== undefined) tag.set_value(value);
+        })
+    }
 }

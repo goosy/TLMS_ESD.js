@@ -109,10 +109,14 @@ export class TData extends EventEmitter {
         const IO_length = options.length ?? this.#buffer.length - IO_start;
         const endian = options.endian ?? "BE";
         const combined_endian = options.combined_endian ?? "LE";
-        this.create_tag_group = () => new TGroup(
-            this,
-            { IO_start, remote_start, IO_length, endian, combined_endian }
-        );
+        this.create_tag_group = (...tags) => {
+            const tgroup = new TGroup(
+                this,
+                { IO_start, remote_start, IO_length, endian, combined_endian }
+            );
+            tgroup.add(...tags);
+            return tgroup;
+        }
 
         this.buffer_info = options;
 
@@ -199,8 +203,8 @@ export class TData extends EventEmitter {
     /**
      * Creates a new TData instance.
      * @param {Object} data_struct - The data structure object.
+     * @param {string} data_struct.name - the name of data_struct.
      * @param {Array} data_struct.items - Array of data items to initialize.
-     * @param {Object} data_struct.groups - Groups of data items.
      * @param {string} name - The name of the TData instance.
      */
     constructor(data_struct, name) {
@@ -211,7 +215,6 @@ export class TData extends EventEmitter {
         const buffer = Buffer.alloc(size, 0);
         this.#buffer = buffer;
         this.#IO_buffer = Buffer.alloc(size, 0);
-        this.groups = data_struct.groups;
         for (const item of data_struct.items) {
             this.init(item);
         }

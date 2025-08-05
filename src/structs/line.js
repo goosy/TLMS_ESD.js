@@ -17,6 +17,4 @@ const items = [
     { name: "flow_diff", type: "Real", offset: 48, length: 32, init_value: 0 }, // 越站流差（保留，不实现）
 ];
 
-export const LINE = build_structure({
-    name: "LINE",
-}, items);
+export const LINE = build_structure({ name: "LINE" }, items);

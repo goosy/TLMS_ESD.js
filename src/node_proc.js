@@ -1,5 +1,8 @@
 import { debouncify } from "./util.js";
 import { logger } from "./util.js";
+import { node_parameters } from "./structs/share.js";
+
+const parameters_tags = node_parameters.map(item => item.name);
 
 export function node_init(actuator) {
     const {
@@ -13,13 +16,8 @@ export function node_init(actuator) {
         if (command_driver.is_connected === false) return;
         actuator.commands_payload.write();
     }, 100);
-    actuator.reset_parameter = () => {
-        const cmd_para_start = command.groups.paras.start >> 3;
-        const data_para_start = data.groups.paras.start >> 3;
-        const data_para_end = data.groups.paras.end >> 3;
-        data.buffer.copy(command.buffer, cmd_para_start, data_para_start, data_para_end);
-        command.check_all_tags();
-        command.ID = ID;
+    actuator.reset_parameters = () => {
+        actuator.commands_payload.copy_from(data);
     };
     if (has_pumps) actuator.update_pump_run = () => {
         data.pump_run = data.pump_run_1 || data.pump_run_2 || data.pump_run_3 || data.pump_run_4;
@@ -44,7 +42,7 @@ export function node_init(actuator) {
         data.comm_OK = true;
         clearTimeout(reset_comm_id);
         // reset parameter
-        setTimeout(actuator.reset_parameter, 2000);
+        setTimeout(actuator.reset_parameters, 2000);
     });
     const data_extras = [];
     const commands_extras = [];
@@ -65,26 +63,13 @@ export function node_init(actuator) {
         endian, combined_endian,
     }, ...data_extras);
 
-    const data_payload = data.create_tag_group();
-    data_payload.add(
+    actuator.data_payload = data.create_tag_group(
         'ID',
         'status',
         'temperature', 'pressure', 'flowmeter',
         'response_code',
-        'temperature_zero_raw', 'temperature_span_raw', 'temperature_underflow', 'temperature_overflow',
-        'temperature_zero', 'temperature_span',
-        'temperature_AH', 'temperature_WH', 'temperature_WL', 'temperature_AL',
-        'temperature_DZ', 'temperature_FT',
-        'pressure_zero_raw', 'pressure_span_raw', 'pressure_underflow', 'pressure_overflow',
-        'pressure_zero', 'pressure_span',
-        'pressure_AH', 'pressure_WH', 'pressure_WL', 'pressure_AL',
-        'pressure_DZ', 'pressure_FT',
-        'delay_protect_time',
-        'flow_smooth_factor',
-        'equS1', 'equS2', 'equS3', 'equS4', 'equS5',
-        'pump_change_delay',
+        ...parameters_tags
     );
-    actuator.data_payload = data_payload;
 
     data.on("change", (tagname, old_value, new_value) => {
         logger.debug(`actuator_${name}_data: ${tagname} ${old_value} => ${new_value}`);
@@ -171,31 +156,18 @@ export function node_init(actuator) {
         endian, combined_endian,
     }, ...commands_extras);
 
-    const commands_payload = command.create_tag_group();
-    commands_payload.add(
+    actuator.commands_payload = command.create_tag_group(
         'ID',
         'commands',
-        'temperature_zero_raw', 'temperature_span_raw', 'temperature_underflow', 'temperature_overflow',
-        'temperature_zero', 'temperature_span',
-        'temperature_AH', 'temperature_WH', 'temperature_WL', 'temperature_AL',
-        'temperature_DZ', 'temperature_FT',
-        'pressure_zero_raw', 'pressure_span_raw', 'pressure_underflow', 'pressure_overflow',
-        'pressure_zero', 'pressure_span',
-        'pressure_AH', 'pressure_WH', 'pressure_WL', 'pressure_AL',
-        'pressure_DZ', 'pressure_FT',
-        'delay_protect_time',
-        'flow_smooth_factor',
-        'equS1', 'equS2', 'equS3', 'equS4', 'equS5',
-        'pump_change_delay',
+        ...parameters_tags,
     );
-    actuator.commands_payload = commands_payload;
 
     command.on("change", (tagname, old_value, new_value) => {
         logger.debug(`actuator_${name}_command: ${tagname} ${old_value} => ${new_value}`);
     });
     command.get('reset_paras').on("change", (_, new_value) => {
         if (new_value) {
-            actuator.reset_parameter();
+            actuator.reset_parameters();
             setTimeout(() => {
                 command.reset_paras = false;
             }, 500);
