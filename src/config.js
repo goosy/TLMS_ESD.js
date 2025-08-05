@@ -29,6 +29,8 @@ function add_conf(doc) {
             process.exit(1);
         }
 
+        const IP = actuator.IP;
+
         const pumps = actuator.pumps;
         if (pumps) {
             pumps.forEach((pumpstr, i) => {
@@ -58,7 +60,11 @@ function add_conf(doc) {
             commands.unit_id ??= unit_id;
             commands.start ??= start;
             commands.length ??= length;
-            actuator.modbus_server = { data, commands, endian, combined_endian };
+            actuator.driver_info = {
+                data, commands,
+                endian, combined_endian,
+                protocol: 'modbusTCP', IP,
+            };
         } else if (s7_server) {
             const port = s7_server.port ?? 102;
             const rack = s7_server.rack ?? 0;
@@ -80,7 +86,12 @@ function add_conf(doc) {
             commands.db ??= db;
             commands.start ??= start;
             commands.length ??= length;
-            actuator.s7_server = { port, rack, slot, data, commands, endian, combined_endian };
+            actuator.driver_info = {
+                port, rack, slot,
+                data, commands,
+                endian, combined_endian,
+                protocol: 's7', IP,
+            };
         }
 
 

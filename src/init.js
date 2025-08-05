@@ -1,25 +1,11 @@
 import { cfg_lines, cfg_actuators, cfg_controllers } from "./config.js";
 
 function add_actuator(section, cfg_node) {
-    const ID = cfg_node.id;
     const {
-        name, IP,
+        id: ID, name,
         is_begin, is_end, has_pumps,
-    } = cfg_node
-    let driver_info = null;
-    if (cfg_node.modbus_server) {
-        driver_info = {
-            ...cfg_node.modbus_server,
-            protocol: 'modbusTCP',
-            IP,
-        };
-    } else if (cfg_node.s7_server) {
-        driver_info = {
-            ...cfg_node.s7_server,
-            protocol: 'S7',
-            host: IP,
-        };
-    }
+        driver_info,
+    } = cfg_node;
 
     const actuator = {
         ID, name,
