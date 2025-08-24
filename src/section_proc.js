@@ -1,19 +1,14 @@
 import { MAIN_PERIOD } from "./config.js";
 import { debouncify, logger } from "./util.js";
 
-function get_update_fn(operation, section, section_prop, nodes, node_prop) {
-    node_prop ??= section_prop;
+function get_update_fn(operation, section, section_prop, nodes, node_prop = section_prop) {
     const debounce_key = `section${section.name}_${section_prop}_update`;
     let update_fn = null;
     if (operation === 'AND') update_fn = () => {
-        section.data[section_prop] = nodes.reduce((acc, node) => {
-            return acc && node.data[node_prop];
-        }, true);
+        section.data[section_prop] = nodes.every((node) => node.data[node_prop]);
     }
     if (operation === 'OR') update_fn = () => {
-        section.data[section_prop] = nodes.reduce((acc, node) => {
-            return acc || node.data[node_prop];
-        }, false);
+        section.data[section_prop] = nodes.some((node) => node.data[node_prop]);
     }
     if (operation === 'ADD') update_fn = () => {
         section.data[section_prop] = nodes.reduce((acc, node) => {
@@ -53,12 +48,12 @@ export function section_init(section) {
     section.update_press_warning_F = get_update_fn(
         'OR',
         section, 'press_warning_F',
-        begin_nodes, 'pressure_WH_F',
+        all_nodes, 'pressure_WH_F',
     );
     section.update_press_alarm_F = get_update_fn(
         'OR',
         section, 'press_alarm_F',
-        begin_nodes, 'pressure_AH_F',
+        all_nodes, 'pressure_AH_F',
     );
     section.update_pump_run = get_update_fn(
         'OR',
