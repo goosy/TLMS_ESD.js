@@ -244,8 +244,8 @@ export function section_loop(section) {
         ID,
         data,
         line,
-        pump_nodes,
     } = section;
+
     const pump_run = data.pump_run;
     const protect_prereq = data.comm_OK && data.work_OK && !data.pump_change_F && !data.bypass;
     data.protect_F = protect_prereq && !data.hangon_MF;

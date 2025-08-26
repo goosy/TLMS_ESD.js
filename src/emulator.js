@@ -77,6 +77,7 @@ function actuator_init(actuator) {
     data.pressure_overflow = 28000;
     data.pressure_zero = 0;
     data.pressure_span = 4;
+    data.delay_protect_time = 2000;
     data.flow_smooth_factor = 0.9;
     data.equS1 = 10000;
     data.equS2 = 10000;
