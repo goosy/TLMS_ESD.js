@@ -1,29 +1,29 @@
 ## 线
 lines:
-- comment: 孤永东线
-  id: 781
-  name: GYD
-  controller: JSC
-  sections: [GY, YD]
+- comment: 测试一线
+  id: 125
+  name: L01
+  controller: TC
+  sections: [BM, ME]
 
 
 ## 段
 sections:
-- comment: 孤岛-永安段
-  id: 78
-  name: GY
-  begin_nodes: [GD8]
-  end_nodes: [YA7]
+- comment: 始站-中间站
+  id: 12
+  name: BM
+  begin_nodes: [BS2]
+  end_nodes: [MS1]
   flow_diff_AH: 30.0
   flow_diff_AH_delay: 3000
   flow_diff_WH: 20.0
   flow_diff_WH_delay: 3000
   action_time: 10000
-- comment: 永安-东营段
-  id: 81
-  name: YD
-  begin_nodes: [YA1]
-  end_nodes: [DY8]
+- comment: 中间站-终站
+  id: 25
+  name: ME
+  begin_nodes: [MS3]
+  end_nodes: [ES2]
   flow_diff_AH: 50.0
   flow_diff_AH_delay: 3000
   flow_diff_WH: 20.0
@@ -34,10 +34,10 @@ sections:
 ## 节点
 actuators:
 
-- comment: 孤岛孤永东出站
-  id: 8078
-  name: GD8
-  IP: 192.168.8.200
+- comment: 始站出站2
+  id: 8012
+  name: BS2
+  IP: 127.0.0.1
   pumps:
   - I1.1, Q0.0
   - I1.2, Q0.1
@@ -52,32 +52,32 @@ actuators:
   flows: []
   modbus_server:
     port: 503
-    unit_id: 78
+    unit_id: 12
     endian: big
     combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
-- comment: 永安进站
-  id: 8087
-  name: YA7
-  IP: 192.168.8.200
+- comment: 中间站进站
+  id: 8021
+  name: MS1
+  IP: 127.0.0.1
   pressure_span: 10.0
   pressure_AI: IW100
   temperature_AI: IW102
   flows: []
   modbus_server:
     port: 503
-    unit_id: 87
+    unit_id: 21
     endian: big
     combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
-- comment: 永安出站
-  id: 8081
-  name: YA1
-  IP: 192.168.8.200
+- comment: 中间站出站
+  id: 8025
+  name: MS3
+  IP: 127.0.0.1
   pumps:
   - I1.1, Q0.0
   - I1.2, Q0.1
@@ -92,27 +92,26 @@ actuators:
   flows: []
   modbus_server:
     port: 503
-    unit_id: 81
+    unit_id: 25
     endian: big
     combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
-- comment: 东营孤永东线进站
-  id: 8018
-  name: DY8
-  IP: 192.168.8.200
-  pressure_zero_raw: 5530
-  pressure_underflow: 5000
-  temperature_zero_raw: 5530
-  temperature_underflow: 5000
-  pressure_span: 1.6
+- comment: 终站进站2
+  id: 8052
+  name: ES2
+  IP: 127.0.0.1
   pressure_AI: IW64
+  pressure_span: 1.6
+  pressure_AH: 1.0
+  pressure_WH: 0.8
   temperature_AI: IW66
+  pressure_SD: true
   flows: []
   modbus_server:
     port: 503
-    unit_id: 18
+    unit_id: 51
     endian: big
     combined_endian: big
     data: { start: 0 }

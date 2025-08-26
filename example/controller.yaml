@@ -1,0 +1,21 @@
+controllers:
+
+- comment: main controller
+  name: TC
+  IP: 127.0.0.1
+  records_size: 20
+  modbus_server:
+    port: 502
+    unit_id:
+      L01: 1
+      L02: 2
+      BM: 4
+      ME: 5
+      BE: 6
+      action_records: 10
+      BS2: 12
+      MS1: 21
+      MS3: 25
+      ES2: 52
+      BS5: 15
+      ES1: 51
