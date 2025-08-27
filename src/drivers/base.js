@@ -1,6 +1,9 @@
 import "../util.js";  // the side effects need to be executed
 
 export class Base_Driver {
+    period_time = 1000;
+    reconnect_time = 5000;
+
     constructor() {
         // private fields
         let started = false;
@@ -46,7 +49,7 @@ export class Base_Driver {
                     disconnect_time += this.period_time;
                     // must be use `this.connectiong` to take advantage of
                     // the connection state management of the implementation class itself
-                    if (!this.connecting && disconnect_time > this.reconnect_time) {
+                    if (!connecting && disconnect_time > this.reconnect_time) {
                         connecting = true;
                         this.connect().then(
                             () => connecting = false,
@@ -68,22 +71,35 @@ export class Base_Driver {
             started = false;
             this.disconnect();
         }
-        this.emit_data_ok = function () {
+
+        let timeout_id;
+        /**
+         * Emits a 'data_ok' event if there was a previous data error and resets the error flag.
+         *
+         * @param {Buffer} data - The value returned by the resolved promise.
+         * @return {Promise<Buffer>} A promise that resolves with the input data.
+         */
+        this.emit_data_ok = async function (data) {
+            clearTimeout(timeout_id);
             if (data_error) {
                 data_error = false;
                 this.emit("data_ok");
             }
+            return data;
         }
-        this.emit_data_error = function () {
+        this.emit_data_error = async function (e) {
             if (!data_error) {
                 data_error = true;
-                this.emit("data_error");
+                timeout_id = setTimeout(()=>{
+                    this.on_error("unable to retrieve data");
+                }, this.reconnect_time);
+                this.emit('data_error',`unable to retrieve data - ${e}`);
             }
+            return null;
         }
     }
+
     get is_connected() { return false; } // abstract
-    period_time = 1000;
-    reconnect_time = 5000;
     async connect() { } // abstract
     disconnect() { } // abstract
 

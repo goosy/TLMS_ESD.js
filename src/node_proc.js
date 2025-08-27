@@ -28,21 +28,23 @@ export function node_init(actuator) {
     const { endian, combined_endian } = driver_info;
 
     let reset_comm_id;
-    data_driver.on("data_error", () => {
+    data_driver.on("data_error", (e) => {
         setTimeout(() => {
             data.work_OK = false;
         }, data.delay_protect_time);
+        logger.debug(`actuator ${name} ${e}`);
+    });
+    data_driver.on("connfailed", (e) => {
+        reset_comm_id = setTimeout(() => {
+            data.comm_OK = false;
+        }, data.delay_protect_time);
+        logger.error(`actuator ${name} connection failed: ${e}`);
     });
     data_driver.on("connect", () => {
         data.comm_OK = true;
         clearTimeout(reset_comm_id);
         // reset parameter
         setTimeout(actuator.reset_parameter, 2000);
-    });
-    data_driver.on("connfailed", () => {
-        reset_comm_id = setTimeout(() => {
-            data.comm_OK = false;
-        }, data.delay_protect_time);
     });
     const data_extras = [];
     const commands_extras = [];
