@@ -21,10 +21,15 @@ export class TGroup {
         this.combined_endian = options.combined_endian ?? 'BE';
     }
 
+    /**
+     * Reads data from  the device to the IO buffer
+     * and updates all tags in the group.
+     * @returns {Promise<boolean>} Returns true if the read operation was successful, false otherwise.
+     */
     async read() {
-        if (!await this.tdata.IO_read_all()) return;
+        const read_OK = await this.tdata.IO_read_all();
+        if (!read_OK) return false;
         const IO_buffer = this.tdata.IO_buffer;
-        if (IO_buffer === null) return;
         this.#tags.forEach(tag => {
             const endian = tag.type === 'word' || tag.type === 'dword'
                 ? this.combined_endian
@@ -32,8 +37,16 @@ export class TGroup {
             tag.read_from(IO_buffer, endian);
         });
         this.tdata.check_all_tags();
+        return true;
     }
+
+    /**
+     * Writes data from all tags in the group to the IO buffer
+     * and then writes to the device.
+     * @returns {Promise<boolean>} Returns true if all write operations were successful, false otherwise.
+     */
     async write() {
+        let write_OK = true;
         const IO_buffer = this.tdata.IO_buffer;
         this.#tags.forEach(tag => {
             const endian = tag.type === 'word' || tag.type === 'dword'
@@ -45,8 +58,10 @@ export class TGroup {
             const { start, end } = area;
             const length = end - start;
             const subbuffer = IO_buffer.subarray(start, end);
-            await this.tdata.IO_write(subbuffer, { start, length });
+            const area_write_OK = await this.tdata.IO_write(subbuffer, { start, length });
+            write_OK &&= area_write_OK;
         };
+        return write_OK;
     }
 
     #add(tagname) {

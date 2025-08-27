@@ -52,9 +52,10 @@ export class MTClient extends Modbus_Client {
     get is_connected() { return super.is_connected; }
 
     on_error(error) {
-        if (!this.connfailed) logger.error(`${this.conn_str} connection closed! ${error ?? "unknown error"}`);
+        if (!this.connfailed) {
+            this.emit("connfailed", error ?? "unknown error");
+        }
         this.connfailed = true;
-        this.emit("connfailed");
     }
 
     // connect() inherited from superclass
@@ -64,14 +65,17 @@ export class MTClient extends Modbus_Client {
      * Reads the holding registers within the specified area asynchronously.
      *
      * @param {{start:number, length:number}} range - The area to read from, specified as an object with start and length properties with unit byte.
-     * @return {Promise<Buffer>} A promise that resolves with the buffer containing the read data, or rejects with an error if the read operation fails.
+     * @return {Promise<Buffer|null>} A promise that resolves with the buffer containing the read data, or null if the read operation fails.
      */
     read(range, unit_id) {
         const register_address = 40000 + (range.start >> 1) + 1;
         const length = range.length >> 1;
-        const promise = super.read(`${register_address},${length}`, unit_id);
-        promise.then(this.emit_data_ok.bind(this), this.emit_data_error.bind(this));
-        return promise;
+        const resolve = this.emit_data_ok.bind(this);
+        const reject = this.emit_data_error.bind(this);
+        return super.read(
+            `${register_address},${length}`,
+            unit_id,
+        ).then(resolve, reject);
     }
 
     /**
@@ -79,14 +83,23 @@ export class MTClient extends Modbus_Client {
      *
      * @param {Buffer} buffer - The buffer containing the data to be written.
      * @param {{start:number, length:number}} range - The area to write to, specified as an object with start and length properties with unit byte.
-     * @return {Promise<void>} A promise that resolves when the write operation is complete, or rejects with an error if the write operation fails.
+     * @return {Promise<boolean>} A promise that resolves when the write operation is complete.
      */
     write(buffer, range, unit_id) {
+        const resolve = () => {
+            this.emit_data_ok();
+            return true;
+        }
+        const reject = (e) => {
+            this.emit_data_error(e);
+            return false;
+        }
         const register_address = 40000 + (range.start >> 1) + 1;
         const length_str = range.length ? (`,${range.length >> 1}`) : '';
-        const promise = super.write(`${register_address}${length_str}`, buffer, unit_id);
-        promise.then(this.emit_data_ok.bind(this), this.emit_data_error.bind(this));
-        return promise;
+        return super.write(
+            `${register_address}${length_str}`,
+            buffer, unit_id
+        ).then(resolve, reject);
     }
 }
 

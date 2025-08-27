@@ -32,6 +32,7 @@
     "dev": "cd example && node ../src/main.js TC",
     "watch": "cd example && nodemon ../src/main.js TC --watch ../src --ext js",
     "emu": "cd example && nodemon ../src/emulator.js BS2 MS1 MS3 ES2 BS5 ES1 --watch ../src/emulator.js --ext js",
+    "test": "node --test",
     "prepare": "pnpm build"
   },
   "bin": {
