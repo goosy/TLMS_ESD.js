@@ -127,4 +127,11 @@ export class TGroup {
             this.#add(tag);
         }
     }
+
+    copy_from(tdata) {
+        for (const tag of this.#tags) {
+            const value = tdata[tag.name];
+            if (value !== undefined) tag.set_value(value);
+        }
+    }
 }
