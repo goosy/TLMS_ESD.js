@@ -7,7 +7,7 @@ export function node_init(actuator) {
         section, is_begin, is_end, has_pumps,
         data_driver, command_driver, driver_info
     } = actuator;
-    command.name = name + '_CMD';
+    command.name = `${name}_CMD`;
     data.name = name;
     actuator.debounce_send_commands = debouncify(`SC4RespCodeOrCmdChan_${name}`, () => {
         if (command_driver.is_connected === false) return;
@@ -25,7 +25,7 @@ export function node_init(actuator) {
         data.pump_run = data.pump_run_1 || data.pump_run_2 || data.pump_run_3 || data.pump_run_4;
     }
 
-    const { endian, combined_endian } = driver_info;
+    const endian = driver_info.endian;
 
     let reset_comm_id;
     data_driver.on("data_error", (e) => {
@@ -62,7 +62,7 @@ export function node_init(actuator) {
     data.set_IO(data_driver, {
         remote_start: driver_info.data.start,
         start, length: data.size,
-        endian, combined_endian,
+        endian,
     }, ...data_extras);
 
     const data_payload = data.create_tag_group();
@@ -168,7 +168,7 @@ export function node_init(actuator) {
     command.set_IO(command_driver, {
         remote_start: driver_info.commands.start,
         start: 16, length: command.size - 16,
-        endian, combined_endian,
+        endian,
     }, ...commands_extras);
 
     const commands_payload = command.create_tag_group();

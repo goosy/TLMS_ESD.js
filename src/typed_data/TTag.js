@@ -155,8 +155,15 @@ export class TTag extends EventEmitter {
                     this.tag_buffer.writeUInt8(new_byte);
                     this.check_change();
                 };
-                this.read_from = nothing_to_do;
-                this.write_to = nothing_to_do;
+                this.read_from = (buffer, endian) => { // @todo: implement endian conversion
+                    const masked_value = buffer.readUInt8(index) & this.bit_mask;
+                    this.set_value(masked_value > 0);
+                };
+                this.write_to = (buffer, endian) => { // @todo: implement endian conversion
+                    const byte = buffer.readUInt8(index);
+                    const new_byte = this.get_value() ? (byte | this.bit_mask) : (byte & ~this.bit_mask);
+                    buffer.writeUInt8(new_byte, index);
+                };
                 break;
             }
             case 'sint':
@@ -170,10 +177,10 @@ export class TTag extends EventEmitter {
                     this.check_change();
                 };
                 // Do not convert the byte members of combined tag
-                this.read_from = this.type === 'byte' ? nothing_to_do : (buffer) => {
+                this.read_from = (buffer) => { // @todo: implement endian conversion for byte
                     this.set_value(buffer.readUInt8(index));
                 }
-                this.write_to = this.type === 'byte' ? nothing_to_do : (buffer) => {
+                this.write_to = (buffer) => { // @todo: implement endian conversion for byte
                     buffer.writeUInt8(this.get_value(), index);
                 }
                 break;
@@ -215,18 +222,18 @@ export class TTag extends EventEmitter {
             case 'word': {
                 this.length = 2;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-                this.get_value = () => this.tag_buffer.readUInt16LE();
+                this.get_value = () => this.tag_buffer.readUInt16BE();
                 this.set_value = (v) => {
-                    this.tag_buffer.writeUInt16LE(v);
+                    this.tag_buffer.writeUInt16BE(v);
                     this.check_change();
                 };
                 // the word tag combined from bits and bytes, needs to have its endian reversed.
                 this.read_from = (buffer, endian) => {
-                    convert_endian_2byte(buffer, this.buffer, index, reverse_endians[endian]);
+                    convert_endian_2byte(buffer, this.buffer, index, endian);
                     this.check_change();
                 }
                 this.write_to = (buffer, endian) => {
-                    convert_endian_2byte(this.buffer, buffer, index, reverse_endians[endian]);
+                    convert_endian_2byte(this.buffer, buffer, index, endian);
                 }
                 break;
             }
@@ -265,18 +272,18 @@ export class TTag extends EventEmitter {
             case 'dword': {
                 this.length = 4;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-                this.get_value = () => this.tag_buffer.readUInt32LE();
+                this.get_value = () => this.tag_buffer.readUInt32BE();
                 this.set_value = (v) => {
-                    this.tag_buffer.writeUInt32LE(v);
+                    this.tag_buffer.writeUInt32BE(v);
                     this.check_change();
                 };
                 // the dword tag combined from bits and bytes, needs to have its endian reversed.
                 this.read_from = (buffer, endian) => {
-                    convert_endian_4bytes(buffer, this.buffer, index, reverse_endians[endian]);
+                    convert_endian_4bytes(buffer, this.buffer, index, endian);
                     this.check_change();
                 }
                 this.write_to = (buffer, endian) => {
-                    convert_endian_4bytes(this.buffer, buffer, index, reverse_endians[endian]);
+                    convert_endian_4bytes(this.buffer, buffer, index, endian);
                 }
                 break;
             }
