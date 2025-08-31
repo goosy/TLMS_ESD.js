@@ -1,6 +1,6 @@
 {
   "name": "tlms_esd",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Pipeline Leakage Emergency Shutdown System",
   "type": "module",
   "exports": {

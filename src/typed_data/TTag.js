@@ -29,12 +29,14 @@ function convert_endian_2byte(buffer_from, buffer_to, index, endian) {
     switch (endian) {
         case 'LE':
         case 'little':
-        case 'BEBS':  // BA
+        case 'BEBS': {  // BA
             const value = buffer_from.readUInt16LE(index);
             buffer_to.writeUInt16BE(value, index);
             break;
-        default: // BE LEBS
+        }
+        default: { // BE LEBS
             buffer_from.copy(buffer_to, index, index, index + 2);
+        }
     }
 }
 
@@ -58,26 +60,30 @@ function convert_endian_2byte(buffer_from, buffer_to, index, endian) {
 function convert_endian_4bytes(buffer_from, buffer_to, index, endian) {
     switch (endian) {
         case 'LE':
-        case 'little': // DCBA <-> ABCD
+        case 'little': { // DCBA <-> ABCD
             buffer_to[index] = buffer_from[index + 3];
             buffer_to[index + 1] = buffer_from[index + 2];
             buffer_to[index + 2] = buffer_from[index + 1];
             buffer_to[index + 3] = buffer_from[index];
             break;
-        case 'BEBS': // BADC <-> ABCD
+        }
+        case 'BEBS': { // BADC <-> ABCD
             buffer_to[index] = buffer_from[index + 1];
             buffer_to[index + 1] = buffer_from[index];
             buffer_to[index + 2] = buffer_from[index + 3];
             buffer_to[index + 3] = buffer_from[index + 2];
             break;
-        case 'LEBS': // CDAB <-> ABCD
+        }
+        case 'LEBS': {// CDAB <-> ABCD
             buffer_to[index] = buffer_from[index + 2];
             buffer_to[index + 1] = buffer_from[index + 3];
             buffer_to[index + 2] = buffer_from[index];
             buffer_to[index + 3] = buffer_from[index + 1];
             break;
-        default: // BE
+        }
+        default: { // BE
             buffer_from.copy(buffer_to, index, index, index + 4);
+        }
     }
 }
 
@@ -106,7 +112,7 @@ export class TTag extends EventEmitter {
             !['number', 'boolean'].includes(typeof this.value)
             || typeof this.name !== 'string'
         ) {
-            logger.error('Invalid tag configuration');
+            logger.error('Invalid tag configuration: the tag value is not a number or boolean');
             process.exit(1);
         }
         if (this.type === "bool") {
@@ -139,22 +145,23 @@ export class TTag extends EventEmitter {
         const tdata_buffer = this.buffer;
         const index = this.byte_offset;
         switch (this.type) {
-            case 'bool':
+            case 'bool': {
                 this.length = 1;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
                 this.get_value = () => (this.tag_buffer.readUInt8() & this.bit_mask) > 0;
                 this.set_value = (v) => {
-                    let byte = this.tag_buffer.readUInt8();
-                    byte = v ? (byte | this.bit_mask) : (byte & ~this.bit_mask);
-                    this.tag_buffer.writeUInt8(byte);
+                    const byte = this.tag_buffer.readUInt8();
+                    const new_byte = v ? (byte | this.bit_mask) : (byte & ~this.bit_mask);
+                    this.tag_buffer.writeUInt8(new_byte);
                     this.check_change();
                 };
                 this.read_from = nothing_to_do;
                 this.write_to = nothing_to_do;
                 break;
+            }
             case 'sint':
             case 'usint':
-            case 'byte':
+            case 'byte': {
                 this.length = 1;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
                 this.get_value = () => this.tag_buffer.readUInt8();
@@ -170,7 +177,8 @@ export class TTag extends EventEmitter {
                     buffer.writeUInt8(this.get_value(), index);
                 }
                 break;
-            case 'int':
+            }
+            case 'int': {
                 this.length = 2;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
                 this.get_value = () => this.tag_buffer.readInt16BE();
@@ -186,7 +194,8 @@ export class TTag extends EventEmitter {
                     convert_endian_2byte(this.buffer, buffer, index, endian);
                 }
                 break;
-            case 'uint':
+            }
+            case 'uint': {
                 this.length = 2;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
                 this.get_value = () => this.tag_buffer.readUInt16BE();
@@ -202,7 +211,8 @@ export class TTag extends EventEmitter {
                     convert_endian_2byte(this.buffer, buffer, index, endian);
                 }
                 break;
-            case 'word':
+            }
+            case 'word': {
                 this.length = 2;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
                 this.get_value = () => this.tag_buffer.readUInt16LE();
@@ -219,6 +229,7 @@ export class TTag extends EventEmitter {
                     convert_endian_2byte(this.buffer, buffer, index, reverse_endians[endian]);
                 }
                 break;
+            }
             case 'dint':
                 this.length = 4;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
@@ -251,7 +262,7 @@ export class TTag extends EventEmitter {
                     convert_endian_4bytes(this.buffer, buffer, index, endian);
                 }
                 break;
-            case 'dword':
+            case 'dword': {
                 this.length = 4;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
                 this.get_value = () => this.tag_buffer.readUInt32LE();
@@ -268,7 +279,8 @@ export class TTag extends EventEmitter {
                     convert_endian_4bytes(this.buffer, buffer, index, reverse_endians[endian]);
                 }
                 break;
-            case 'real':
+            }
+            case 'real': {
                 this.length = 4;
                 this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
                 this.get_value = () => this.tag_buffer.readFloatBE();
@@ -284,10 +296,12 @@ export class TTag extends EventEmitter {
                     convert_endian_4bytes(this.buffer, buffer, index, endian);
                 }
                 break;
+            }
             default:
                 logger.error(`Unknown tag type: ${this.type}`);
                 process.exit(1);
         }
+        this.set_value(this.value); // initialize the buffer with the initial value
     }
 
 }
