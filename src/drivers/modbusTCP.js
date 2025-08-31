@@ -131,7 +131,7 @@ const get_coil_info = (addr, units) => {
  * @param {string} host the ip of the TCP Port - required.
  * @param {number} port the Port number - default 502.
  */
-export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
+export function createMTServer(host = "0.0.0.0", port = 502, unit_map = {}) {
 
     const vector = {
         getInputRegister: (addr, unit_id) => {
@@ -192,7 +192,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
     server.on("start", () => {
         logger.info(`ModbusTCP server listening on modbus://${host}:${port}`);
     })
-    server.on("socket_error", function (err) {
+    server.on("socket_error", (err) => {
         logger.error(`client error: ${err}`);
     });
     server.on('socket_connect', (socket) => {
@@ -201,7 +201,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
     server.on('socket_disconnect', (socket) => {
         logger.error(`client disconnected: ${socket.remoteAddress}:${socket.remotePort}`);
     });
-    server.on('error', function (err) {
+    server.on('error', (err) => {
         logger.error(`server error: ${err}`);
     });
     server.on("stop", () => {

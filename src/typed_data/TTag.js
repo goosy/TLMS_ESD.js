@@ -30,8 +30,8 @@ function convert_endian_2byte(buffer_from, buffer_to, index, endian) {
         case 'LE':
         case 'little':
         case 'BEBS': {  // BA
-            const value = buffer_from.readUInt16LE(index);
-            buffer_to.writeUInt16BE(value, index);
+            buffer_to[index] = buffer_from[index + 1];
+            buffer_to[index + 1] = buffer_from[index];
             break;
         }
         default: { // BE LEBS
