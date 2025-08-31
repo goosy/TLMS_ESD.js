@@ -12,7 +12,7 @@ const node_status = [
     { name: "pressure_enabled", type: "Bool", offset: 8, length: 1, init_value: false }, // 压力允许报警标志
     { name: "temperature_enabled", type: "Bool", offset: 9, length: 1, init_value: false }, // 温度允许报警标志
     { name: "pressure_SD_F", type: "Bool", offset: 10, length: 1, init_value: false }, // 压力允许联锁停输标志
-    { name: "reserve", type: "Bool", offset: 11, length: 1, init_value: false }, // 预留
+    { name: "delay_protect", type: "Bool", offset: 11, length: 1, init_value: true }, // 通讯中断延迟保护
     { name: "pressure_AH_F", type: "Bool", offset: 12, length: 1, init_value: false }, // 压力上上限标志
     { name: "pressure_WH_F", type: "Bool", offset: 13, length: 1, init_value: false }, // 压力上限标志
     { name: "pressure_WL_F", type: "Bool", offset: 14, length: 1, init_value: false }, // 压力下限标志
@@ -62,11 +62,11 @@ export const NODE = {
         { name: "pressure_AL", type: "Real", offset: 688, length: 32, init_value: 0 }, //压力低低值
         { name: "pressure_DZ", type: "Real", offset: 720, length: 32, init_value: 0.05 }, //压力比较死区
         { name: "pressure_FT", type: "UDInt", offset: 752, length: 32, init_value: 0 }, //压力比较容错时间
-        { name: "flow1", type: "Real", offset: 784, length: 32, init_value: 0 }, //流量1
-        { name: "flow2", type: "Real", offset: 816, length: 32, init_value: 0 }, //流量2
-        { name: "flow3", type: "Real", offset: 848, length: 32, init_value: 0 }, //流量3
-        { name: "flow4", type: "Real", offset: 880, length: 32, init_value: 0 }, //流量4
-        { name: "flow5", type: "Real", offset: 912, length: 32, init_value: 0 }, //流量5
+        { name: "reserve1", type: "Real", offset: 784, length: 32, init_value: 0 }, //预留1
+        { name: "reserve2", type: "Real", offset: 816, length: 32, init_value: 0 }, //预留2
+        { name: "reserve3", type: "Real", offset: 848, length: 32, init_value: 0 }, //预留3
+        { name: "reserve4", type: "Real", offset: 880, length: 32, init_value: 0 }, //预留4
+        { name: "delay_protect_time", type: "UDInt", offset: 912, length: 32, init_value: 5000 }, //通讯中断延后挂起时间
         { name: "flow_smooth_factor", type: "Real", offset: 944, length: 32, init_value: 0.9 }, //流量平滑权值
         { name: "equS1", type: "DInt", offset: 976, length: 32, init_value: 10000 }, //流量1当量
         { name: "equS2", type: "DInt", offset: 1008, length: 32, init_value: 10000 }, //流量2当量
@@ -74,7 +74,7 @@ export const NODE = {
         { name: "equS4", type: "DInt", offset: 1072, length: 32, init_value: 10000 }, //流量4当量
         { name: "equS5", type: "DInt", offset: 1104, length: 32, init_value: 10000 }, //流量5当量
         { name: "pump_change_delay", type: "UDInt", offset: 1136, length: 32, init_value: 180000 }, //泵操作延时
-    ]
+    ],
 };
 
 complete_structure(NODE);

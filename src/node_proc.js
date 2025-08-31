@@ -23,12 +23,23 @@ export function node_init(actuator) {
     };
 
     const { endian, combined_endian } = driver_info;
+
+    let reset_comm_id;
     data_driver.on("data_error", () => {
-        data.work_OK = false;
+        setTimeout(() => {
+            data.work_OK = false;
+        }, data.delay_protect_time);
     });
     data_driver.on("connect", () => {
+        data.comm_OK = true;
+        clearTimeout(reset_comm_id);
         // reset parameter
         setTimeout(actuator.reset_parameter, 2000);
+    });
+    data_driver.on("connfailed", () => {
+        reset_comm_id = setTimeout(() => {
+            data.comm_OK = false;
+        }, data.delay_protect_time);
     });
     const data_extras = [];
     const commands_extras = [];
@@ -63,7 +74,7 @@ export function node_init(actuator) {
         'pressure_zero', 'pressure_span',
         'pressure_AH', 'pressure_WH', 'pressure_WL', 'pressure_AL',
         'pressure_DZ', 'pressure_FT',
-        'flow1', 'flow2', 'flow3', 'flow4', 'flow5',
+        'delay_protect_time',
         'flow_smooth_factor',
         'equS1', 'equS2', 'equS3', 'equS4', 'equS5',
         'pump_change_delay',
@@ -102,20 +113,12 @@ export function node_init(actuator) {
         }
         if (tagname === 'comm_OK') {
             section.update_comm_OK();
-            if (new_value) {
-                logger.info(`actuator ${name} communication is normal`);
-            } else {
-                logger.error(`actuator ${name} communication lost`);
-            }
+            logger.info(`actuator ${name} communication is ${new_value ? 'normal' : 'lost'}`);
             return;
         }
         if (tagname === 'work_OK') {
             section.update_work_OK();
-            if (new_value) {
-                logger.info(`actuator ${name} resumes normal operation`);
-            } else {
-                logger.error(`actuator ${name} is not working properly`);
-            }
+            logger.info(`actuator ${name} ${new_value ? 'resumes normal operation' : 'is not working properly'}`);
             return;
         }
         if (tagname === 'pump_run') {
@@ -168,7 +171,7 @@ export function node_init(actuator) {
         'pressure_zero', 'pressure_span',
         'pressure_AH', 'pressure_WH', 'pressure_WL', 'pressure_AL',
         'pressure_DZ', 'pressure_FT',
-        'flow1', 'flow2', 'flow3', 'flow4', 'flow5',
+        'delay_protect_time',
         'flow_smooth_factor',
         'equS1', 'equS2', 'equS3', 'equS4', 'equS5',
         'pump_change_delay',
@@ -200,24 +203,19 @@ let no_response_count = 0;
 
 export function node_loop(actuator) {
     const { data, command, data_driver } = actuator;
-    const is_connected = data_driver.is_connected;
-    data.comm_OK = is_connected;
-    if (is_connected) {
+    if (data_driver.is_connected) {
         // read a node data.
         actuator.data_payload.read();
         // @TODO check the correctness of the ID
-        data.comm_OK = true;
         // @delete temporary code
-        // because the PLC is not completed,
+        // because the PLC program is not completed,
         // all commands except stop_pumps enable_pressure_SD disable_pressure_SD and write_paras
         // will reset unconditionally.
         command.commands = command.commands & 0xB1;
-    } else {
-        data.work_OK = false;
     }
     if (command.has_commands === true) no_response_count++;
     else no_response_count = 0;
-    if (no_response_count > 2) {
+    if (no_response_count > 3) {
         actuator.debounce_send_commands();
     }
 }
