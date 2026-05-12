@@ -11,14 +11,12 @@ export class TGroup {
      * @param {number} [options.IO_start=0] - The starting position of the I/O buffer.
      * @param {number} [options.IO_length] - The length of the I/O buffer. Defaults to tdata.size - IO_start if not provided.
      * @param {string} options.endian - The endianness of the data.
-     * @param {string} options.combined_endian - The combined endianness for specific data types
      */
     constructor(tdata, options) {
         this.tdata = tdata;
         this.IO_start = options.IO_start ?? 0;
         this.IO_length = options.IO_length ?? tdata.size - this.IO_start;
         this.endian = options.endian ?? 'BE';
-        this.combined_endian = options.combined_endian ?? 'BE';
     }
 
     /**
@@ -31,12 +29,8 @@ export class TGroup {
         if (!read_OK) return false;
         const IO_buffer = this.tdata.IO_buffer;
         for (const tag of this.#tags) {
-            const endian = tag.type === 'word' || tag.type === 'dword'
-                ? this.combined_endian
-                : this.endian;
-            tag.read_from(IO_buffer, endian);
+            tag.read_from(IO_buffer, this.endian);
         }
-        this.tdata.check_all_tags();
         return true;
     }
 
@@ -49,10 +43,7 @@ export class TGroup {
         let write_OK = true;
         const IO_buffer = this.tdata.IO_buffer;
         for (const tag of this.#tags) {
-            const endian = tag.type === 'word' || tag.type === 'dword'
-                ? this.combined_endian
-                : this.endian;
-            tag.write_to(IO_buffer, endian);
+            tag.write_to(IO_buffer,  this.endian);
         }
         for (const area of this.#areas) {
             const { start, end } = area;
@@ -116,6 +107,10 @@ export class TGroup {
                     area.start = prev.start;
                     areas.splice(mid - 1, 1);
                 }
+                return;
+            }
+            // if tag.type is bool, permits intervals entirely within existing ones.
+            if (tag.type === "bool" || tag_start >= area.start && tag_end <= area.end) {
                 return;
             }
             // otherwise, it's an invalid configuration
