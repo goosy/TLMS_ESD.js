@@ -5,9 +5,7 @@
         "src/"
     ],
     "ext": "js,yaml",
-    "ignore": [
-        "src/emulators/"
-    ],
+    "ignore": [],
     "delay": "3",
     "execMap": {}
 }
