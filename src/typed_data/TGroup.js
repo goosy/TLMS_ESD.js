@@ -11,14 +11,12 @@ export class TGroup {
      * @param {number} [options.IO_start=0] - The starting position of the I/O buffer.
      * @param {number} [options.IO_length] - The length of the I/O buffer. Defaults to tdata.size - IO_start if not provided.
      * @param {string} options.endian - The endianness of the data.
-     * @param {string} options.combined_endian - The combined endianness for specific data types
      */
     constructor(tdata, options) {
         this.tdata = tdata;
         this.IO_start = options.IO_start ?? 0;
         this.IO_length = options.IO_length ?? tdata.size - this.IO_start;
         this.endian = options.endian ?? 'BE';
-        this.combined_endian = options.combined_endian ?? 'BE';
     }
 
     /**
@@ -30,13 +28,9 @@ export class TGroup {
         const read_OK = await this.tdata.IO_read_all();
         if (!read_OK) return false;
         const IO_buffer = this.tdata.IO_buffer;
-        this.#tags.forEach(tag => {
-            const endian = tag.type === 'word' || tag.type === 'dword'
-                ? this.combined_endian
-                : this.endian;
-            tag.read_from(IO_buffer, endian);
-        });
-        this.tdata.check_all_tags();
+        for (const tag of this.#tags) {
+            tag.read_from(IO_buffer, this.endian);
+        }
         return true;
     }
 
@@ -48,12 +42,9 @@ export class TGroup {
     async write() {
         let write_OK = true;
         const IO_buffer = this.tdata.IO_buffer;
-        this.#tags.forEach(tag => {
-            const endian = tag.type === 'word' || tag.type === 'dword'
-                ? this.combined_endian
-                : this.endian;
-            tag.write_to(IO_buffer, endian);
-        });
+        for (const tag of this.#tags) {
+            tag.write_to(IO_buffer,  this.endian);
+        }
         for (const area of this.#areas) {
             const { start, end } = area;
             const length = end - start;
@@ -67,7 +58,7 @@ export class TGroup {
     #add(tagname) {
         const tag = this.tdata.get(tagname);
         if (!tag) {
-            logger.error('Invalid tag configuration');
+            logger.error('Invalid tag configuration: no such tag');
             process.exit(1);
         }
 
@@ -90,45 +81,57 @@ export class TGroup {
         while (left <= right) {
             const mid = Math.floor((left + right) / 2);
             const area = areas[mid];
+            // find overlapping area
             if (tag_start > area.end) {
                 left = mid + 1;
                 continue;
-            } else if (tag_end < area.start) {
+            }
+            if (tag_end < area.start) {
                 right = mid - 1;
                 continue;
             }
-            if (tag_start == area.end) {
-                // Merge right side
+            // merge area
+            if (tag_start === area.end) { // Merge right side
                 area.end = tag_end;
                 const next = areas[mid + 1];
-                if (next && tag_end == next.start) {
+                if (next && tag_end === next.start) {
                     area.end = next.end;
                     areas.splice(mid + 1, 1);
                 }
-                return mid;
+                return;
             }
-            if (tag_end == area.start) {
-                // Merge left side
+            if (tag_end === area.start) { // Merge left side
                 area.start = tag_start;
                 const prev = areas[mid - 1];
-                if (prev && tag_start == prev.end) {
+                if (prev && tag_start === prev.end) {
                     area.start = prev.start;
                     areas.splice(mid - 1, 1);
                 }
-                return mid;
+                return;
             }
-            logger.error('Invalid tag configuration');
+            // if tag.type is bool, permits intervals entirely within existing ones.
+            if (tag.type === "bool" || tag_start >= area.start && tag_end <= area.end) {
+                return;
+            }
+            // otherwise, it's an invalid configuration
+            logger.error(`Invalid tag configuration: the ${tag.name} tag overlaps with existing ones`);
             process.exit(1);
         }
 
         // insert new area
         areas.splice(left, 0, { start: tag_start, end: tag_end });
-        return left;
     }
 
     add(...tags) {
         for (const tag of tags) {
             this.#add(tag);
+        }
+    }
+
+    copy_from(tdata) {
+        for (const tag of this.#tags) {
+            const value = tdata[tag.name];
+            if (value !== undefined) tag.set_value(value);
         }
     }
 }
