@@ -17,10 +17,4 @@ const items = [
     { includes: node_parameters, offset: 160 },
 ];
 
-export const COMMAND = build_structure({
-    name: "COMMAND",
-    groups: {
-        status: { start: 128, end: 160 },
-        paras: { start: 160, end: 1184 },
-    },
-}, items);
+export const COMMAND = build_structure({ name: "COMMAND" }, items);

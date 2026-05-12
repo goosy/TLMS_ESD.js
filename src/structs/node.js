@@ -35,11 +35,4 @@ const items = [
     { includes: node_parameters, offset: 144 },
 ];
 
-export const NODE = build_structure({
-    name: "NODE",
-    groups: {
-        status: { start: 0, end: 144 },
-        paras: { start: 144, end: 1168 },
-    },
-}, items);
-
+export const NODE = build_structure({ name: "NODE" }, items);

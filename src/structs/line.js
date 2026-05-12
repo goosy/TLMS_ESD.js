@@ -17,7 +17,4 @@ const items = [
     { name: "flow_diff", type: "Real", offset: 48, length: 32, init_value: 0 }, // Flow difference bypass (reserved, not implemented)
 ];
 
-export const LINE = build_structure({
-    name: "LINE",
-}, items);
-
+export const LINE = build_structure({ name: "LINE" }, items);
