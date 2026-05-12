@@ -175,7 +175,9 @@ export function node_init(actuator) {
     command.get('read_paras').on("change", (_, new_value) => {
         if (new_value) {
             actuator.reset_parameters();
-            process.nextTick(() => {command.read_paras = false});
+            process.nextTick(() => {
+                command.read_paras = false;
+            });
         }
     });
     command.get('write_paras').on("change", (_, new_value) => {

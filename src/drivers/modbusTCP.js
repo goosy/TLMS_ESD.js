@@ -131,7 +131,7 @@ const get_coil_info = (addr, units) => {
  * @param {string} host the ip of the TCP Port - required.
  * @param {number} port the Port number - default 502.
  */
-export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
+export function createMTServer(host = "0.0.0.0", port = 502, unit_map = {}) {
 
     const vector = {
         getInputRegister: (addr, unit_id) => {

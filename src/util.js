@@ -77,11 +77,14 @@ export const logger = {
  * @return {void}
  */
 function mixin(target, mixin_item) {
-    [...Object.getOwnPropertyNames(mixin_item), ...Object.getOwnPropertySymbols(mixin_item)].forEach(key => {
-        if (!target.hasOwnProperty(key)) {
-            Object.defineProperty(target, key, Object.getOwnPropertyDescriptor(mixin_item, key));
+    for (const key of Reflect.ownKeys(mixin_item)) {
+        if (!Object.hasOwn(target, key)) {
+            Object.defineProperty(
+                target, key,
+                Object.getOwnPropertyDescriptor(mixin_item, key)
+            );
         }
-    });
+    }
 }
 
 /**
@@ -93,11 +96,11 @@ function mixin(target, mixin_item) {
  * @param {...Object} mixin_items - The objects containing properties to mix into the object.
  * @return {void}
  */
-Object.mixin = function (obj, ...mixin_items) {
-    mixin_items.forEach(mixin_item => {
+Object.mixin = (obj, ...mixin_items) => {
+    for (const mixin_item of mixin_items) {
         mixin(Object.getPrototypeOf(obj), Object.getPrototypeOf(mixin_item));
         mixin(obj, mixin_item);
-    });
+    }
 }
 
 // Create an object to store timers for each tag
