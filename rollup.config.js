@@ -16,18 +16,6 @@ export default [{
     ],
     external: [],
 }, {
-    input: 'src/emulator.js',
-    output: [{
-        file: pkg.exports.emu,
-        format: 'es',
-    }],
-    plugins: [
-        resolve({ preferBuiltins: true }),
-        commonjs(),
-        json()
-    ],
-    external: [],
-}, {
     input: 'src/cli.js',
     output: [{
         file: pkg.exports.cli,
@@ -37,5 +25,5 @@ export default [{
         resolve({ preferBuiltins: true }),
         json()
     ],
-    external: ['./main.js', './emulator.js'],
+    external: ['./main.js'],
 }];
