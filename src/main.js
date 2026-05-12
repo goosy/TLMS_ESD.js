@@ -50,10 +50,8 @@ function add_node(node, unit_map) {
     let command_driver = null;
     // for actuator side
     if (driver_info.protocol === 'modbusTCP') {
-        const data = driver_info.data;
-        data_driver = get_modbusTCP_client(driver_info.IP, data.port);
-        const commands = driver_info.commands;
-        command_driver = get_modbusTCP_client(driver_info.IP, commands.port);
+        data_driver = get_modbusTCP_client(driver_info.IP, driver_info.data.port);
+        command_driver = get_modbusTCP_client(driver_info.IP, driver_info.commands.port);
     } else if (driver_info.protocol === 'S7') {
         const { port, host, rack, slot } = driver_info;
         data_driver = command_driver = get_s7_client(host, port, rack, slot);
@@ -102,9 +100,9 @@ function run_controller(controller) {
             const data = new TData(SECTION, name);
             section.data = data;
             unit_map.attach_unit(unit_id_map[name], data, 0);
-            [...section.begin_nodes, ...section.end_nodes].forEach(node => { // nodes
+            for (const node of [...section.begin_nodes, ...section.end_nodes]) { // nodes
                 add_node(node, unit_map);
-            });
+            }
             section_init(section);
             running_sections.push(section);
         }
@@ -117,8 +115,12 @@ function run_controller(controller) {
     // main loop
     setInterval(() => {
         // running_lines.forEach(line => line_loop(line));
-        running_sections.forEach(section => section_loop(section));
-        running_nodes.forEach(node => node_loop(node));
+        for (const section of running_sections) {
+            section_loop(section);
+        }
+        for (const node of running_nodes) {
+            node_loop(node);
+        }
     }, MAIN_PERIOD);
 }
 

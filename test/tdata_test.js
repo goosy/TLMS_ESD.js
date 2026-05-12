@@ -19,7 +19,7 @@ const commands_list = [
     "enable_pressure_alarm", "disable_pressure_alarm",
     "enable", "disable",
     "reset_CPU",
-    "reset_conn",
+    "reset_conn", "reserve",
     "executing",
 ];
 
@@ -36,15 +36,15 @@ const node_status = [
 test('NODE', () => {
     assert.strictEqual(NODE.length, 1168);
     assert.ok(is_arr_equal(NODE.items[1].coupling, node_status));
-    assert.strictEqual(NODE.items[17].offset, 31);
+    assert.strictEqual(NODE.items[17].offset, 23);
     assert.ok(is_arr_equal(NODE.items[21].coupling, commands_list));
-    assert.strictEqual(NODE.items[36].offset, 143);
-    assert.strictEqual(NODE.items[37 + 35].offset, 144 + 992);
+    assert.strictEqual(NODE.items[37].offset, 135);
+    assert.strictEqual(NODE.items[38 + 35].offset, 144 + 992);
 });
 
 test('COMMAND', () => {
     assert.strictEqual(COMMAND.length, 1184);
     assert.ok(is_arr_equal(COMMAND.items[6].coupling, commands_list));
-    assert.strictEqual(COMMAND.items[21].offset, 159);
-    assert.strictEqual(COMMAND.items[22 + 35].offset, 160 + 992);
+    assert.strictEqual(COMMAND.items[22].offset, 151);
+    assert.strictEqual(COMMAND.items[23 + 35].offset, 160 + 992);
 });

@@ -54,7 +54,6 @@ actuators:
     port: 503
     unit_id: 12
     endian: big
-    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
@@ -70,7 +69,6 @@ actuators:
     port: 503
     unit_id: 21
     endian: big
-    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
@@ -94,7 +92,6 @@ actuators:
     port: 503
     unit_id: 25
     endian: big
-    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
 
@@ -113,6 +110,5 @@ actuators:
     port: 503
     unit_id: 51
     endian: big
-    combined_endian: big
     data: { start: 0 }
     commands: { start: 200 }
