@@ -1,12 +1,10 @@
 import { debouncify, logger } from "./util.js";
-
-function get_update_fn(line, line_prop, sections, section_props) {
-    section_props ??= [line_prop];
-    const getters = sections.map(
+function get_update_fn(line, line_prop, sections, section_props = [line_prop]) {
+    const getters = sections.flatMap(
         section => section_props.map(
             prop => () => section.data[prop]
         )
-    ).flat(1);
+    );
     const debounce_key = `line${line.name}_${line_prop}_update`;
     const update_fn = () => {
         line.data[line_prop] = getters.reduce((acc, getter) => {
@@ -45,9 +43,9 @@ export function line_init(line) {
         logger.debug(`line_${name}: ${tagname} ${old_value} => ${new_value}`);
     });
     data.get('bypass').on("change", (_, new_value) => {
-        sections.forEach(section => {
+        for (const section of sections) {
             section.data.bypass = new_value;
-        });
+        }
         logger.info(`line ${name} changed bypass status to ${new_value}`);
     });
     data.get('pump_run').on("change", (_, new_value) => {

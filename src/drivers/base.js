@@ -11,30 +11,22 @@ export class Base_Driver {
         let disconnect_time = 10000; // Ensure that the connection is made initially
         let data_error = false;
         Object.defineProperty(this, 'started', {
-            get: function () {
-                return started;
-            },
+            get: () => started,
             configurable: false,
             enumerable: true,
         });
         Object.defineProperty(this, 'connecting', {
-            get: function () {
-                return connecting;
-            },
+            get: () => connecting,
             configurable: false,
             enumerable: true,
         });
         Object.defineProperty(this, 'disconnect_time', {
-            get: function () {
-                return disconnect_time;
-            },
+            get: () => disconnect_time,
             configurable: false,
             enumerable: true,
         });
         Object.defineProperty(this, 'data_error', {
-            get: function () {
-                return data_error;
-            },
+            get: () => data_error,
             configurable: false,
             enumerable: true,
         });
@@ -52,8 +44,8 @@ export class Base_Driver {
                     if (!connecting && disconnect_time > this.reconnect_time) {
                         connecting = true;
                         this.connect().then(
-                            () => connecting = false,
-                            () => connecting = false,
+                            () => { connecting = false; },
+                            () => { connecting = false; },
                         );
                     }
                 }

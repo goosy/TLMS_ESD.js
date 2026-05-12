@@ -2,7 +2,7 @@ import { node_commands, node_parameters, build_structure } from "./share.js";
 const node_status = [ // Note: from high byte
     { name: "comm_OK", type: "Bool", offset: 8, length: 1, init_value: true }, // Used to maintain node communication status
     { name: "work_OK", type: "Bool", offset: 9, length: 1, init_value: true }, // Used to maintain node work status
-    { name: "pump_run", type: "Bool", offset: 10, length: 1, init_value: false }, // Whether the pump is running on this node
+    { name: "pump_run", type: "Bool", offset: 10, length: 1, init_value: false }, // Is the pump running in this node?
     { name: "pump_change_F", type: "Bool", offset: 11, length: 1, init_value: false }, // Whether the pump is in the delay of operation on this node
     { name: "pump_run_1", type: "Bool", offset: 12, length: 1, init_value: false }, // Running status of pump 1
     { name: "pump_run_2", type: "Bool", offset: 13, length: 1, init_value: false }, // Running status of pump 2
@@ -20,7 +20,7 @@ const node_status = [ // Note: from high byte
 
 const items = [
     { name: "ID", type: "UInt", offset: 0, length: 16, init_value: 0 },
-    {   // Node status
+    { // the status of the node
         name: "status", type: "Word", offset: 16, length: 16, init_value: 3,
         is_combined: true, coupling: node_status,
     },

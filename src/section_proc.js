@@ -77,12 +77,14 @@ export function section_init(section) {
     );
     section.update_flow_diff = debouncify(
         `section${name}_flow_diff_update`,
-        () => data.flow_diff = data.flow_begin - data.flow_end,
+        () => { data.flow_diff = data.flow_begin - data.flow_end; },
         50
     );
     section.update_pre_stop_notice = debouncify(
         `section${name}_pre_stop_notice_update`,
-        () => data.pre_stop_notice = data.flow_alarm_F && data.pump_run && data.protect_F,
+        () => {
+            data.pre_stop_notice = data.flow_alarm_F && data.pump_run && data.protect_F;
+        },
         50
     );
     section.update_comm_OK();
@@ -102,21 +104,21 @@ export function section_init(section) {
         }
     });
     data.get('stop_pumps').on("change", (_, new_value) => {// set command
-        if (new_value == true) {
-            pump_nodes.forEach((node) => {
-                node.command.stop_pumps = node.data.pump_run
+        if (new_value) {
+            for (const node of pump_nodes) {
+                node.command.stop_pumps = node.data.pump_run;
                 logger.info(`send stop_pumps command to ${node.name} actuator`);
-            });
+            }
         } else {
-            pump_nodes.forEach(node => {
+            for (const node of pump_nodes) {
                 node.command.stop_pumps = false;
                 node.command.cancel_stop = true;
                 logger.info(`send cancel_stop command to ${node.name} actuator`);
-            });
+            };
         }
     });
     data.get('action_F').on("change", (_, new_value) => { // log action
-        if (new_value == true) {
+        if (new_value) {
             logger.info(`section ${name}: interlock action`);
             // logs: ID, flow_begin, flow_end, flow_diff
             const action_record = line.controller.action_record;
@@ -164,14 +166,14 @@ export function section_init(section) {
         line.update_pump_run();
     });
     data.get('flow_warning_F').on("change", (_, new_value) => {
-        if (new_value == true) {
+        if (new_value) {
             logger.warn(`section ${name}: flowmeter warning arrived`);
         } else {
             logger.info(`section ${name}: flowmeter warning left`);
         }
     });
     data.get('flow_alarm_F').on("change", (_, new_value) => {
-        if (new_value == true) {
+        if (new_value) {
             logger.error(`section ${name}: flowmeter alarm arrived`);
         } else {
             logger.info(`section ${name}: flowmeter alarm left`);
@@ -183,26 +185,26 @@ export function section_init(section) {
         section.update_pre_stop_notice();
     });
     data.get('hangon_MF').on("change", (_, new_value) => {
-        if (new_value == true) {
+        if (new_value) {
             logger.warn(`section ${name}: manually stop protection`);
         } else {
             logger.info(`section ${name}: manually resume protection`);
         }
     });
     data.get('hangon_AF').on("change", (_, new_value) => {
-        if (new_value == true) {
+        if (new_value) {
             logger.info(`section ${name}: automatically stop protection`);
         } else {
             logger.info(`section ${name}: automatically resume protection`);
         }
     });
     data.get('pre_stop_notice').on("change", (_, new_value) => {
-        if (new_value == true) {
+        if (new_value) {
             logger.info(`section ${name} start action countdown`);
         }
     });
     data.get('press_alarm_F').on("change", (_, new_value) => {
-        if (new_value == true) {
+        if (new_value) {
             logger.error(`section ${name}: pressure alarm arrived`);
         } else {
             logger.info(`section ${name}: pressure alarm left`);
