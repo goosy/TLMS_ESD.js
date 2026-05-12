@@ -140,7 +140,6 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
                 logger.error(`Invalid InputRegister address(${addr}) when reading unit ${unit_id}`);
                 return 0;
             }
-            if (tdata.LE_list.includes(offset)) return tdata.buffer.readUInt16LE(offset);
             return tdata.buffer.readUInt16BE(offset);
         },
         getHoldingRegister: (addr, unit_id) => {
@@ -149,7 +148,6 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
                 logger.error(`Invalid HoldingRegister address(${addr}) when reading unit ${unit_id}`);
                 return 0;
             }
-            if (tdata.LE_list.includes(offset)) return tdata.buffer.readUInt16LE(offset);
             return tdata.buffer.readUInt16BE(offset);
         },
         setRegister: (addr, value, unit_id) => {
@@ -158,8 +156,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
                 logger.error(`Invalid regsiter address: ${addr} when writing to unit ${unit_id}`);
                 return 0;
             }
-            if (tdata.LE_list.includes(offset)) tdata.buffer.writeUInt16LE(value, offset);
-            else tdata.buffer.writeUInt16BE(value, offset);
+            tdata.buffer.writeUInt16BE(value, offset);
             tdata.check_all_tags();
             return;
         },
@@ -192,7 +189,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
     server.on("start", () => {
         logger.info(`ModbusTCP server listening on modbus://${host}:${port}`);
     })
-    server.on("socket_error", function (err) {
+    server.on("socket_error", (err) => {
         logger.error(`client error: ${err}`);
     });
     server.on('socket_connect', (socket) => {
@@ -201,7 +198,7 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map) {
     server.on('socket_disconnect', (socket) => {
         logger.error(`client disconnected: ${socket.remoteAddress}:${socket.remotePort}`);
     });
-    server.on('error', function (err) {
+    server.on('error', (err) => {
         logger.error(`server error: ${err}`);
     });
     server.on("stop", () => {

@@ -46,7 +46,6 @@ function add_conf(doc) {
             const start = modbus_server.start ?? 0;
             const length = modbus_server.length;
             const endian = modbus_server.endian ?? 'BE';
-            const combined_endian = modbus_server.combined_endian ?? 'LE';
 
             const data = modbus_server.data ?? {};
             data.port ??= port;
@@ -58,7 +57,7 @@ function add_conf(doc) {
             commands.unit_id ??= unit_id;
             commands.start ??= start;
             commands.length ??= length;
-            actuator.modbus_server = { data, commands, endian, combined_endian };
+            actuator.modbus_server = { data, commands, endian };
         } else if (s7_server) {
             const port = s7_server.port ?? 102;
             const rack = s7_server.rack ?? 0;
@@ -68,7 +67,6 @@ function add_conf(doc) {
             const start = s7_server.start ?? 0;
             const length = s7_server.length;
             const endian = s7_server.endian ?? 'BE';
-            const combined_endian = s7_server.combined_endian ?? 'LE';
 
             const data = s7_server.data ?? {};
             data.area ??= area;
@@ -80,7 +78,7 @@ function add_conf(doc) {
             commands.db ??= db;
             commands.start ??= start;
             commands.length ??= length;
-            actuator.s7_server = { port, rack, slot, data, commands, endian, combined_endian };
+            actuator.s7_server = { port, rack, slot, data, commands, endian };
         }
 
 
@@ -93,7 +91,7 @@ function add_conf(doc) {
         actuator.temperature_WL ??= actuator.temperature_zero;
         actuator.temperature_AL ??= actuator.temperature_zero;
         cfg_actuators[actuator.name] = actuator;
-        cfg_actuators['ID' + actuator.id] = actuator;
+        cfg_actuators[`ID${actuator.id}`] = actuator;
         cfg_actuators.push(actuator);
     }
     for (const _section of _sections) {
@@ -101,14 +99,14 @@ function add_conf(doc) {
         const name = section.name;
         const ID = section.id;
         cfg_sections[name] = section;
-        cfg_sections['ID' + ID] = section;
+        cfg_sections[`ID${ID}`] = section;
         cfg_sections.push(section);
     }
     for (const _line of _lines) {
         const name = _line.name;
         const ID = _line.id;
         cfg_lines[name] = _line;
-        cfg_lines['ID' + ID] = _line;
+        cfg_lines[`ID${ID}`] = _line;
         cfg_lines.push(_line);
     }
 }
