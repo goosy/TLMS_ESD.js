@@ -21,7 +21,8 @@ export class GCL {
     }
     get_lines() {
         this.#lines = [];
-        let index, position = 0;
+        let index;
+        let position = 0;
         do {
             index = this.#source.indexOf('\n', position);
             if (index > -1) {
@@ -32,8 +33,6 @@ export class GCL {
         if (position < this.#source.length) this.#lines.push([position, this.#source.length]);
     }
 
-    constructor() { }
-
     get_coorinfo(start, end) {
         const ln = 1 + this.#lines.findIndex(([s, e]) => s <= start && start < e);
         const col = start - this.#lines[ln - 1][0];
@@ -41,21 +40,21 @@ export class GCL {
         return { ln, col, code };
     }
 
-    async load(yaml, options = {}) {
+    async load(file_or_yaml, options = {}) {
         const {
             encoding = 'utf8',
             isFile = true,
             filename = '',
         } = options;
         if (isFile) {
-            this.#file = yaml;
-            yaml = this.#source = (await readFile(this.#file, { encoding }));
+            this.#file = file_or_yaml;
+            this.#source = (await readFile(file_or_yaml, { encoding }));
         } else {
             this.#file = filename;
-            yaml = this.#source = yaml;
+            this.#source = file_or_yaml;
         }
         this.get_lines();
-        this.#document = parseDocument(yaml, { version: '1.1' }); // only YAML 1.1 support merge key
+        this.#document = parseDocument(this.#source, { version: '1.1' }); // only YAML 1.1 support merge key
         this.#document.gcl = this;
     }
 }
