@@ -26,3 +26,6 @@ yarn.lock
 
 /main.js
 /cli.js
+
+# local data
+/.local
