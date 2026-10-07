@@ -27,6 +27,8 @@ yarn.lock
 /main.js
 /cli.js
 
+# local data
+/.local
+
 # agent & local
 AGENTS.md
-.local/
