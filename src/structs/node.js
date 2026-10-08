@@ -27,7 +27,6 @@ const items = [
     { name: "temperature", type: "Real", offset: 32, length: 32, init_value: 0 },
     { name: "pressure", type: "Real", offset: 64, length: 32, init_value: 0 },
     { name: "flowmeter", type: "Real", offset: 96, length: 32, init_value: 0 },
-    { name: "flowmeter", type: "Real", offset: 96, length: 32, init_value: 0 },
     { // Execution response
         name: "response_code", type: "Word", offset: 128, length: 16, init_value: 0,
         is_combined: true, coupling: node_commands,
