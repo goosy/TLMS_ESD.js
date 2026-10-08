@@ -238,7 +238,7 @@ describe("TData set_IO", () => {
     test("IO_write writes at the mapped remote address", async () => {
         const { data, driver } = setup();
         assert.equal(await data.IO_write(Buffer.from([1, 2]), { start: 8, length: 2 }), true);
-        assert.deepEqual(driver.writes, [{ start: 106, bytes: [1, 2], extras: ["extra"] }]);
+        assert.deepEqual(driver.writes, [{ start: 106, length: 2, bytes: [1, 2], extras: ["extra"] }]);
     });
 
     test("range outside the exchange area exits", async (t) => {

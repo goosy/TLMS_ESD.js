@@ -113,11 +113,17 @@ export class TData extends EventEmitter {
         // length of the exchange data segment
         const IO_length = options.length ?? this.#buffer.length - IO_start;
         const endian = options.endian ?? "BE";
+        // smallest writable unit of the driver in bytes
+        const write_unit = driver.write_unit ?? 1;
+        if (IO_start % write_unit || remote_start % write_unit || IO_length % write_unit) {
+            logger.error(`${this.name}: IO area ${JSON.stringify({ IO_start, remote_start, IO_length })} is not aligned to the write unit ${write_unit}`);
+            process.exit(1);
+        }
 
         this.create_tag_group = (...tags) => {
             const tgroup = new TGroup(
                 this,
-                { IO_start, remote_start, IO_length, endian }
+                { IO_start, remote_start, IO_length, endian, write_unit }
             );
             tgroup.add(...tags);
             return tgroup;
@@ -151,7 +157,7 @@ export class TData extends EventEmitter {
         this.IO_write = async (buffer, range) => {
             if (!check_driver(range)) return false;
             const start = range.start + offset;
-            return await driver.write(buffer, { start }, ...extras);
+            return await driver.write(buffer, { start, length: range.length }, ...extras);
         }
         this.IO_read_all = async () => {
             const start = remote_start;

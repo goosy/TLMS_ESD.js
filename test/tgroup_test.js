@@ -1,4 +1,4 @@
-import { assert_exits, create_fake_driver, make_struct, mock_exit } from "./share.js"; // must be first: sets LOG_LEVEL
+import { assert_exits, create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from 'node:assert/strict';
 import test, { describe } from 'node:test';
 import { TData } from "../src/typed_data/TData.js";
@@ -17,20 +17,26 @@ const GROUP_ITEMS = [
     { name: "d", type: "Int", offset: 96, length: 16, init_value: 0 },
 ];
 
-const setup = (endian = "BE", options = {}) => {
+const setup = (endian = "BE", options = {}, write_unit = 1) => {
     const data = new TData(make_struct(GROUP_ITEMS), "group");
-    const driver = create_fake_driver();
+    const driver = create_fake_driver(write_unit);
     data.set_IO(driver, { endian, ...options });
     return { data, driver };
 };
 
 // The written areas show how the group merged its tags.
-const written_areas = async (...names) => {
-    const { data, driver } = setup();
+const areas_of = async (setup_args, names) => {
+    const { data, driver } = setup(...setup_args);
     const group = data.create_tag_group(...names);
     await group.write();
-    return driver.writes.map(({ start, bytes }) => [start, bytes.length]);
+    return driver.writes.map(({ start, length, bytes }) => {
+        assert.equal(length, bytes.length);
+        return [start, length];
+    });
 };
+// write unit 1 (S7) and 2 (Modbus TCP)
+const written_areas = (...names) => areas_of(["BE", {}, 1], names);
+const register_areas = (...names) => areas_of(["BE", {}, 2], names);
 
 describe("TGroup areas", () => {
     test("separate tags give separate areas", async () => {
@@ -59,11 +65,28 @@ describe("TGroup areas", () => {
         assert.deepEqual(await written_areas("flags", "f0", "f8"), [[2, 2]]);
     });
 
-    test("a tag covering an existing Bool area is merged", {
-        todo: "adding a word after one of its bits is treated as an overlap and exits",
-    }, async (t) => {
-        mock_exit(t);
+    test("a tag covering an existing Bool area is merged", async () => {
         assert.deepEqual(await written_areas("f0", "flags"), [[2, 2]]);
+    });
+
+    test("a tag may absorb several areas at once", async () => {
+        assert.deepEqual(await written_areas("f0", "b", "a", "flags"), [[0, 6]]);
+    });
+
+    test("adding the same tag twice is ignored", async () => {
+        assert.deepEqual(await written_areas("b", "b"), [[4, 2]]);
+    });
+
+    test("partially overlapping tags are merged (overlap is a layout error)", async () => {
+        const items = [
+            { name: "x", type: "DInt", offset: 0, length: 32, init_value: 0 },
+            { name: "y", type: "DInt", offset: 16, length: 32, init_value: 0 },
+        ];
+        const data = new TData(make_struct(items), "overlap");
+        const driver = create_fake_driver();
+        data.set_IO(driver, {});
+        await data.create_tag_group("x", "y").write();
+        assert.deepEqual(driver.writes.map(({ start, length }) => [start, length]), [[0, 6]]);
     });
 
     test("unknown tag exits", (t) => {
@@ -78,14 +101,37 @@ describe("TGroup areas", () => {
         assert_exits(t, () => data2.create_tag_group("c"));
     });
 
-    test("partially overlapping tags exit", (t) => {
-        const items = [
-            { name: "x", type: "DInt", offset: 0, length: 32, init_value: 0 },
-            { name: "y", type: "DInt", offset: 16, length: 32, init_value: 0 },
-        ];
-        const data = new TData(make_struct(items), "overlap");
-        data.set_IO(create_fake_driver(), {});
-        assert_exits(t, () => data.create_tag_group("x", "y"));
+});
+
+describe("TGroup write units", () => {
+    test("Bool areas are expanded to whole registers", async () => {
+        assert.deepEqual(await register_areas("f0"), [[2, 2]]);
+        assert.deepEqual(await register_areas("f8"), [[2, 2]]);
+        assert.deepEqual(await register_areas("a", "f0"), [[0, 4]]);
+    });
+
+    test("register-aligned tags are unchanged", async () => {
+        assert.deepEqual(await register_areas("a", "b"), [[0, 2], [4, 2]]);
+        assert.deepEqual(await register_areas("d", "c", "a"), [[0, 2], [8, 6]]);
+    });
+
+    test("expanded area uses the LE byte position of the Bool", async () => {
+        const { data, driver } = setup("LE", {}, 2);
+        data.f0 = true;
+        await data.create_tag_group("f0").write();
+        assert.deepEqual(driver.writes.map(({ start, bytes }) => [start, bytes]), [[2, [0x01, 0x00]]]);
+    });
+
+    test("unaligned IO area exits", (t) => {
+        const data = new TData(make_struct(GROUP_ITEMS), "group");
+        assert_exits(t, () => data.set_IO(create_fake_driver(2), { start: 1, length: 4 }));
+        assert_exits(t, () => data.set_IO(create_fake_driver(2), { remote_start: 3 }));
+        assert_exits(t, () => data.set_IO(create_fake_driver(2), { length: 5 }));
+    });
+
+    test("odd IO area is accepted with write unit 1", () => {
+        const data = new TData(make_struct(GROUP_ITEMS), "group");
+        assert.doesNotThrow(() => data.set_IO(create_fake_driver(1), { start: 3, remote_start: 7, length: 5 }));
     });
 });
 
@@ -145,14 +191,14 @@ describe("TGroup read/write", () => {
     });
 
     for (const endian of ["LE", "BEBS"]) {
-        test(`Bool read follows the ${endian} byte order`, { todo: "Bool read_from ignores endian" }, async () => {
+        test(`Bool read follows the ${endian} byte order`, async () => {
             const { data, driver } = setup(endian);
             driver.remote.set([0x01, 0x00], 2); // flags = 0x0001 in device byte order
             await data.create_tag_group("f0").read();
             assert.equal(data.f0, true);
         });
 
-        test(`Bool write follows the ${endian} byte order`, { todo: "Bool write_to ignores endian" }, async () => {
+        test(`Bool write follows the ${endian} byte order`, async () => {
             const { data, driver } = setup(endian);
             data.f0 = true;
             await data.create_tag_group("f0", "f8").write();

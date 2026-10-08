@@ -13,6 +13,9 @@ const reverse_endians = {
     LEBS: 'BEBS',
 }
 
+// Endians that swap the two bytes of a 16-bit register.
+const BYTE_SWAP_ENDIANS = ['LE', 'little', 'BEBS'];
+
 /**
  * Converts the endianness of a 2-byte value between the specified endian format and Big Endian (BE).
  * 
@@ -132,6 +135,23 @@ export class TTag extends EventEmitter {
         }
     }
 
+    /**
+     * Byte index of a single-byte tag (Bool, Byte, SInt, USInt) in a device-ordered IO buffer.
+     * Device endianness acts per 16-bit register: when the endian swaps the
+     * register bytes, the byte sits in the other half of its register.
+     */
+    IO_index(endian) {
+        return BYTE_SWAP_ENDIANS.includes(endian) ? this.byte_offset ^ 1 : this.byte_offset;
+    }
+
+    /**
+     * Byte range [start, end) the tag occupies in a device-ordered IO buffer.
+     */
+    IO_range(endian) {
+        const start = this.length === 1 ? this.IO_index(endian) : this.byte_offset;
+        return { start, end: start + this.length };
+    }
+
     check_change() {
         const old_value = this.value;
         const new_value = this.get_value();
@@ -157,14 +177,15 @@ export class TTag extends EventEmitter {
                     this.tag_buffer.writeUInt8(new_byte);
                     this.check_change();
                 };
-                this.read_from = (buffer, endian) => { // @todo: implement endian conversion
-                    const masked_value = buffer.readUInt8(index) & this.bit_mask;
+                this.read_from = (buffer, endian) => {
+                    const masked_value = buffer.readUInt8(this.IO_index(endian)) & this.bit_mask;
                     this.set_value(masked_value > 0);
                 };
-                this.write_to = (buffer, endian) => { // @todo: implement endian conversion
-                    const byte = buffer.readUInt8(index);
+                this.write_to = (buffer, endian) => {
+                    const IO_index = this.IO_index(endian);
+                    const byte = buffer.readUInt8(IO_index);
                     const new_byte = this.get_value() ? (byte | this.bit_mask) : (byte & ~this.bit_mask);
-                    buffer.writeUInt8(new_byte, index);
+                    buffer.writeUInt8(new_byte, IO_index);
                 };
                 break;
             }
@@ -176,13 +197,12 @@ export class TTag extends EventEmitter {
                     this.tag_buffer.writeInt8(v);
                     this.check_change();
                 };
-                // a single byte needs no endian conversion
-                this.read_from = (buffer) => {
-                    this.tag_buffer[0] = buffer[index];
+                this.read_from = (buffer, endian) => {
+                    this.tag_buffer[0] = buffer[this.IO_index(endian)];
                     this.check_change();
                 }
-                this.write_to = (buffer) => {
-                    buffer[index] = this.tag_buffer[0];
+                this.write_to = (buffer, endian) => {
+                    buffer[this.IO_index(endian)] = this.tag_buffer[0];
                 }
                 break;
             }
@@ -195,12 +215,11 @@ export class TTag extends EventEmitter {
                     this.tag_buffer.writeUInt8(v);
                     this.check_change();
                 };
-                // Do not convert the byte members of combined tag
-                this.read_from = (buffer) => { // @todo: implement endian conversion for byte
-                    this.set_value(buffer.readUInt8(index));
+                this.read_from = (buffer, endian) => {
+                    this.set_value(buffer.readUInt8(this.IO_index(endian)));
                 }
-                this.write_to = (buffer) => { // @todo: implement endian conversion for byte
-                    buffer.writeUInt8(this.get_value(), index);
+                this.write_to = (buffer, endian) => {
+                    buffer.writeUInt8(this.get_value(), this.IO_index(endian));
                 }
                 break;
             }

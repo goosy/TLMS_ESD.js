@@ -251,6 +251,62 @@ describe("TTag endian conversion", () => {
     });
 });
 
+describe("TTag single-byte device byte order", () => {
+    // [endian, IO index of byte 2, IO index of byte 3]
+    const cases = [
+        ["BE", 2, 3],
+        ["big", 2, 3],
+        ["LEBS", 2, 3],
+        ["LE", 3, 2],
+        ["little", 3, 2],
+        ["BEBS", 3, 2],
+    ];
+    for (const [endian, index_2, index_3] of cases) {
+        test(`${endian}: byte moves within its 16-bit register only`, () => {
+            const buffer = Buffer.alloc(4);
+            assert.equal(new TTag(buffer, "b2", "Byte", 16, 0).IO_index(endian), index_2);
+            assert.equal(new TTag(buffer, "b3", "Bool", 24, false).IO_index(endian), index_3);
+        });
+
+        test(`${endian}: Bool reads and writes only its own bit at the mapped byte`, () => {
+            const tag = new TTag(Buffer.alloc(4), "tag", "Bool", 25, false); // byte 3, bit 1
+            const IO = Buffer.alloc(4);
+            IO[index_3] = 0x02;
+            tag.read_from(IO, endian);
+            assert.equal(tag.value, true);
+            const out = Buffer.alloc(4, 0xf0);
+            tag.write_to(out, endian);
+            const expected = Buffer.alloc(4, 0xf0);
+            expected[index_3] = 0xf2;
+            assert.deepEqual([...out], [...expected]);
+        });
+
+        test(`${endian}: Byte and SInt read and write the mapped byte`, () => {
+            const byte = new TTag(Buffer.alloc(4), "byte", "Byte", 16, 0);
+            const sint = new TTag(Buffer.alloc(4), "sint", "SInt", 24, 0);
+            const IO = Buffer.alloc(4);
+            IO[index_2] = 0x12;
+            IO[index_3] = 0xff;
+            byte.read_from(IO, endian);
+            sint.read_from(IO, endian);
+            assert.equal(byte.value, 0x12);
+            assert.equal(sint.value, -1);
+            const out = Buffer.alloc(4);
+            byte.write_to(out, endian);
+            sint.write_to(out, endian);
+            assert.deepEqual([...out], [...IO]);
+        });
+    }
+
+    test("IO_range maps single-byte tags and keeps multi-byte tags in place", () => {
+        const buffer = Buffer.alloc(8);
+        assert.deepEqual(new TTag(buffer, "b", "Bool", 24, false).IO_range("LE"), { start: 2, end: 3 });
+        assert.deepEqual(new TTag(buffer, "b", "Bool", 24, false).IO_range("BE"), { start: 3, end: 4 });
+        assert.deepEqual(new TTag(buffer, "w", "Word", 16, 0).IO_range("LE"), { start: 2, end: 4 });
+        assert.deepEqual(new TTag(buffer, "r", "Real", 32, 0).IO_range("BEBS"), { start: 4, end: 8 });
+    });
+});
+
 describe("TTag validation", () => {
     test("non-Bool tag with a bit offset exits", (t) => {
         assert_exits(t, () => create_tag("Int", 0, 3));
@@ -269,11 +325,11 @@ describe("TTag validation", () => {
 
     test("SInt read_from/write_to copy the byte unchanged", () => {
         const tag = create_tag("SInt", 0, 8, 2);
-        tag.read_from(Buffer.from([0x00, 0x80]), "LE");
+        tag.read_from(Buffer.from([0x00, 0x80]), "BE");
         assert.equal(tag.value, -128);
         const out = Buffer.alloc(2);
         tag.set_value(-2);
-        tag.write_to(out, "LE");
+        tag.write_to(out, "BE");
         assert.deepEqual([...out], [0x00, 0xfe]);
     });
 

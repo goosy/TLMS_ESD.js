@@ -9,6 +9,8 @@ const area_map = {
 
 export class S7Client extends S7Endpoint {
     connfailed = true;
+    // smallest writable unit in bytes
+    write_unit = 1;
 
     /**
      * Constructs a new S7Client object.

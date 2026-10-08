@@ -49,9 +49,10 @@ export function make_struct(items, name = "TEST") {
  * A driver stub backed by a remote memory buffer.
  * write() resolves with the next value of write_results (default true).
  */
-export function create_fake_driver(remote_size = 256) {
+export function create_fake_driver(write_unit = 1, remote_size = 256) {
     return {
         is_connected: true,
+        write_unit,
         remote: Buffer.alloc(remote_size, 0),
         reads: [],
         writes: [],
@@ -62,8 +63,8 @@ export function create_fake_driver(remote_size = 256) {
             if (this.read_result !== undefined) return this.read_result;
             return Buffer.from(this.remote.subarray(start, start + length));
         },
-        async write(buffer, { start }, ...extras) {
-            this.writes.push({ start, bytes: [...buffer], extras });
+        async write(buffer, { start, length }, ...extras) {
+            this.writes.push({ start, length, bytes: [...buffer], extras });
             buffer.copy(this.remote, start);
             return this.write_results.shift() ?? true;
         },
