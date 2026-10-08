@@ -94,6 +94,14 @@ The state inside the controller is of two kinds, which discussions and documents
 Data blocks must meet the following requirements:
 
 - **Fixed layout**: each TTag has a definite type, byte offset and bit number; the same layout is both the memory image of the actuator data / command area and the register point table of the HMI (see [spec-modbus.md](spec-modbus.md)).
+- **Valid layout**: a layout must satisfy the following rules; an invalid layout is a program error:
+  - TTag names are distinct within a data block;
+  - the bit length of each TTag matches its type; multi-byte types (Int, UInt, Word, DInt, UDInt, DWord, Real) start at an even byte, single-byte types (Byte, SInt, USInt) at a whole byte, and a Bool may be at any bit;
+  - the byte ranges of non-Bool TTags do not overlap;
+  - each bit belongs to at most one Bool TTag;
+  - a Bool inside the byte range of a non-Bool TTag must be a component bit of that TTag (a combined word); conversely, each component bit of a combined word must lie within the range of the word;
+  - the total length of a data block is a whole number of registers (a multiple of 16 bits).
+- **Layout validation**: at startup the controller validates the layouts of all data blocks; on violations it reports all of them and refuses to start; the configuration check command (see 5.6) runs the same validation.
 - **Exchange with drivers**: a data block holds the buffer exchanged with the actuator, read and written as a whole or in groups through the Modbus TCP or S7 driver; the device byte order is converted only at this boundary, and inside the controller everything is big-endian.
 - **Upward publishing**: data blocks are mounted on the Modbus TCP server of the controller, and the HMI reads and writes their content directly.
 - **Access by name**: the program reads and writes TTag values by name.
@@ -268,7 +276,7 @@ TTags are the interface:
   - stopping (`stop`);
   - listing the instances running in the background (`list`);
   - viewing the log (`log`) and clearing the logs (`flush`);
-  - checking whether the configuration is valid (`check`): reads and validates the configuration in the given configuration directory, reports all errors, and does not start the controller; the validation includes the ID rules of 4.1;
+  - checking whether the configuration is valid (`check`): reads and validates the configuration in the given configuration directory, reports all errors, and does not start the controller; the validation includes the ID rules of 4.1 and the data block layout rules of 3.6;
   - running in the foreground (`debug`) with log level debug, for debugging;
   - showing the version and help.
 - When the controller name is omitted, the first controller of the configuration runs.

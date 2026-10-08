@@ -58,8 +58,26 @@ The external requirements and terminology of data blocks (TData) and TTags are i
 - `share.js#build_structure` expands the items into a flat `items`, computes the total length `length` of the structure, and normalizes coupling into an array of names.
 - Bool position rule: `byte = offset >> 3`, `bit = offset % 8`. The internal buffer is big-endian, so the first byte of a word is the high byte of the register; coupling offsets 8-15 are register bits 0-7, offsets 0-7 bits 8-15. The definition files list 8-15 before 0-7, i.e. in the order of register bit 0 to bit 15; bit k of the word value is register bit k, and the `0xB1` mask is computed with these bit numbers.
 - The point table in [spec-modbus.md](spec-modbus.md) is computed from these definitions by the rules above.
-- Items other than Bool / Byte must be word aligned (even bytes), otherwise the program reports an error at startup and exits.
 - These layouts are the memory images of the Modbus register table and of the actuator data areas; changing any offset is a protocol change.
+
+#### Layout validation
+
+The layout rules of spec 3.6 are validated together at the layout stage, not scattered over the runtime of TData, TTag and TGroup:
+
+- `share.js` provides `validate_structure(data_struct)`, which validates the flat `items` expanded by `build_structure` and returns an array of violation descriptions (an empty array means valid), without exiting at the first error.
+- What is validated:
+  - Names: duplicate names in `items`; names conflicting with the members of TData (methods and getters on `TData.prototype`, and instance fields such as `name`, `driver`, `IO_read`).
+  - Type and length: `type` not among the supported types; `length` not matching the type (Bool 1, Byte / SInt / USInt 8, Int / UInt / Word 16, DInt / UDInt / DWord / Real 32).
+  - Alignment: the `offset` of a non-Bool must be a multiple of 8; the byte offset of a multi-byte type must be even.
+  - Overlap: the non-Bool items are sorted by byte range and adjacent ranges are checked for intersection; Bools are checked by `offset` for occupying the same bit twice; when a Bool falls inside a non-Bool range, the `coupling` of that non-Bool item must contain the name of the Bool.
+  - Combined words: for an item with `coupling`, the `offset` of each component bit lies within `[offset, offset + length)`.
+  - Total length: `length % 16 === 0`.
+  - The type and range of `init_value` match `type` (a boolean for Bool, otherwise a number representable by the type).
+- `build_structure` no longer silently skips a duplicate name, but keeps the item and leaves it to the validation report.
+- Callers:
+  - At controller startup (`main.js`, before any TData is created), the validation runs on all structures; on violations, each is written to the error log and the program exits;
+  - `tlms check` runs the validation on all structures and reports its errors together with those of the configuration validation.
+- After the validation passes, TData, TTag and TGroup do not repeat these checks; the `validate` of TTag keeps only defensive assertions.
 
 Main layouts (byte offsets):
 
@@ -100,9 +118,9 @@ Main layouts (byte offsets):
 - When a tag is added, a binary search merges the byte ranges of the tags into contiguous write ranges (`#areas`), and adjacent ranges are joined automatically. On overlapping ranges:
   - a Bool may fall inside an existing range;
   - an overlap of other types is a configuration error, and the program exits.
-- `read()`: first `IO_read_all`, then each tag of the group calls `read_from`, which triggers the change events.
+- `read()`: first `IO_read_all`, then each tag of the group calls `read_from` and runs `check_coupling`, which triggers the change events and refreshes combined words and their bits.
 - `write()`: each tag of the group first calls `write_to` into `IO_buffer`, then `IO_write` is called for each merged range.
-- `copy_from(tdata)`: copies the values of the tags of the same name from another TData, used to synchronize the parameter block between data and command.
+- `copy_from(tdata)`: copies the values of the tags of the same name from another TData and runs `check_coupling`, used to synchronize the parameter block between data and command.
 
 ## 4. Drivers
 
@@ -294,6 +312,7 @@ Requirements of the spec that the current code does not implement yet:
 | ID uniqueness check | The IDs of lines, sections and actuators are all distinct (across types); several data blocks of the same object share its ID (spec 4.1) | `config.js` only checks that an actuator `id` is a non-zero number; lines, sections and actuators are each indexed by `ID<id>`, and neither duplicates nor equal IDs across types are reported; a duplicate of the same type silently overwrites the earlier one | `add_conf` in `config.js` |
 | ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec 4.1, 5.5) | `run_controller` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `run_controller` in `main.js` |
 | Configuration check command | `tlms check` reads and validates the configuration and reports all errors, without starting the controller (spec 5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
+| Data block layout validation | At startup and in `tlms check`, all layouts are validated by the rules of spec 3.6 and all violations are reported; for the implementation see "Layout validation" in 3.1 | No central validation: `build_structure` silently skips duplicate names (`flowmeter` is defined twice in `NODE`, at the same offset); alignment and type are checked when a TTag is constructed, exiting at the first error; name conflicts are checked when a TData is constructed; overlaps are checked only when a tag joins a TGroup, by write range, with rules that differ from the spec (adding a bit before the word that contains it is misjudged); bit lengths, total length and the range of `init_value` are not checked | `structs/share.js`; `validate` in `typed_data/TTag.js`; `init` in `typed_data/TData.js`; `#add` in `typed_data/TGroup.js`; `main.js`; `cli.js` |
 | Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec 5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | The change event of `action_F` in `section_proc.js` |
 
 Implementation:
