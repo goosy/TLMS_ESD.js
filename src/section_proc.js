@@ -83,14 +83,34 @@ export function section_init(section) {
     section.update_pre_stop_notice = debouncify(
         `section${name}_pre_stop_notice_update`,
         () => {
-            data.pre_stop_notice = data.flow_alarm_F && data.pump_run && data.protect_F;
+            // The flow interlock stops the whole line, so it is gated by the
+            // line's pump_run: the leaking section itself may have no running
+            // pump (spec 5.2).
+            data.pre_stop_notice = data.flow_alarm_F && line.data.pump_run && data.protect_F;
         },
         50
     );
+    // Pressure interlock trigger (variable): only actuators that allow the
+    // pressure interlock (pressure_SD_F) take part (spec 5.2).
+    section.press_SD_trigger = false;
+    section.update_press_SD_trigger = debouncify(
+        `section${name}_press_SD_trigger_update`,
+        () => {
+            const value = all_nodes.some((node) => node.data.pressure_AH_F && node.data.pressure_SD_F);
+            if (value === section.press_SD_trigger) return;
+            section.press_SD_trigger = value;
+            logger.info(`section ${name}: pressure interlock trigger ${value ? 'raised' : 'cleared'}`);
+        },
+        50
+    );
+    // Action flags (variables), action_F is derived from them in section_loop.
+    section.press_action = false;
+    section.flow_action = false;
     section.update_comm_OK();
     section.update_work_OK();
     section.update_press_warning_F();
     section.update_press_alarm_F();
+    section.update_press_SD_trigger();
     section.update_pump_run();
     section.update_pump_change_F();
     section.update_flow_begin();
@@ -117,47 +137,14 @@ export function section_init(section) {
             };
         }
     });
-    data.get('action_F').on("change", (_, new_value) => { // log action
+    data.get('action_F').on("change", (_, new_value) => {
         if (new_value) {
             logger.info(`section ${name}: interlock action`);
-            // logs: ID, flow_begin, flow_end, flow_diff
-            const action_record = line.controller.action_record;
-            const AR_data = action_record.data;
-            AR_data.section_ID = data.ID;
-            AR_data.flow_begin = data.flow_begin;
-            AR_data.flow_end = data.flow_end;
-            AR_data.flow_diff = data.flow_diff;
-            AR_data.node1_press = begin_nodes[0]?.data?.pressure ?? 0;
-            AR_data.node2_press = begin_nodes[1]?.data?.pressure ?? 0;
-            AR_data.node3_press = begin_nodes[2]?.data?.pressure ?? 0;
-            AR_data.node4_press = end_nodes[0]?.data?.pressure ?? 0;
-            AR_data.node1_ID = begin_nodes[0]?.data?.ID ?? 0;
-            AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
-            AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
-            AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
-            AR_data.press_action = data.press_alarm_F;
-            AR_data.flow_action = data.flow_alarm_F;
-            AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
-            AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
-            AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
-            action_record.add_record();
         } else {
             logger.info(`section ${name}: reset action flag`);
         }
     });
     data.get('pump_run').on("change", (_, new_value) => {
-        // if the alarm disappears while the pump is restarted,
-        // the action_F will be eliminated.
-        // the purpose is to disengage the action_F when the pump is started again.
-        if (
-            new_value && !data.flow_alarm_F && !data.press_alarm_F &&
-            data.action_F &&
-            !data.autoStopCmd && !data.line_action_source
-        ) {
-            // remove action information
-            data.action_F = false;
-            line.data.action_section_ID = 0;
-        }
         if (!new_value) {
             data.autoStopCmd = false;
             data.manStopCmd = false;
@@ -202,6 +189,7 @@ export function section_init(section) {
         if (new_value) {
             logger.info(`section ${name} start action countdown`);
         }
+        line.update_pre_stop_notice();
     });
     data.get('press_alarm_F').on("change", (_, new_value) => {
         if (new_value) {
@@ -225,6 +213,31 @@ export function section_init(section) {
     data.flow_diff_AH = flow_diff_AH;
     data.flow_diff_AH_delay = flow_diff_AH_delay;
     data.action_time = action_time;
+}
+
+function add_action_record(section) {
+    const { data, line, begin_nodes, end_nodes, pump_nodes } = section;
+    const action_record = line.controller.action_record;
+    const AR_data = action_record.data;
+    AR_data.section_ID = data.ID;
+    AR_data.flow_begin = data.flow_begin;
+    AR_data.flow_end = data.flow_end;
+    AR_data.flow_diff = data.flow_diff;
+    AR_data.node1_press = begin_nodes[0]?.data?.pressure ?? 0;
+    AR_data.node2_press = begin_nodes[1]?.data?.pressure ?? 0;
+    AR_data.node3_press = begin_nodes[2]?.data?.pressure ?? 0;
+    AR_data.node4_press = end_nodes[0]?.data?.pressure ?? 0;
+    AR_data.node1_ID = begin_nodes[0]?.data?.ID ?? 0;
+    AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
+    AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
+    AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
+    // the causes are the action flags, not the alarm states (spec 5.4)
+    AR_data.press_action = section.press_action;
+    AR_data.flow_action = section.flow_action;
+    AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
+    AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
+    AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
+    action_record.add_record();
 }
 
 export function section_loop(section) {
@@ -254,34 +267,55 @@ export function section_loop(section) {
         section.action_count = 0;
         countdown = 0;
     }
-    let flow_action = false;
+    let countdown_expired = false;
     if (countdown >= 0) {
         data.countdown = countdown / 1000;
     } else {
         // When countdown < 0 (implies pre_stop_notice),
-        // flow_action is set
+        // the flow action is triggered
         data.countdown = 0;
-        flow_action = true;
+        countdown_expired = true;
     }
 
-    // action trigger
-    if (data.press_alarm_F && pump_run) {
-        data.action_F = true;
-        line.data.action_section_ID = ID;
-        // only if the pressure exceeds the limit,
-        // the autoStopCmd of this section will be set
+    const press_action_old = section.press_action;
+    const flow_action_old = section.flow_action;
+
+    // pressure action: stops this section only, not gated by protect_F
+    if (section.press_SD_trigger && pump_run) {
+        section.press_action = true;
         data.autoStopCmd = true;
+    } else if (pump_run && !data.autoStopCmd) {
+        // the section runs again without the trigger
+        section.press_action = false;
     }
-    if (flow_action) {
-        data.action_F = true;
-        line.data.action_section_ID = ID;
-        // only if the flowmeter exceeds the limit,
-        // the autoStopCmd of its line will be set
+
+    // flow action: stops the whole line
+    if (countdown_expired) {
+        section.flow_action = true;
         line.data.autoStopCmd = true;
         data.line_action_source = true;
     } else {
         data.line_action_source &&= line.data.autoStopCmd;
+        if (line.data.pump_run && !data.flow_alarm_F && !data.line_action_source) {
+            // the line runs again without the alarm
+            section.flow_action = false;
+        }
     }
+
+    const press_raised = section.press_action && !press_action_old;
+    const flow_raised = section.flow_action && !flow_action_old;
+    if (press_raised) logger.error(`section ${section.name}: pressure interlock action`);
+    if (flow_raised) logger.error(`section ${section.name}: flow interlock action`);
+    if (press_raised || flow_raised) {
+        line.data.action_section_ID = ID;
+        add_action_record(section);
+    }
+    const action_F = section.press_action || section.flow_action;
+    if (!action_F && line.data.action_section_ID === ID) {
+        // do not erase the action of another section
+        line.data.action_section_ID = 0;
+    }
+    data.action_F = action_F;
 
     // do stop pumps
     const stop_pumps = data.autoStopCmd || data.manStopCmd || line.data.autoStopCmd || line.data.manStopCmd;

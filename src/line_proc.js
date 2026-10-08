@@ -49,6 +49,9 @@ export function line_init(line) {
         logger.info(`line ${name} changed bypass status to ${new_value}`);
     });
     data.get('pump_run').on("change", (_, new_value) => {
+        for (const section of sections) {
+            section.update_pre_stop_notice();
+        }
         if (!new_value) {
             data.autoStopCmd = false;
             data.manStopCmd = false;

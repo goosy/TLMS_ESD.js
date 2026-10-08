@@ -195,9 +195,9 @@
   1. 把 command 中的参数复制到 `data_parameters`；
   2. 写入执行器 data 区的参数块；
   3. 写入完成后复位该位。
-- `pressure_SD_F` 变化：清除对应的允许或禁止命令位，并发送命令。
+- `pressure_SD_F` 变化：清除对应的允许或禁止命令位，并发送命令；同时调用 `section.update_press_SD_trigger()`。
 - 状态变化向上汇总：
-  - `comm_OK`、`work_OK`、`pump_run`、`pump_change_F`、`pressure_WH_F`、`pressure_AH_F` 变化时，调用 `section.update_*`；
+  - `comm_OK`、`work_OK`、`pump_run`、`pump_change_F`、`pressure_WH_F`、`pressure_AH_F` 变化时，调用 `section.update_*`；`pressure_AH_F` 变化时还调用 `section.update_press_SD_trigger()`；
   - `flowmeter` 变化时，按执行器在段中的首 / 末端角色调用 `update_flow_begin` / `update_flow_end`；
   - `pump_run_1..4` 变化时，`pump_run` 取它们的“或”；`pump_run` 变为 false 时，清除该执行器的 `stop_pumps` 命令。
 
@@ -209,18 +209,25 @@
 
 ### 6.2 事件驱动部分（`section_init`）
 
+- 段对象上的变量（不是 TTag，见规范 3.6）：
+  - `press_SD_trigger`：压力联锁条件，由 `update_press_SD_trigger()` 计算，即段内各执行器 `pressure_AH_F && pressure_SD_F` 的“或”，带 50 ms 防抖，变化时记日志；
+  - `press_action` / `flow_action`：压力动作和输差动作，由 `section_loop` 置位和复位（见 6.3 节）。
 - `flow_begin` / `flow_end` 变化时，重新计算 `flow_diff`。
 - `flow_diff` 变化时，计算触发位：
   - `flow_warning_trigger = flow_diff > flow_diff_WH && !bypass`；
   - `flow_alarm_trigger = flow_diff > flow_diff_AH && !bypass`。
-- `flow_alarm_F`、`protect_F`、`pump_run` 变化时，更新 `pre_stop_notice = flow_alarm_F && pump_run && protect_F`；`flow_alarm_F`、`press_alarm_F` 变化时，同时更新线的 `alarm_F`。
+- `flow_alarm_F`、`protect_F`、`pump_run` 变化时，更新 `pre_stop_notice = flow_alarm_F && line.data.pump_run && protect_F`：
+  - 泵运行条件取线的 `pump_run`（规范 5.2），线的 `pump_run` 变化时也会触发这次更新（见第 7 节）；
+  - 本段 `pump_run` 变化时，这次计算可能读到线的旧值，随后线的变化事件会再算一次；线的 `pre_stop_notice` 只汇总各段的结果，不参与段的计算，所以不会形成循环；
+  - `stop_pumps` 和压力动作仍取本段的 `pump_run`。
+- `pre_stop_notice` 变化时，更新线的 `pre_stop_notice`。
+- `flow_alarm_F`、`press_alarm_F` 变化时，同时更新线的 `alarm_F`。
 - `stop_pumps` 变化：
   - 为真时，对每个带泵执行器设置 `command.stop_pumps = node.data.pump_run`；
   - 为假时，设置 `stop_pumps = false` 和 `cancel_stop = true`。
-- `action_F` 上升沿：填写 `Action_Record.data` 后调用 `add_record()`。
+- `action_F` 变化：只记日志。
 - `pump_run` 变化：
   - 下降沿：清除段的 `autoStopCmd` / `manStopCmd`；
-  - 上升沿：若流量和压力报警都已消失、`action_F` 为真、且没有 `autoStopCmd` 和 `line_action_source`，则清除 `action_F` 和线的 `action_section_ID`；
   - 两种情况都会更新本段的 `pre_stop_notice` 和线的 `pump_run`。
 
 ### 6.3 周期部分（`section_loop`）
@@ -234,10 +241,20 @@
 2. 延时计数：触发位为真时，对应计数器每周期加 500 ms，否则清零；计数超过 `*_delay` 时置位 `flow_warning_F` / `flow_alarm_F`。
 3. 倒计时：
    - `pre_stop_notice` 为真时 `action_count` 累加，`countdown = (action_time - action_count) / 1000`；
-   - 计算结果小于 0 时，`countdown` 置 0，并产生 `flow_action`。
-4. 压力动作：`press_alarm_F && pump_run` 时，置 `action_F`、线的 `action_section_ID` 和段的 `autoStopCmd`。不检查 `protect_F`，所以不受挂起约束；目前也不检查执行器的 `pressure_SD_F`（见第 11 节）。
-5. 流量动作：置 `action_F`、线的 `action_section_ID`、线的 `autoStopCmd` 和 `line_action_source`；没有流量动作时，`line_action_source &&= line.autoStopCmd`。
-6. 计算停泵命令：`stop_pumps = (段 auto/man || 线 auto/man) && pump_run`。
+   - 计算结果小于 0 时，`countdown` 置 0，记为倒计时结束（`countdown_expired`）。
+4. 压力动作（变量 `press_action`）：
+   - `press_SD_trigger && pump_run` 时置位，同时置位段的 `autoStopCmd`。不检查 `protect_F`，所以不受挂起约束；
+   - 否则在 `pump_run && !autoStopCmd` 时复位：本段泵在运行（必然是停泵后重新启动的），联锁条件已消失。
+5. 输差动作（变量 `flow_action`）：
+   - 倒计时结束时置位，同时置位线的 `autoStopCmd` 和本段的 `line_action_source`；
+   - 否则先执行 `line_action_source &&= line.autoStopCmd`，再在 `line.pump_run && !flow_alarm_F && !line_action_source` 时复位。泵运行条件取线的，与停泵预告一致，否则没有泵的段永远无法复位。
+6. 复位条件每周期判断，不锁存；停泵期间两个泵运行条件都不成立，所以动作状态保留到泵重新运行。
+7. 动作汇总：
+   - 任一动作变量由 false 变为 true 时，把线的 `action_section_ID` 设为本段 ID，并调用 `add_action_record()` 生成一条记录；同一周期两者同时发生只生成一条；
+   - `action_F = press_action || flow_action`；结果为 false 且线的 `action_section_ID` 等于本段 ID 时，把它清零，避免抹掉其他段的动作。
+8. 计算停泵命令：`stop_pumps = (段 auto/man || 线 auto/man) && pump_run`。
+
+v0.7.0 调整段数据块时，计划把 `press_action` / `flow_action` 升级为 TTag，届时动作记录改由它们的变化事件触发，不再在 `section_loop` 中比较新旧值。
 
 ## 7. 线处理（`line_proc.js`）
 
@@ -246,7 +263,7 @@
   - `alarm_F`：取各段 `flow_alarm_F` 与 `press_alarm_F` 的“或”；
   - 均带 50 ms 防抖。
 - `bypass` 变化时，写入所有段的 `bypass`。
-- `pump_run` 下降沿时，清除线的 `autoStopCmd` / `manStopCmd`。
+- `pump_run` 变化时，对线内每个段调用 `update_pre_stop_notice()`；下降沿时，还要清除线的 `autoStopCmd` / `manStopCmd`。
 
 ## 8. 动作记录（`action_record.js`）
 
@@ -263,7 +280,7 @@
 - `index` 变化：
   - 为 -1 时清空时间 TTag；
   - 否则把对应记录装载到 data；越界时恢复为原值。
-- 记录内容由段在 `action_F` 上升沿填写（见 6.2 节）；执行器位置的对应规则见第 11 节。
+- 记录内容由段的 `add_action_record()` 在压力动作或输差动作发生时填写（见 6.3 节）；`press_action` / `flow_action` 取段的动作变量；执行器位置的对应规则见第 11 节。
 
 ## 9. 日志
 
@@ -312,22 +329,11 @@
 
 | 项 | 规范要求 | 代码现状 | 涉及位置 |
 | --- | --- | --- | --- |
-| 压力联锁按 `pressure_SD_F` 触发 | 只有 `pressure_SD_F` 为真的执行器压力报警时才触发压力停泵（规范 5.2） | 段的压力动作只判断 `press_alarm_F && pump_run`，`press_alarm_F` 汇总全部执行器的 `pressure_AH_F`；`pressure_SD_F` 只用于清除 `enable_pressure_SD` / `disable_pressure_SD` 命令位 | `section_proc.js` 的 `section_loop`、`update_press_alarm_F`；`node_proc.js` 的 `pressure_SD_F` 事件 |
 | 按执行器配置屏蔽命令 | 每个执行器在配置中用 `supported_commands` 列出支持的命令，控制器只发送支持的命令，其余命令位直接复位（规范 5.1）；实现方式见 12.1 节 | 配置中没有该字段；`node_loop` 对所有执行器统一执行 `command.commands &= 0xB1`，只保留位 0、4、5、7（`stop_pumps`、`enable_pressure_SD`、`disable_pressure_SD`、`write_paras`），`cancel_stop` 也因此被复位 | `config.js` 的执行器解析；`node_proc.js` 的 `node_loop` |
 | ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个数据块共用 ID（规范 4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
 | ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 4.1、5.5） | `run_controller` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `main.js` 的 `run_controller` |
 | 配置检查命令 | `tlms check` 读取并校验配置和全部数据块布局（3.1 节 `validate_structure`）、报告全部错误，不启动控制器（规范 3.6、5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃；布局校验已在启动时执行（`main.js`），尚未接入命令行 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
-| 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 中 `action_F` 的变化事件 |
-
-实现方式：
-
-- `press_alarm_F` 保持现状，继续汇总全部执行器的 `pressure_AH_F`，用于报警显示。
-- 另设一个段级 Bool 作为压力联锁条件：先对每个执行器计算 `pressure_AH_F && pressure_SD_F`，再对段内所有执行器做“或”运算。`section_loop` 的压力动作改用这个变量代替 `press_alarm_F`。
-- 执行器的 `pressure_AH_F` 或 `pressure_SD_F` 变化时，都要触发这个变量的重新计算。
-- 目前阶段没有单独的压力联锁变量，由 `press_alarm_F` 兼任，所以段数据块中不需要对应的 TTag。
-- `pressure_SD_F` 参与后，这个压力联锁变量要作为新 TTag 加入段数据块，点表随之调整。
-- 变量为真且段内有泵运行时，置位段的 `autoStopCmd`，之后沿用现有停泵链路：段的 `stop_pumps` 置位，再由 `stop_pumps` 的变化事件给各带泵执行器的命令块置位停泵命令。
-- 这和输差联锁的结构相同，区别在于范围和倒计时：输差一侧由 `flow_alarm_F` 等条件置位 `pre_stop_notice`，倒计时结束后置位线的 `autoStopCmd`，停整条线；压力一侧没有倒计时，直接置位段的 `autoStopCmd`，只停本段。将来压力联锁若改为停线，需改为置位线的 `autoStopCmd`，并同时考虑 `line_action_source` 和 `action_F` 复位逻辑的配合。
+| 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 的 `add_action_record` |
 
 ## 12. 命令处理
 
