@@ -47,6 +47,8 @@
 
 ## 3. Typed data layer
 
+The external requirements and terminology of data blocks (TData) and TTags are in section 3.6 of the spec; this section describes the implementation.
+
 ### 3.1 Layout definitions (`src/structs/`)
 
 - Each item contains `{ name, type, offset, length, init_value }`; `offset` and `length` are in bits.
@@ -61,7 +63,7 @@
 
 Main layouts (byte offsets):
 
-| Structure | Key fields |
+| Structure | Key TTags |
 | --- | --- |
 | NODE | 0 ID; 2 status; 4 temperature; 8 pressure; 12 flowmeter; 16 response_code; parameter block from 18 |
 | COMMAND | 0 response_code (deprecated); 2 overtime (deprecated); 6 extra_commands (`has_commands`, `reset_paras`); 16 ID; 18 commands; parameter block from 20 |
@@ -225,7 +227,7 @@ Runs every 500 ms:
 
 ## 8. Action records (`action_record.js`)
 
-- The CSV columns are the fields of RECORD except the Word types and `index`.
+- The CSV columns are the TTags of RECORD except the Word types and `index`.
 - At startup:
   1. writes the header when the file does not exist;
   2. reads all rows as a stream and keeps the latest `records_size` with `unshift`, the newest first;
@@ -236,7 +238,7 @@ Runs every 500 ms:
   3. sets `index = 0`;
   4. appends a row with `appendFile`.
 - Change of `index`:
-  - when -1, clears the time fields;
+  - when -1, clears the time TTags;
   - otherwise loads the corresponding record into data; when out of range, restores the previous value.
 - The record content is filled in by the section on the rising edge of `action_F` (see 6.2); the rule for actuator positions is in section 11.
 
@@ -299,8 +301,8 @@ Implementation:
 - `press_alarm_F` stays as it is and keeps aggregating `pressure_AH_F` of all actuators, for the alarm display.
 - A separate section-level Bool is the pressure interlock condition: first compute `pressure_AH_F && pressure_SD_F` for each actuator, then OR it over all actuators of the section. The pressure action of `section_loop` uses this variable instead of `press_alarm_F`.
 - A change of an actuator's `pressure_AH_F` or `pressure_SD_F` triggers the recomputation of this variable.
-- At present there is no separate pressure interlock variable; `press_alarm_F` serves as it, so the section data block does not need this field.
-- Once `pressure_SD_F` takes part, this pressure interlock variable is added to the section data block as a new field, and the point table is adjusted accordingly.
+- At present there is no separate pressure interlock variable; `press_alarm_F` serves as it, so the section data block does not need a TTag for it.
+- Once `pressure_SD_F` takes part, this pressure interlock variable is added to the section data block as a new TTag, and the point table is adjusted accordingly.
 - When the variable is true and a pump of the section is running, the section's `autoStopCmd` is set, then the existing stop chain follows: the section's `stop_pumps` is set, and the change event of `stop_pumps` sets the stop command in the command block of each actuator with pumps.
 - This has the same structure as the flow difference interlock; the differences are scope and countdown: on the flow side, `pre_stop_notice` is set by `flow_alarm_F` and other conditions, and after the countdown the line's `autoStopCmd` is set, stopping the whole line; on the pressure side there is no countdown, and the section's `autoStopCmd` is set directly, stopping only this section. If the pressure interlock is changed to stop the line in the future, it must set the line's `autoStopCmd` instead, and its interplay with `line_action_source` and the reset logic of `action_F` must be considered as well.
 

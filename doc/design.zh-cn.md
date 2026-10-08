@@ -45,6 +45,8 @@
 
 ## 3. 带类型数据层
 
+数据块（TData）与 TTag 的对外要求和术语见规范 3.6 节，本节说明实现。
+
 ### 3.1 布局定义（`src/structs/`）
 
 - 每个条目包含 `{ name, type, offset, length, init_value }`，`offset` 和 `length` 的单位都是位（bit）。
@@ -59,7 +61,7 @@
 
 主要布局（字节偏移）：
 
-| 结构 | 关键字段 |
+| 结构 | 关键 TTag |
 | --- | --- |
 | NODE | 0 ID；2 status；4 temperature；8 pressure；12 flowmeter；16 response_code；18 起为参数块 |
 | COMMAND | 0 response_code（弃用）；2 overtime（弃用）；6 extra_commands（`has_commands`、`reset_paras`）；16 ID；18 commands；20 起为参数块 |
@@ -223,7 +225,7 @@
 
 ## 8. 动作记录（`action_record.js`）
 
-- CSV 列取自 RECORD 中除 Word 类型和 `index` 以外的字段。
+- CSV 列取自 RECORD 中除 Word 类型和 `index` 以外的 TTag。
 - 启动时：
   1. 文件不存在就写入表头；
   2. 流式读取全部行，用 `unshift` 保留最近 `records_size` 条，最新的在前；
@@ -234,7 +236,7 @@
   3. 设置 `index = 0`；
   4. 用 `appendFile` 追加一行。
 - `index` 变化：
-  - 为 -1 时清空时间字段；
+  - 为 -1 时清空时间 TTag；
   - 否则把对应记录装载到 data；越界时恢复为原值。
 - 记录内容由段在 `action_F` 上升沿填写（见 6.2 节）；执行器位置的对应规则见第 11 节。
 
@@ -297,8 +299,8 @@
 - `press_alarm_F` 保持现状，继续汇总全部执行器的 `pressure_AH_F`，用于报警显示。
 - 另设一个段级 Bool 作为压力联锁条件：先对每个执行器计算 `pressure_AH_F && pressure_SD_F`，再对段内所有执行器做“或”运算。`section_loop` 的压力动作改用这个变量代替 `press_alarm_F`。
 - 执行器的 `pressure_AH_F` 或 `pressure_SD_F` 变化时，都要触发这个变量的重新计算。
-- 目前阶段没有单独的压力联锁变量，由 `press_alarm_F` 兼任，所以段数据块中不需要这个字段。
-- `pressure_SD_F` 参与后，这个压力联锁变量要作为新字段加入段数据块，点表随之调整。
+- 目前阶段没有单独的压力联锁变量，由 `press_alarm_F` 兼任，所以段数据块中不需要对应的 TTag。
+- `pressure_SD_F` 参与后，这个压力联锁变量要作为新 TTag 加入段数据块，点表随之调整。
 - 变量为真且段内有泵运行时，置位段的 `autoStopCmd`，之后沿用现有停泵链路：段的 `stop_pumps` 置位，再由 `stop_pumps` 的变化事件给各带泵执行器的命令块置位停泵命令。
 - 这和输差联锁的结构相同，区别在于范围和倒计时：输差一侧由 `flow_alarm_F` 等条件置位 `pre_stop_notice`，倒计时结束后置位线的 `autoStopCmd`，停整条线；压力一侧没有倒计时，直接置位段的 `autoStopCmd`，只停本段。将来压力联锁若改为停线，需改为置位线的 `autoStopCmd`，并同时考虑 `line_action_source` 和 `action_F` 复位逻辑的配合。
 

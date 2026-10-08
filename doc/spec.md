@@ -81,6 +81,33 @@ Relations: controller 1-N lines, line 1-N sections, section N-N actuators (the s
   - S7: data and commands are in different DBs, e.g. DB1 and DB2.
 - The `IP` of a controller in the configuration records the deployment address of the controller itself; the program does not read it, and the server always listens on all addresses.
 
+### 3.6 Data blocks, TTags and variables
+
+The state inside the controller is of two kinds, which discussions and documents must keep clearly apart:
+
+| Term | Meaning | Nature |
+| --- | --- | --- |
+| Data block (TData) | The block of data of a line, section, node, command or action record, whose layout is given by the data structure definition | The bridge between actuators, HMI and controller |
+| TTag | A named entry of a data block, e.g. `press_alarm_F` of a section | External interface (API) |
+| Variable | An ordinary program variable on a controller object, belonging to no data block | Internal implementation, free to change |
+
+Data blocks must meet the following requirements:
+
+- **Fixed layout**: each TTag has a definite type, byte offset and bit number; the same layout is both the memory image of the actuator data / command area and the register point table of the HMI (see [spec-modbus.md](spec-modbus.md)).
+- **Exchange with drivers**: a data block holds the buffer exchanged with the actuator, read and written as a whole or in groups through the Modbus TCP or S7 driver; the device byte order is converted only at this boundary, and inside the controller everything is big-endian.
+- **Upward publishing**: data blocks are mounted on the Modbus TCP server of the controller, and the HMI reads and writes their content directly.
+- **Access by name**: the program reads and writes TTag values by name.
+- **Change events**: when the value of a TTag changes (whether read from the actuator, written by the HMI or assigned by the program), a change event is emitted after the new value takes effect; business logic implements its interplay by subscribing to events.
+- **Combined word linkage**: a status word / command word made of Bools is linked with its bits in both directions.
+- **Group synchronization**: several TTags can be grouped and synchronized with the actuator as a whole.
+
+TTags are the interface:
+
+- Adding or removing a TTag, or changing the name, type, offset or meaning of a TTag, is a protocol change: the actuator programs and the HMI must change accordingly, and the point table must be updated.
+- Protocol changes should be concentrated in the version planning, to avoid repeated changes of the point table.
+- State used only inside the controller, which need not be exchanged with the actuators or the HMI, must be implemented as variables, and must not take space in a data block for that (including unused bits of internal bit words such as `inner_word`).
+- A proposal for new state must say whether it is a TTag or a variable; unless a layout change has been confirmed, it is a variable by default.
+
 ## 4. Configuration requirements
 
 - All `*.yaml` / `*.yml` files in the working directory are read and merged; YAML 1.1 merge keys (`<<`) are supported.
