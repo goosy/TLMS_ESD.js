@@ -56,8 +56,26 @@
 - `share.js#build_structure` 把条目展开成扁平的 `items`，计算结构总长 `length`，并把 coupling 规范为名称数组。
 - Bool 的定位规则：`byte = offset >> 3`，`bit = offset % 8`。内部缓冲按大端存放，一个字的第一个字节是寄存器的高字节，所以 coupling 中偏移 8–15 对应寄存器的 bit0–7，偏移 0–7 对应 bit8–15。定义文件按 8–15、0–7 的顺序列出，就是按寄存器 bit0 到 bit15 的顺序排列；字值的第 k 位即寄存器 bit k，`0xB1` 掩码按这个位号计算。
 - [spec-modbus.md](spec-modbus.md) 中的点表就是按上述规则从这些定义计算出来的。
-- 非 Bool / Byte 的条目必须按字对齐（偶数字节），否则启动时报错并退出。
 - 这些布局就是 Modbus 寄存器表和执行器数据区的内存映像，修改任何偏移都属于协议变更。
+
+#### 布局校验
+
+规范 3.6 的布局规则在布局阶段集中校验，不分散到 TData、TTag 和 TGroup 的运行时：
+
+- 由 `share.js` 提供 `validate_structure(data_struct)`，对 `build_structure` 展开后的扁平 `items` 做校验，返回违规描述的数组（空数组表示合法），不在发现第一个错误时退出。
+- 校验内容：
+  - 名称：`items` 中名称重复；名称与 TData 的成员（`TData.prototype` 上的方法、getter，以及 `name`、`driver`、`IO_read` 等实例字段）冲突。
+  - 类型与长度：`type` 不在支持的类型中；`length` 与类型不符（Bool 1，Byte / SInt / USInt 8，Int / UInt / Word 16，DInt / UDInt / DWord / Real 32）。
+  - 对齐：非 Bool 的 `offset` 必须是 8 的倍数；多字节类型的字节偏移必须是偶数。
+  - 重叠：把非 Bool 条目按字节区间排序后检查相邻区间是否相交；Bool 按 `offset` 检查是否重复占用同一位；Bool 落在某个非 Bool 区间内时，要求该 Bool 的 `coupling` 包含这个非 Bool 条目的名称。
+  - 组合字：带 `coupling` 的条目，其每个组成位的 `offset` 都在 `[offset, offset + length)` 内。
+  - 总长：`length % 16 === 0`。
+  - `init_value` 的类型与取值范围与 `type` 相符（Bool 为布尔值，其余为该类型可表示的数）。
+- `build_structure` 遇到重名时不再静默跳过，而是保留条目，交给校验报告。
+- 调用方：
+  - 控制器启动时（`main.js`，在创建任何 TData 之前）对全部结构调用校验，有违规时逐条写入错误日志并退出；
+  - `tlms check` 对全部结构调用校验，与配置校验的错误一起报告。
+- 校验通过后，TData、TTag、TGroup 不再重复做这些检查；TTag 的 `validate` 只保留防御性断言。
 
 主要布局（字节偏移）：
 
@@ -98,9 +116,9 @@
 - 添加 tag 时，用二分查找把各 tag 的字节区间合并成连续的写区间（`#areas`），相邻区间会自动拼接。区间重叠时：
   - Bool 允许落在已有区间内；
   - 其他类型的重叠视为配置错误，程序退出。
-- `read()`：先 `IO_read_all`，再让组内每个 tag `read_from`，从而触发变化事件。
+- `read()`：先 `IO_read_all`，再让组内每个 tag `read_from` 并执行 `check_coupling`，从而触发变化事件并刷新组合字与各位。
 - `write()`：组内每个 tag 先 `write_to` 到 `IO_buffer`，再按合并后的区间逐段调用 `IO_write`。
-- `copy_from(tdata)`：按同名 tag 从另一个 TData 复制值，用于在 data 与 command 之间同步参数块。
+- `copy_from(tdata)`：按同名 tag 从另一个 TData 复制值并执行 `check_coupling`，用于在 data 与 command 之间同步参数块。
 
 ## 4. 驱动
 
@@ -292,6 +310,7 @@
 | ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个数据块共用 ID（规范 4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
 | ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 4.1、5.5） | `run_controller` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `main.js` 的 `run_controller` |
 | 配置检查命令 | `tlms check` 读取并校验配置、报告全部错误，不启动控制器（规范 5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
+| 数据块布局校验 | 启动时与 `tlms check` 按规范 3.6 的规则校验全部布局，报告全部违规项；实现方式见 3.1 节“布局校验” | 没有集中校验：`build_structure` 遇到重名静默跳过（`NODE` 中 `flowmeter` 定义了两次，偏移相同）；对齐和类型在 TTag 构造时检查，遇到第一个错误即退出；名称冲突在 TData 构造时检查；重叠只在 TGroup 加入 tag 时按写区间检查，规则与规范不一致（先加入某一位再加入它所在的字会被误判）；位长、总长、`init_value` 范围不检查 | `structs/share.js`；`typed_data/TTag.js` 的 `validate`；`typed_data/TData.js` 的 `init`；`typed_data/TGroup.js` 的 `#add`；`main.js`；`cli.js` |
 | 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 中 `action_F` 的变化事件 |
 
 实现方式：
