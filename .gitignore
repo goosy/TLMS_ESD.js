@@ -29,3 +29,7 @@ yarn.lock
 
 # local data
 /.local
+
+# agent guidance
+CLAUDE.md
+AGENTS.md
