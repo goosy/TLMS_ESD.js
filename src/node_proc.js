@@ -84,17 +84,9 @@ export function node_init(actuator) {
 
     data.get('response_code').on("change", (_, new_value) => {
         if (new_value) {
-            // handle command response_code
-            // valid: (handled in PLC)
-            //     stop_pumps cancel_stop
-            //     enable_pressure_SD disable_pressure_SD
-            //     write_paras
-            // todo:
-            //     horn reset_horn read_paras
-            //     enable_pressure_alarm disable_pressure_alarm
-            //     enable_temperature_alarm disable_temperature_alarm
-            //     reset_CPU reset_conn
-            // Reset the corresponding bit in commands according to response_code
+            // Command handshake: each bit set in response_code acknowledges
+            // the command bit at the same position (see the command
+            // enumeration in doc/spec.md 5.1), so clear those bits in commands.
             command.commands = ~new_value & command.commands;
             command.executing = false;
             if (data.response_code !== 0) actuator.debounce_send_commands();
@@ -205,10 +197,11 @@ export function node_loop(actuator) {
         // read a node data.
         actuator.data_payload.read();
         // @TODO check the correctness of the ID
-        // @delete temporary code
-        // because the PLC program is not completed,
-        // all commands except stop_pumps enable_pressure_SD disable_pressure_SD and write_paras
-        // will reset unconditionally.
+        // @TODO interim command masking for all actuators: keep only bits
+        // 0, 4, 5, 7 (stop_pumps, enable_pressure_SD, disable_pressure_SD,
+        // write_paras); every other command bit, cancel_stop included, is
+        // cleared. To be replaced by per-actuator supported commands from
+        // the configuration (doc/design.md section 11).
         command.commands = command.commands & 0xB1;
     }
     if (command.has_commands === true) no_response_count++;
