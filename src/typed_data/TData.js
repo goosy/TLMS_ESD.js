@@ -9,9 +9,8 @@ export class TData extends EventEmitter {
      * @type {Buffer}
      * @readonly
      * @description Internal buffer
-     * all data items are stored in Big-Endian format.
-     * word items are an exception and are stored in Little-Endian format
-     * because they are considered to be a combination of bits or bytes in sequence.
+     * all data items, including combined words, are stored in Big-Endian format.
+     * Device endianness is converted only at the IO boundary (TTag.read_from/write_to).
      */
     #buffer;
     /**
@@ -40,6 +39,15 @@ export class TData extends EventEmitter {
      */
     name;
 
+    // Members assigned by set_IO. They are declared here so that
+    // init() rejects tag names that would collide with them.
+    driver = null;
+    buffer_info = null;
+    IO_read = null;
+    IO_write = null;
+    IO_read_all = null;
+    create_tag_group = null;
+
     /**
      * @type {Object.<string, TTag>}
      * @private
@@ -60,7 +68,7 @@ export class TData extends EventEmitter {
         const name = tag.name ?? tag;
         const _tag = this.#tags[name];
         if (_tag == null) {
-            logger.debug(`${this.name} has no tag named ${tagname}`);
+            logger.debug(`${this.name} has no tag named ${name}`);
             return;
         }
         _tag.check_change();
@@ -161,7 +169,7 @@ export class TData extends EventEmitter {
 
     init(_item) {
         const { offset, type, name, init_value, coupling, is_combined } = _item;
-        if (this[name] || this.#tags[name] != null) {
+        if (name in this || this.#tags[name] != null) {
             logger.error(`new tag name is duplicated or not allowed: ${name}`);
             process.exit(1);
         }
