@@ -48,7 +48,7 @@ TLMS_ESD（Pipeline Leakage Emergency Shutdown System，管道泄漏紧急停输
 - 程序中的简化：控制器把每个节点当作一个独立的执行器处理。
   - 配置中 `actuators` 的每一项、代码中的每个 actuator 对象都对应一个节点；
   - 同一执行器上的多个节点写成多个 `actuators` 项，各自配置数据区和命令区，Modbus TCP 下共用 IP 和端口；
-  - 控制器为每个节点维护一个节点数据块（NODE）和一个命令块（COMMAND），各占一个 Modbus 单元号。
+  - 控制器为每个节点维护一个节点数据块（NODE）和一个命令块（COMMAND），两者共用该节点的 Modbus 单元号（即节点 ID，见 4.1）。
 - 因此在配置和代码中“节点”与“执行器”两个词都会出现，但基本一一对应。本文在描述控制器的处理时统一称“执行器”，指的就是这种一个节点对应一个执行器的对象。
 - 配置了 `pumps` 的执行器称为带泵执行器，是停泵命令的对象。
 
@@ -86,7 +86,7 @@ TLMS_ESD（Pipeline Leakage Emergency Shutdown System，管道泄漏紧急停输
 - 控制器：
   - `name`、`records_size`（动作记录保留条数，默认 10）；
   - `modbus_server.port`；
-  - `modbus_server.unit_id`：为每条线、每个段、每个执行器及 `action_records` 分配一个 Modbus 单元号。
+  - 不再配置 Modbus 单元号：线、段、执行器的单元号直接取各自的 ID，动作记录固定为单元号 0（见 4.1）。
 - 线：
   - `id`、`name`；
   - `controller`：所属控制器名称；
@@ -109,6 +109,16 @@ TLMS_ESD（Pipeline Leakage Emergency Shutdown System，管道泄漏紧急停输
   - 段与线的 ID、限值、延时、`action_time` 作为对应数据块的初始值；
   - 其余执行器字段（压力 / 温度量程与限值、`pressure_SD`、`pressure_AI`、`temperature_AI`、`flows`、泵信号地址）用于执行器编程，控制器不直接采用；
   - 执行器参数和状态以执行器上报为准，控制器负责对外发布，并按 HMI 的命令写回执行器（见 5.1）。
+
+### 4.1 ID 规则
+
+- 所有线、段、执行器（节点）的 `id` 必须互不相同。
+- 唯一性跨类型要求：线、段、执行器之间也不能重复，例如一个段的 ID 不能等于任何执行器的 ID。
+- 同一对象有多个数据块时共用该对象的 ID，不算重复。例如一个执行器既有节点数据块又有命令块，两者共用该执行器的 ID。
+- ID 同时作为该对象在控制器 Modbus TCP 服务端上的单元号（unit id，见 5.5），因此：
+  - ID 必须是合法的 Modbus 单元号，且不小于 1；
+  - 单元号 0 固定留给动作记录。
+- 以上规则由配置检查（见 5.6）校验；违反时视为配置错误。
 
 ## 5. 功能需求
 
@@ -216,7 +226,7 @@ TLMS_ESD（Pipeline Leakage Emergency Shutdown System，管道泄漏紧急停输
 ### 5.5 对上接口（Modbus TCP 服务端）
 
 - 控制器在 `controller.modbus_server.port` 上监听，地址为 `0.0.0.0`。
-- 每条线、每个段、每个执行器、动作记录各占一个单元号（unit id），对应关系由配置给出。
+- 每条线、每个段、每个执行器、动作记录各占一个单元号（unit id）：线、段、执行器的单元号就是各自的 ID（见 4.1），动作记录固定为单元号 0。
 - 执行器单元中，从寄存器 0 开始是节点数据块，从寄存器 200 开始是命令块。
 - 支持读写保持寄存器、读输入寄存器、读写线圈。HMI 的写入会立即触发相应的状态变化处理。
 - 各数据块的寄存器布局由 `src/structs/` 定义，必须与 HMI 及执行器程序保持一致。完整点表见 [spec-modbus.md](spec-modbus.md)。
@@ -229,6 +239,7 @@ TLMS_ESD（Pipeline Leakage Emergency Shutdown System，管道泄漏紧急停输
   - 停止（`stop`）；
   - 列出后台运行的实例（`list`）；
   - 查看日志（`log`）和清空日志（`flush`）；
+  - 检查配置是否有效（`check`）：读取指定配置目录下的配置并校验，报告全部错误，不启动控制器；校验内容包括 4.1 的 ID 规则；
   - 前台运行（`debug`），日志级别为 debug，用于调试；
   - 显示版本号和帮助。
 - 控制器名称省略时，运行配置中的第一个控制器。
