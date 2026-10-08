@@ -11,12 +11,14 @@ export class TGroup {
      * @param {number} [options.IO_start=0] - The starting position of the I/O buffer.
      * @param {number} [options.IO_length] - The length of the I/O buffer. Defaults to tdata.size - IO_start if not provided.
      * @param {string} options.endian - The endianness of the data.
+     * @param {number} [options.write_unit=1] - The smallest writable unit of the driver in bytes.
      */
     constructor(tdata, options) {
         this.tdata = tdata;
         this.IO_start = options.IO_start ?? 0;
         this.IO_length = options.IO_length ?? tdata.size - this.IO_start;
         this.endian = options.endian ?? 'BE';
+        this.write_unit = options.write_unit ?? 1;
     }
 
     /**
@@ -63,64 +65,38 @@ export class TGroup {
             process.exit(1);
         }
 
-        this.#tags.push(tag);
+        if (this.#tags.includes(tag)) return;
 
-        const tag_start = tag.byte_offset;
-        const length = tag.length;
-        const tag_end = tag_start + length;
+        // Overlap rules are enforced by the layout validation,
+        // so the group only merges the byte ranges it has to write.
+        const { start: tag_start, end: tag_end } = tag.IO_range(this.endian);
         if (
             tag_start < this.IO_start
             || tag_end > this.IO_start + this.IO_length
         ) {
-            logger.error('tag offset is out of IO exchange area');
+            logger.error(`tag ${tag.name} is out of IO exchange area`);
             process.exit(1);
         }
+        this.#tags.push(tag);
 
-        const areas = this.#areas;
-        let left = 0;
-        let right = areas.length - 1;
-        while (left <= right) {
-            const mid = Math.floor((left + right) / 2);
-            const area = areas[mid];
-            // find overlapping area
-            if (tag_start > area.end) {
-                left = mid + 1;
+        // expand to whole write units
+        const unit = this.write_unit;
+        let start = Math.floor(tag_start / unit) * unit;
+        let end = Math.ceil(tag_end / unit) * unit;
+
+        // absorb every area that intersects or touches [start, end)
+        const areas = [];
+        for (const area of this.#areas) {
+            if (area.end < start || area.start > end) {
+                areas.push(area);
                 continue;
             }
-            if (tag_end < area.start) {
-                right = mid - 1;
-                continue;
-            }
-            // merge area
-            if (tag_start === area.end) { // Merge right side
-                area.end = tag_end;
-                const next = areas[mid + 1];
-                if (next && tag_end === next.start) {
-                    area.end = next.end;
-                    areas.splice(mid + 1, 1);
-                }
-                return;
-            }
-            if (tag_end === area.start) { // Merge left side
-                area.start = tag_start;
-                const prev = areas[mid - 1];
-                if (prev && tag_start === prev.end) {
-                    area.start = prev.start;
-                    areas.splice(mid - 1, 1);
-                }
-                return;
-            }
-            // if tag.type is bool, permits intervals entirely within existing ones.
-            if (tag.type === "bool" || tag_start >= area.start && tag_end <= area.end) {
-                return;
-            }
-            // otherwise, it's an invalid configuration
-            logger.error(`Invalid tag configuration: the ${tag.name} tag overlaps with existing ones`);
-            process.exit(1);
+            start = Math.min(start, area.start);
+            end = Math.max(end, area.end);
         }
-
-        // insert new area
-        areas.splice(left, 0, { start: tag_start, end: tag_end });
+        const index = areas.findIndex(area => area.start > end);
+        areas.splice(index === -1 ? areas.length : index, 0, { start, end });
+        this.#areas = areas;
     }
 
     add(...tags) {

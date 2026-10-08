@@ -4,6 +4,8 @@ import { logger } from '../util.js';
 
 export class MTClient extends Modbus_Client {
     connfailed = false;
+    // smallest writable unit in bytes: one holding register
+    write_unit = 2;
 
     /**
      * Constructs a new instance of the MTClient class.
