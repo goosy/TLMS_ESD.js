@@ -30,6 +30,7 @@ export class TGroup {
         const IO_buffer = this.tdata.IO_buffer;
         for (const tag of this.#tags) {
             tag.read_from(IO_buffer, this.endian);
+            this.tdata.check_coupling(tag.name);
         }
         return true;
     }
@@ -131,7 +132,9 @@ export class TGroup {
     copy_from(tdata) {
         for (const tag of this.#tags) {
             const value = tdata[tag.name];
-            if (value !== undefined) tag.set_value(value);
+            if (value === undefined) continue;
+            tag.set_value(value);
+            this.tdata.check_coupling(tag.name);
         }
     }
 }

@@ -123,7 +123,8 @@ export class TTag extends EventEmitter {
                 logger.error(`tag ${this.name} has bit offset: ${this.bit_offset}`);
                 process.exit(1);
             }
-            if (this.type !== "byte" && this.byte_offset % 2 === 1) {
+            const is_single_byte = ["byte", "sint", "usint"].includes(this.type);
+            if (!is_single_byte && this.byte_offset % 2 === 1) {
                 // Byte index value with word units as delimiters
                 logger.error(`${this.type} tag "${this.name}" has wrong offset: ${this.byte_offset}.${this.bit_offset}`);
                 process.exit(1);
@@ -134,7 +135,8 @@ export class TTag extends EventEmitter {
     check_change() {
         const old_value = this.value;
         const new_value = this.get_value();
-        if (old_value !== new_value) {
+        const both_NaN = Number.isNaN(old_value) && Number.isNaN(new_value);
+        if (old_value !== new_value && !both_NaN) {
             this.value = new_value;
             // the change event must be after the new value is applied
             this.emit("change", old_value, new_value);
@@ -166,7 +168,24 @@ export class TTag extends EventEmitter {
                 };
                 break;
             }
-            case 'sint':
+            case 'sint': {
+                this.length = 1;
+                this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
+                this.get_value = () => this.tag_buffer.readInt8();
+                this.set_value = (v) => {
+                    this.tag_buffer.writeInt8(v);
+                    this.check_change();
+                };
+                // a single byte needs no endian conversion
+                this.read_from = (buffer) => {
+                    this.tag_buffer[0] = buffer[index];
+                    this.check_change();
+                }
+                this.write_to = (buffer) => {
+                    buffer[index] = this.tag_buffer[0];
+                }
+                break;
+            }
             case 'usint':
             case 'byte': {
                 this.length = 1;
