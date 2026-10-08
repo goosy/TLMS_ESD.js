@@ -56,7 +56,9 @@
 - `share.js#build_structure` 把条目展开成扁平的 `items`，计算结构总长 `length`，并把 coupling 规范为名称数组。
 - Bool 的定位规则：`byte = offset >> 3`，`bit = offset % 8`。内部缓冲按大端存放，一个字的第一个字节是寄存器的高字节，所以 coupling 中偏移 8–15 对应寄存器的 bit0–7，偏移 0–7 对应 bit8–15。定义文件按 8–15、0–7 的顺序列出，就是按寄存器 bit0 到 bit15 的顺序排列；字值的第 k 位即寄存器 bit k，`0xB1` 掩码按这个位号计算。
 - [spec-modbus.md](spec-modbus.md) 中的点表就是按上述规则从这些定义计算出来的。
+- 组合字的位号完全由上述偏移编号保证，`buffer` 中组合字与其他多字节类型一样按大端存放；对上服务端和驱动都不为组合字单独交换字节（规范 3.6）。
 - 这些布局就是 Modbus 寄存器表和执行器数据区的内存映像，修改任何偏移都属于协议变更。
+- 写入所有权（规范 3.6）目前靠人工审查保证：布局中没有标注 TTag 由谁写入，校验不检查这一规则。现有写入路径都符合：命令块的 ID、命令字、参数块和数据块的参数块由控制器写入，均按字对齐且连续；数据块的其余部分由执行器写入，控制器只读。
 
 #### 布局校验
 
@@ -108,16 +110,18 @@
 - `read_from(IO_buffer, endian)` / `write_to(IO_buffer, endian)` 负责在设备字节序与内部大端之间转换：
   - 2 字节：`BE` 原样复制；`LE` / `little` / `BEBS` 交换两个字节；
   - 4 字节：支持 `BE`、`LE` / `little`、`BEBS`、`LEBS` 四种排列；
-  - Bool 按位读写，Byte 不做转换。
+  - Bool 和单字节类型（Byte、SInt、USInt）只读写一个字节，不做字节内转换；它在 IO 缓冲区中的下标按 16 位寄存器换算：`LE` / `little` / `BEBS` 时为 `byte_offset ^ 1`，`BE` / `LEBS` 时为 `byte_offset`。Bool 按 `bit_mask` 只改自己的位。
 
 ### 3.4 TGroup
 
 - `create_tag_group(...names)` 返回一组需要一起与设备同步的 tag。
-- 添加 tag 时，用二分查找把各 tag 的字节区间合并成连续的写区间（`#areas`），相邻区间会自动拼接。区间重叠时：
-  - Bool 允许落在已有区间内；
-  - 其他类型的重叠视为配置错误，程序退出。
+- 布局的重叠规则已由布局校验保证（3.1 节），TGroup 不再判断重叠。添加 tag 时：
+  - 同一 tag 重复添加时忽略；
+  - tag 的字节范围超出 IO 交换区时报错退出；
+  - tag 在 IO 缓冲区中实际占用的字节范围（Bool 和单字节类型按 3.3 节换算下标）向外扩展到驱动写入单元 `driver.write_unit` 的整数倍，再并入写区间（`#areas`）；与已有区间相交或相邻时合并，可能一次合并多个区间。
+- IO 交换区的 `start` 和 `length` 必须是写入单元的整数倍，`set_IO` 时检查，否则报错退出，保证扩展后的写区间不越出交换区。
 - `read()`：先 `IO_read_all`，再让组内每个 tag `read_from` 并执行 `check_coupling`，从而触发变化事件并刷新组合字与各位。
-- `write()`：组内每个 tag 先 `write_to` 到 `IO_buffer`，再按合并后的区间逐段调用 `IO_write`。
+- `write()`：组内每个 tag 先 `write_to` 到 `IO_buffer`，再按合并后的区间逐段调用 `IO_write`，并把区间长度一并传给驱动。区间内不属于组内 tag 的字节取 `IO_buffer` 中最近一次读入的值；按写入所有权规则，这些字节也由控制器写入，不会覆盖执行器的数据。
 - `copy_from(tdata)`：按同名 tag 从另一个 TData 复制值并执行 `check_coupling`，用于在 data 与 command 之间同步参数块。
 
 ## 4. 驱动
@@ -137,11 +141,14 @@
 ### 4.2 MTClient（es-modbus）
 
 - 地址换算：配置和 TData 中的区域都以字节计，字节起点 `start` 对应保持寄存器 `40000 + (start >> 1) + 1`，长度为 `length >> 1` 个寄存器。
+- 只访问保持寄存器：es-modbus 按 `4xxxx` 前缀选用功能码 03 读、06（单个寄存器）/ 16（多个寄存器）写。不使用线圈、离散输入和输入寄存器。
+- `write_unit = 2`：写入单元为一个寄存器。
 - 断线重连使用 es-modbus 自带的机制，`start_tick` 被重写为只发出 `tick`。
 
 ### 4.3 S7Client（@st-one-io/nodes7）
 
 - 通过 `readArea` / `writeArea` 读写 `DB` 或 `M` 区，起点与长度都以字节为单位。
+- `write_unit = 1`：写入单元为一个字节。
 - 由于 `S7Endpoint.connect()` 不完善，暂时使用库自带的 `autoReconnect = 5000`，`start_tick` 同样被重写（代码中已标记为临时代码）。
 
 ### 4.4 对上服务端（createMTServer + Unit_Map）
@@ -311,6 +318,7 @@
 | ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 4.1、5.5） | `run_controller` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `main.js` 的 `run_controller` |
 | 配置检查命令 | `tlms check` 读取并校验配置、报告全部错误，不启动控制器（规范 5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
 | 数据块布局校验 | 启动时与 `tlms check` 按规范 3.6 的规则校验全部布局，报告全部违规项；实现方式见 3.1 节“布局校验” | 没有集中校验：`build_structure` 遇到重名静默跳过（`NODE` 中 `flowmeter` 定义了两次，偏移相同）；对齐和类型在 TTag 构造时检查，遇到第一个错误即退出；名称冲突在 TData 构造时检查；重叠只在 TGroup 加入 tag 时按写区间检查，规则与规范不一致（先加入某一位再加入它所在的字会被误判）；位长、总长、`init_value` 范围不检查 | `structs/share.js`；`typed_data/TTag.js` 的 `validate`；`typed_data/TData.js` 的 `init`；`typed_data/TGroup.js` 的 `#add`；`main.js`；`cli.js` |
+| 按写入单元分组写入 | 分组写入只写组内 TTag 所在的写入单元，Modbus TCP 为寄存器、S7 为字节；Bool 和单字节 TTag 在寄存器两字节互换的字节序下位于另一个字节（规范 3.6）；实现方式见 3.3、3.4 节 | 写区间按 tag 的字节范围合并，不按写入单元对齐，`IO_write` 不传长度；Modbus 下单独写一个字节时 es-modbus 校验长度失败并抛出异常；Bool 和单字节类型的 `read_from` / `write_to` 忽略 `endian`，`LE` / `BEBS` 设备上读写错字节；驱动没有 `write_unit`；`set_IO` 不检查交换区对齐 | `typed_data/TTag.js`；`typed_data/TGroup.js` 的 `#add`、`write`；`typed_data/TData.js` 的 `set_IO`、`IO_write`；`drivers/modbusTCP.js`、`drivers/s7.js` |
 | 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 中 `action_F` 的变化事件 |
 
 实现方式：
