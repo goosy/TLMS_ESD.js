@@ -265,7 +265,7 @@ export function section_loop(section) {
     }
 
     // action trigger
-    if (section.press_alarm_F && pump_run) {
+    if (data.press_alarm_F && pump_run) {
         data.action_F = true;
         line.data.action_section_ID = ID;
         // only if the pressure exceeds the limit,
