@@ -8,7 +8,7 @@
 ## 1. Access conventions
 
 - The controller offers the Modbus TCP service on `controller.modbus_server.port` (listening on `0.0.0.0`).
-- Each line, each section, each actuator and the action record take one unit id each, given by `modbus_server.unit_id` of the controller configuration.
+- Each line, each section, each actuator and the action record take one unit id each: the unit id of a line, section or actuator is its ID (see [spec.md](spec.md) 4.1), and the action record is fixed at unit id 0.
 - Addresses within a unit all start at 0:
   - line, section and action record units: the data block starts at register 0;
   - actuator units: the node data block starts at register 0, the command block at register 200.

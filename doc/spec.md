@@ -50,7 +50,7 @@ The system has only two kinds of runtime entities:
 - Simplification in the program: the controller treats each node as an independent actuator.
   - Each entry of `actuators` in the configuration and each actuator object in the code corresponds to one node;
   - Several nodes on the same actuator are written as several `actuators` entries, each with its own data area and command area; under Modbus TCP they share the IP and port;
-  - The controller keeps one node data block (NODE) and one command block (COMMAND) per node, each occupying one Modbus unit id.
+  - The controller keeps one node data block (NODE) and one command block (COMMAND) per node, both sharing the Modbus unit id of the node (the node ID, see 4.1).
 - So both words, "node" and "actuator", appear in the configuration and the code, but they correspond essentially one to one. When this document describes the processing of the controller it says "actuator", meaning such an object with one node per actuator.
 - An actuator with `pumps` configured is called an actuator with pumps; it is the target of stop pump commands.
 
@@ -88,7 +88,7 @@ Relations: controller 1-N lines, line 1-N sections, section N-N actuators (the s
 - Controller:
   - `name`, `records_size` (number of action records kept, default 10);
   - `modbus_server.port`;
-  - `modbus_server.unit_id`: assigns one Modbus unit id to each line, each section, each actuator and `action_records`.
+  - Modbus unit ids are no longer configured: the unit id of a line, section or actuator is its ID, and the action record is fixed at unit id 0 (see 4.1).
 - Line:
   - `id`, `name`;
   - `controller`: name of the controller it belongs to;
@@ -111,6 +111,16 @@ Relations: controller 1-N lines, line 1-N sections, section N-N actuators (the s
   - The IDs, limits, delays and `action_time` of sections and lines are the initial values of the corresponding data blocks;
   - The other actuator fields (pressure / temperature ranges and limits, `pressure_SD`, `pressure_AI`, `temperature_AI`, `flows`, pump signal addresses) are for programming the actuators, and the controller does not take them directly;
   - Actuator parameters and states follow what the actuator reports; the controller publishes them and writes them back to the actuator on HMI commands (see 5.1).
+
+### 4.1 ID rules
+
+- The `id` of all lines, sections and actuators (nodes) must be distinct.
+- The uniqueness applies across types: lines, sections and actuators must not repeat each other's IDs either; e.g. the ID of a section must not equal the ID of any actuator.
+- Several data blocks of the same object share the object's ID, which is not a duplicate. E.g. an actuator has both a node data block and a command block, and both share the ID of the actuator.
+- The ID is also the unit id of the object on the Modbus TCP server of the controller (see 5.5), so:
+  - the ID must be a valid Modbus unit id, and at least 1;
+  - unit id 0 is reserved for the action record.
+- These rules are validated by the configuration check (see 5.6); a violation is a configuration error.
 
 ## 5. Functional requirements
 
@@ -218,7 +228,7 @@ Relations: controller 1-N lines, line 1-N sections, section N-N actuators (the s
 ### 5.5 Upward interface (Modbus TCP server)
 
 - The controller listens on `controller.modbus_server.port` at address `0.0.0.0`.
-- Each line, each section, each actuator and the action record take one unit id each, as given by the configuration.
+- Each line, each section, each actuator and the action record take one unit id each: the unit id of a line, section or actuator is its ID (see 4.1), and the action record is fixed at unit id 0.
 - In an actuator unit, the node data block starts at register 0 and the command block at register 200.
 - Reading and writing holding registers, reading input registers, and reading and writing coils are supported. A write from the HMI triggers the processing of the resulting state changes immediately.
 - The register layouts of the data blocks are defined by `src/structs/` and must stay consistent with the HMI and the actuator programs. The complete point table is in [spec-modbus.md](spec-modbus.md).
@@ -231,6 +241,7 @@ Relations: controller 1-N lines, line 1-N sections, section N-N actuators (the s
   - stopping (`stop`);
   - listing the instances running in the background (`list`);
   - viewing the log (`log`) and clearing the logs (`flush`);
+  - checking whether the configuration is valid (`check`): reads and validates the configuration in the given configuration directory, reports all errors, and does not start the controller; the validation includes the ID rules of 4.1;
   - running in the foreground (`debug`) with log level debug, for debugging;
   - showing the version and help.
 - When the controller name is omitted, the first controller of the configuration runs.

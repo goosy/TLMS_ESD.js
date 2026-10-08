@@ -287,6 +287,9 @@
 | --- | --- | --- | --- |
 | 压力联锁按 `pressure_SD_F` 触发 | 只有 `pressure_SD_F` 为真的执行器压力报警时才触发压力停泵（规范 5.2） | 段的压力动作只判断 `press_alarm_F && pump_run`，`press_alarm_F` 汇总全部执行器的 `pressure_AH_F`；`pressure_SD_F` 只用于清除 `enable_pressure_SD` / `disable_pressure_SD` 命令位 | `section_proc.js` 的 `section_loop`、`update_press_alarm_F`；`node_proc.js` 的 `pressure_SD_F` 事件 |
 | 按执行器配置屏蔽命令 | 每个执行器在配置中用 `supported_commands` 列出支持的命令，控制器只发送支持的命令，其余命令位直接复位（规范 5.1）；实现方式见 12.1 节 | 配置中没有该字段；`node_loop` 对所有执行器统一执行 `command.commands &= 0xB1`，只保留位 0、4、5、7（`stop_pumps`、`enable_pressure_SD`、`disable_pressure_SD`、`write_paras`），`cancel_stop` 也因此被复位 | `config.js` 的执行器解析；`node_proc.js` 的 `node_loop` |
+| ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个数据块共用 ID（规范 4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
+| ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 4.1、5.5） | `run_controller` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `main.js` 的 `run_controller` |
+| 配置检查命令 | `tlms check` 读取并校验配置、报告全部错误，不启动控制器（规范 5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
 | 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 中 `action_F` 的变化事件 |
 
 实现方式：
