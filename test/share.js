@@ -3,9 +3,10 @@
 // before src/util.js configures log4js.
 import assert from 'node:assert/strict';
 import { Buffer } from 'node:buffer';
-import { build_structure } from "../src/structs/share.js";
 
 process.env.LOG_LEVEL ??= "off";
+// imported after LOG_LEVEL is set: it loads src/util.js through TData
+const { build_structure } = await import("../src/structs/share.js");
 
 export class Exit_Called extends Error {
     constructor(code) {
