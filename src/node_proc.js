@@ -100,6 +100,7 @@ export function node_init(actuator) {
             command.disable_pressure_SD = false;
             logger.info(`actuator ${name} prohibits pressure interlock`);
         }
+        section.update_press_SD_trigger();
         actuator.debounce_send_commands();
     });
     data.get('comm_OK').on("change", (_, new_value) => {
@@ -142,6 +143,7 @@ export function node_init(actuator) {
     data.get('pressure_AH_F').on("change", (old_value, new_value) => {
         logger.info(`actuator ${name} pressure alarm status changed: ${old_value} -> ${new_value}`);
         section.update_press_alarm_F();
+        section.update_press_SD_trigger();
     });
     data.get('flowmeter').on("change", (_o, _n) => {
         if (is_begin) section.update_flow_begin();

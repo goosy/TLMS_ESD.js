@@ -197,9 +197,9 @@ Main layouts (byte offsets):
   1. copies the parameters in command to `data_parameters`;
   2. writes the parameter block of the actuator data area;
   3. resets the bit after the write completes.
-- Change of `pressure_SD_F`: clears the corresponding enable or disable command bit and sends the commands.
+- Change of `pressure_SD_F`: clears the corresponding enable or disable command bit and sends the commands; also calls `section.update_press_SD_trigger()`.
 - Aggregating state changes upward:
-  - on changes of `comm_OK`, `work_OK`, `pump_run`, `pump_change_F`, `pressure_WH_F`, `pressure_AH_F`, calls `section.update_*`;
+  - on changes of `comm_OK`, `work_OK`, `pump_run`, `pump_change_F`, `pressure_WH_F`, `pressure_AH_F`, calls `section.update_*`; on changes of `pressure_AH_F` also calls `section.update_press_SD_trigger()`;
   - on changes of `flowmeter`, calls `update_flow_begin` / `update_flow_end` by the begin / end role of the actuator in the section;
   - on changes of `pump_run_1..4`, `pump_run` takes their OR; when `pump_run` becomes false, the actuator's `stop_pumps` command is cleared.
 
@@ -211,18 +211,25 @@ Main layouts (byte offsets):
 
 ### 6.2 Event-driven part (`section_init`)
 
+- Variables on the section object (not TTags, see spec 3.6):
+  - `press_SD_trigger`: the pressure interlock condition, computed by `update_press_SD_trigger()` as the OR of `pressure_AH_F && pressure_SD_F` over the actuators of the section, with a 50 ms debounce, logged on change;
+  - `press_action` / `flow_action`: the pressure action and the flow difference action, set and reset by `section_loop` (see 6.3).
 - On changes of `flow_begin` / `flow_end`, recomputes `flow_diff`.
 - On changes of `flow_diff`, computes the trigger bits:
   - `flow_warning_trigger = flow_diff > flow_diff_WH && !bypass`;
   - `flow_alarm_trigger = flow_diff > flow_diff_AH && !bypass`.
-- On changes of `flow_alarm_F`, `protect_F`, `pump_run`, updates `pre_stop_notice = flow_alarm_F && pump_run && protect_F`; on changes of `flow_alarm_F`, `press_alarm_F`, also updates the line's `alarm_F`.
+- On changes of `flow_alarm_F`, `protect_F`, `pump_run`, updates `pre_stop_notice = flow_alarm_F && line.data.pump_run && protect_F`:
+  - the pump running condition takes the line's `pump_run` (spec 5.2), and changes of the line's `pump_run` also trigger this update (see section 7);
+  - when this section's `pump_run` changes, this computation may read the old value of the line, and the change event of the line then computes it once more; the line's `pre_stop_notice` only aggregates the results of the sections and does not take part in the computation of a section, so no loop forms;
+  - `stop_pumps` and the pressure action still take this section's `pump_run`.
+- On changes of `pre_stop_notice`, updates the line's `pre_stop_notice`.
+- On changes of `flow_alarm_F`, `press_alarm_F`, also updates the line's `alarm_F`.
 - Change of `stop_pumps`:
   - when true, sets `command.stop_pumps = node.data.pump_run` for each actuator with pumps;
   - when false, sets `stop_pumps = false` and `cancel_stop = true`.
-- Rising edge of `action_F`: fills in `Action_Record.data`, then calls `add_record()`.
+- Change of `action_F`: only logs.
 - Change of `pump_run`:
   - falling edge: clears the section's `autoStopCmd` / `manStopCmd`;
-  - rising edge: if the flow and pressure alarms have both disappeared, `action_F` is true, and there is neither `autoStopCmd` nor `line_action_source`, clears `action_F` and the line's `action_section_ID`;
   - in both cases, updates this section's `pre_stop_notice` and the line's `pump_run`.
 
 ### 6.3 Periodic part (`section_loop`)
@@ -236,10 +243,20 @@ Runs every 500 ms:
 2. Delay counting: while a trigger bit is true, its counter adds 500 ms per cycle, otherwise it is reset; when the count exceeds `*_delay`, `flow_warning_F` / `flow_alarm_F` is set.
 3. Countdown:
    - while `pre_stop_notice` is true, `action_count` accumulates, and `countdown = (action_time - action_count) / 1000`;
-   - when the result is below 0, `countdown` is set to 0 and a `flow_action` occurs.
-4. Pressure action: when `press_alarm_F && pump_run`, sets `action_F`, the line's `action_section_ID` and the section's `autoStopCmd`. `protect_F` is not checked, so it is not restricted by hang-on; the actuators' `pressure_SD_F` is not checked either for now (see section 11).
-5. Flow action: sets `action_F`, the line's `action_section_ID`, the line's `autoStopCmd` and `line_action_source`; without a flow action, `line_action_source &&= line.autoStopCmd`.
-6. Computes the stop command: `stop_pumps = (section auto/man || line auto/man) && pump_run`.
+   - when the result is below 0, `countdown` is set to 0 and the countdown is recorded as expired (`countdown_expired`).
+4. Pressure action (variable `press_action`):
+   - set when `press_SD_trigger && pump_run`, together with the section's `autoStopCmd`. `protect_F` is not checked, so it is not restricted by hang-on;
+   - otherwise reset when `pump_run && !autoStopCmd`: a pump of this section is running (necessarily restarted after the stop), and the interlock condition has disappeared.
+5. Flow difference action (variable `flow_action`):
+   - set when the countdown expires, together with the line's `autoStopCmd` and this section's `line_action_source`;
+   - otherwise first runs `line_action_source &&= line.autoStopCmd`, then resets when `line.pump_run && !flow_alarm_F && !line_action_source`. The pump running condition takes the line's, as for the stop pump notice; otherwise a section without pumps could never reset.
+6. The reset conditions are evaluated every cycle and not latched; during the stop neither pump running condition holds, so the action state is kept until pumps run again.
+7. Action aggregation:
+   - when either action variable changes from false to true, sets the line's `action_section_ID` to this section's ID and calls `add_action_record()` to create a record; when both happen in the same cycle, only one record is created;
+   - `action_F = press_action || flow_action`; when the result is false and the line's `action_section_ID` equals this section's ID, it is cleared, so as not to erase the action of another section.
+8. Computes the stop command: `stop_pumps = (section auto/man || line auto/man) && pump_run`.
+
+When the section data block is next adjusted, `press_action` / `flow_action` are planned to become TTags; the action record will then be triggered by their change events instead of comparing old and new values in `section_loop`.
 
 ## 7. Line processing (`line_proc.js`)
 
@@ -248,7 +265,7 @@ Runs every 500 ms:
   - `alarm_F`: the OR of `flow_alarm_F` and `press_alarm_F` of the sections;
   - all with a 50 ms debounce.
 - On changes of `bypass`, writes `bypass` of all sections.
-- On the falling edge of `pump_run`, clears the line's `autoStopCmd` / `manStopCmd`.
+- On changes of `pump_run`, calls `update_pre_stop_notice()` for each section of the line; on the falling edge, also clears the line's `autoStopCmd` / `manStopCmd`.
 
 ## 8. Action records (`action_record.js`)
 
@@ -265,7 +282,7 @@ Runs every 500 ms:
 - Change of `index`:
   - when -1, clears the time TTags;
   - otherwise loads the corresponding record into data; when out of range, restores the previous value.
-- The record content is filled in by the section on the rising edge of `action_F` (see 6.2); the rule for actuator positions is in section 11.
+- The record content is filled in by the section's `add_action_record()` when a pressure action or a flow difference action occurs (see 6.3); `press_action` / `flow_action` take the action variables of the section; the rule for actuator positions is in section 11.
 
 ## 9. Logging
 
@@ -314,22 +331,12 @@ Requirements of the spec that the current code does not implement yet:
 
 | Item | Spec requirement | Current code | Locations |
 | --- | --- | --- | --- |
-| Pressure interlock triggered by `pressure_SD_F` | A pressure pump stop is triggered only when an actuator whose `pressure_SD_F` is true is in pressure alarm (spec 5.2) | The pressure action of the section checks only `press_alarm_F && pump_run`, and `press_alarm_F` aggregates `pressure_AH_F` of all actuators; `pressure_SD_F` is used only to clear the `enable_pressure_SD` / `disable_pressure_SD` command bits | `section_loop`, `update_press_alarm_F` in `section_proc.js`; the `pressure_SD_F` event in `node_proc.js` |
 | Command masking by actuator configuration | Each actuator lists its supported commands with `supported_commands` in the configuration; the controller sends only supported commands and resets the other command bits directly (spec 5.1); for the implementation see 12.1 | The configuration has no such field; `node_loop` runs `command.commands &= 0xB1` for all actuators alike, keeping only bits 0, 4, 5, 7 (`stop_pumps`, `enable_pressure_SD`, `disable_pressure_SD`, `write_paras`), so `cancel_stop` is reset too | Actuator parsing in `config.js`; `node_loop` in `node_proc.js` |
 | ID uniqueness check | The IDs of lines, sections and actuators are all distinct (across types); several data blocks of the same object share its ID (spec 4.1) | `config.js` only checks that an actuator `id` is a non-zero number; lines, sections and actuators are each indexed by `ID<id>`, and neither duplicates nor equal IDs across types are reported; a duplicate of the same type silently overwrites the earlier one | `add_conf` in `config.js` |
 | ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec 4.1, 5.5) | `run_controller` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `run_controller` in `main.js` |
 | Configuration check command | `tlms check` reads and validates the configuration and the layouts of all data blocks (`validate_structure` of 3.1), reports all errors, and does not start the controller (spec 3.6, 5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly; the layout validation already runs at startup (`main.js`) but is not yet wired into the command line | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
-| Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec 5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | The change event of `action_F` in `section_proc.js` |
+| Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec 5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | `add_action_record` in `section_proc.js` |
 
-Implementation:
-
-- `press_alarm_F` stays as it is and keeps aggregating `pressure_AH_F` of all actuators, for the alarm display.
-- A separate section-level Bool is the pressure interlock condition: first compute `pressure_AH_F && pressure_SD_F` for each actuator, then OR it over all actuators of the section. The pressure action of `section_loop` uses this variable instead of `press_alarm_F`.
-- A change of an actuator's `pressure_AH_F` or `pressure_SD_F` triggers the recomputation of this variable.
-- At present there is no separate pressure interlock variable; `press_alarm_F` serves as it, so the section data block does not need a TTag for it.
-- Once `pressure_SD_F` takes part, this pressure interlock variable is added to the section data block as a new TTag, and the point table is adjusted accordingly.
-- When the variable is true and a pump of the section is running, the section's `autoStopCmd` is set, then the existing stop chain follows: the section's `stop_pumps` is set, and the change event of `stop_pumps` sets the stop command in the command block of each actuator with pumps.
-- This has the same structure as the flow difference interlock; the differences are scope and countdown: on the flow side, `pre_stop_notice` is set by `flow_alarm_F` and other conditions, and after the countdown the line's `autoStopCmd` is set, stopping the whole line; on the pressure side there is no countdown, and the section's `autoStopCmd` is set directly, stopping only this section. If the pressure interlock is changed to stop the line in the future, it must set the line's `autoStopCmd` instead, and its interplay with `line_action_source` and the reset logic of `action_F` must be considered as well.
 
 ## 12. Command processing
 

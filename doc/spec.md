@@ -227,18 +227,23 @@ TTags are the interface:
   - When communication is OK, work is OK, no pump is in a start-stop transition, the section is not bypassed and not hung on manually (`hangon_MF`), the section is in the protection state (`protect_F`);
   - When any of the first four conditions fails, the section is hung on automatically (`hangon_AF`).
 - Stop pump notice:
-  - When `flow_alarm_F`, `pump_run` and `protect_F` all hold, the stop pump notice (`pre_stop_notice`) is issued and the `action_time` countdown starts (`countdown`, in s);
+  - When this section's `flow_alarm_F`, this section's `protect_F` and the `pump_run` of its line all hold, the stop pump notice (`pre_stop_notice`) is issued and the `action_time` countdown starts (`countdown`, in s);
+  - The pump running condition takes the line's `pump_run`, not this section's: the flow difference interlock stops the whole line in order to avoid pressurizing the buffer tanks of intermediate stations; the leaking section itself may have no running pump (e.g. driven across stations by an upstream section), and as long as a pump runs on the line, the line must be stopped. The pressure interlock stops only this section and still takes this section's `pump_run`;
   - When the countdown ends and the conditions still hold, the flow interlock is executed;
   - When any condition disappears during the countdown (e.g. a manual hang-on clears `protect_F`), the countdown is reset and the shutdown is interrupted.
-- Interlock actions:
-  - Flow interlock (stop the line): sets the section's `action_F`, records the line's `action_section_ID`, sets the line's `autoStopCmd`, and marks this section as the line action source (`line_action_source`). The stop command of the line applies to all sections of the line, and every section with a pump running stops its pumps;
-  - Pressure interlock: when `pressure_AH_F` is true for any actuator of the section whose `pressure_SD_F` is true, and a pump of the section is running, sets the section's `action_F` and the section's `autoStopCmd`. An actuator whose `pressure_SD_F` is false only raises an alarm and does not trigger a pump stop. The pressure interlock is not restricted by hang-on (`protect_F`). For now the pressure interlock stops only this section; it may be extended to stop the line in the future.
+- Interlock actions: a section records two kinds of action separately, the pressure action and the flow difference action, each set and reset on its own; the section's `action_F` is their OR.
+  - Flow difference interlock (stop the line): when the countdown expires, a flow difference action occurs, which records the line's `action_section_ID`, sets the line's `autoStopCmd`, and marks this section as the line action source (`line_action_source`). The stop command of the line applies to all sections of the line, and every section with a pump running stops its pumps;
+  - Pressure interlock (stop the section): when `pressure_AH_F` is true for any actuator of the section whose `pressure_SD_F` is true, and a pump of this section is running, a pressure action occurs, which records the line's `action_section_ID` and sets the section's `autoStopCmd`. An actuator whose `pressure_SD_F` is false only raises an alarm and does not trigger a pump stop. The pressure interlock is not restricted by hang-on (`protect_F`). For now the pressure interlock stops only this section; it may be extended to stop the line in the future;
   - The section's `press_alarm_F` still aggregates `pressure_AH_F` of all actuators, for the alarm display, whether the pressure interlock is allowed or not.
 - Pump stop: when an automatic / manual stop command exists on the section or its line and a pump of this section is running, a stop pump command is issued to all actuators with pumps of this section; when the command is withdrawn, a cancel stop command is issued.
 - Reset:
-  - After all pumps stop, the section's `autoStopCmd` / `manStopCmd` are cleared;
-  - When a pump restarts, if the alarms have disappeared and the action is not held by a stop command, `action_F` and the line's `action_section_ID` are cleared automatically.
-- Every time `action_F` is set, an action record is created (see 5.4).
+  - After all pumps of this section stop, the section's `autoStopCmd` / `manStopCmd` are cleared;
+  - The action state is kept during the stop, so the HMI can see the reason of the shutdown;
+  - Pressure action: reset when a pump of this section runs, the pressure interlock condition has disappeared, and the section's `autoStopCmd` has been cleared;
+  - Flow difference action: reset when a pump of its line runs, this section's `flow_alarm_F` has disappeared, and this section is no longer the line action source;
+  - The reset conditions are evaluated in every main loop cycle and not latched: if the alarm is still present when the pumps restart and disappears later, the action is reset all the same;
+  - After both kinds of action are reset, `action_F` is cleared; the line's `action_section_ID` is cleared if it is still this section's ID, and left alone if another section has overwritten it.
+- Every time a pressure action or a flow difference action occurs (from absent to present), an action record is created (see 5.4).
 
 ### 5.3 Lines
 
@@ -255,7 +260,7 @@ TTags are the interface:
   - Time (year / month / day / hour / minute / second), ID of the action section;
   - Begin and end flows and the flow difference;
   - Pressure, ID and pump running state of the actuators of the action section, in 4 fixed positions (nodes 1-4);
-  - Action reason: the pressure reason (`press_action`) takes the section's `press_alarm_F`, the aggregation of the pressure alarms of all actuators; the flow reason (`flow_action`) takes the section's `flow_alarm_F`.
+  - Action reason: the pressure reason (`press_action`) and the flow reason (`flow_action`) take the pressure action and flow difference action states of the section at recording time (see 5.2); the record holds the actions that actually occurred, not the alarm states.
 - Actuator positions:
   - The 4 fixed positions keep the data structure compatible with the original PLC controller; variable-length records are not supported;
   - The 4 positions do not distinguish begin and end: the actuators of the action section take nodes 1-4 in order, begin actuators first, then end actuators; e.g. with 2 begin actuators and 2 end actuators, they take nodes 1, 2 and nodes 3, 4;
