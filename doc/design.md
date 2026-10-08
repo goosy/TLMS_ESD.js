@@ -58,7 +58,9 @@ The external requirements and terminology of data blocks (TData) and TTags are i
 - `share.js#build_structure` expands the items into a flat `items`, computes the total length `length` of the structure, and normalizes coupling into an array of names.
 - Bool position rule: `byte = offset >> 3`, `bit = offset % 8`. The internal buffer is big-endian, so the first byte of a word is the high byte of the register; coupling offsets 8-15 are register bits 0-7, offsets 0-7 bits 8-15. The definition files list 8-15 before 0-7, i.e. in the order of register bit 0 to bit 15; bit k of the word value is register bit k, and the `0xB1` mask is computed with these bit numbers.
 - The point table in [spec-modbus.md](spec-modbus.md) is computed from these definitions by the rules above.
+- The bit numbers of a combined word are fully guaranteed by the offset numbering above; in `buffer` a combined word is big-endian like any other multi-byte type, and neither the upward server nor the drivers swap bytes for combined words separately (spec 3.6).
 - These layouts are the memory images of the Modbus register table and of the actuator data areas; changing any offset is a protocol change.
+- Write ownership (spec 3.6) is currently guaranteed by manual review: the layouts do not mark who writes a TTag, and the validation does not check this rule. The existing write paths all comply: the ID, command word and parameter block of the command block and the parameter block of the data block are written by the controller, all word aligned and contiguous; the rest of the data block is written by the actuator and only read by the controller.
 
 #### Layout validation
 
@@ -110,16 +112,18 @@ Main layouts (byte offsets):
 - `read_from(IO_buffer, endian)` / `write_to(IO_buffer, endian)` convert between the device byte order and the internal big-endian:
   - 2 bytes: `BE` copies as is; `LE` / `little` / `BEBS` swap the two bytes;
   - 4 bytes: the four orders `BE`, `LE` / `little`, `BEBS`, `LEBS` are supported;
-  - Bool is read and written by bit, Byte is not converted.
+  - Bool and the single-byte types (Byte, SInt, USInt) read and write only one byte, without conversion within the byte; their index in the IO buffer is computed per 16-bit register: `byte_offset ^ 1` for `LE` / `little` / `BEBS`, `byte_offset` for `BE` / `LEBS`. A Bool changes only its own bit by `bit_mask`.
 
 ### 3.4 TGroup
 
 - `create_tag_group(...names)` returns a group of tags to be synchronized with the device together.
-- When a tag is added, a binary search merges the byte ranges of the tags into contiguous write ranges (`#areas`), and adjacent ranges are joined automatically. On overlapping ranges:
-  - a Bool may fall inside an existing range;
-  - an overlap of other types is a configuration error, and the program exits.
+- The overlap rules of the layout are guaranteed by the layout validation (3.1), and TGroup no longer checks overlaps. When a tag is added:
+  - adding the same tag again is ignored;
+  - a tag whose byte range exceeds the IO exchange area is an error, and the program exits;
+  - the byte range the tag actually occupies in the IO buffer (with the indexes of Bool and single-byte types computed as in 3.3) is extended outward to a whole multiple of the driver write unit `driver.write_unit`, then merged into the write ranges (`#areas`); it is merged with existing ranges it intersects or adjoins, possibly several at once.
+- The `start` and `length` of the IO exchange area must be whole multiples of the write unit; `set_IO` checks this and otherwise reports an error and exits, so that the extended write ranges never leave the exchange area.
 - `read()`: first `IO_read_all`, then each tag of the group calls `read_from` and runs `check_coupling`, which triggers the change events and refreshes combined words and their bits.
-- `write()`: each tag of the group first calls `write_to` into `IO_buffer`, then `IO_write` is called for each merged range.
+- `write()`: each tag of the group first calls `write_to` into `IO_buffer`, then `IO_write` is called for each merged range, passing the length of the range to the driver as well. Bytes within a range that belong to no tag of the group take the values last read into `IO_buffer`; by the write ownership rule these bytes are also written by the controller, so the data of the actuator is not overwritten.
 - `copy_from(tdata)`: copies the values of the tags of the same name from another TData and runs `check_coupling`, used to synchronize the parameter block between data and command.
 
 ## 4. Drivers
@@ -139,11 +143,14 @@ Main layouts (byte offsets):
 ### 4.2 MTClient (es-modbus)
 
 - Address conversion: areas in the configuration and in TData are in bytes; the byte start `start` corresponds to holding register `40000 + (start >> 1) + 1`, and the length is `length >> 1` registers.
+- Only holding registers are accessed: by the `4xxxx` prefix es-modbus selects function code 03 for reading and 06 (single register) / 16 (multiple registers) for writing. Coils, discrete inputs and input registers are not used.
+- `write_unit = 2`: the write unit is one register.
 - Reconnection uses the mechanism of es-modbus itself; `start_tick` is overridden to only emit `tick`.
 
 ### 4.3 S7Client (@st-one-io/nodes7)
 
 - Reads and writes the `DB` or `M` area with `readArea` / `writeArea`; start and length are in bytes.
+- `write_unit = 1`: the write unit is one byte.
 - Because `S7Endpoint.connect()` is incomplete, the library's own `autoReconnect = 5000` is used for now, and `start_tick` is overridden too (marked as temporary code in the source).
 
 ### 4.4 Upward server (createMTServer + Unit_Map)
@@ -313,6 +320,7 @@ Requirements of the spec that the current code does not implement yet:
 | ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec 4.1, 5.5) | `run_controller` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `run_controller` in `main.js` |
 | Configuration check command | `tlms check` reads and validates the configuration and reports all errors, without starting the controller (spec 5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
 | Data block layout validation | At startup and in `tlms check`, all layouts are validated by the rules of spec 3.6 and all violations are reported; for the implementation see "Layout validation" in 3.1 | No central validation: `build_structure` silently skips duplicate names (`flowmeter` is defined twice in `NODE`, at the same offset); alignment and type are checked when a TTag is constructed, exiting at the first error; name conflicts are checked when a TData is constructed; overlaps are checked only when a tag joins a TGroup, by write range, with rules that differ from the spec (adding a bit before the word that contains it is misjudged); bit lengths, total length and the range of `init_value` are not checked | `structs/share.js`; `validate` in `typed_data/TTag.js`; `init` in `typed_data/TData.js`; `#add` in `typed_data/TGroup.js`; `main.js`; `cli.js` |
+| Group writes by write unit | A group write writes only the write units holding the TTags of the group, registers for Modbus TCP and bytes for S7; Bool and single-byte TTags lie in the other byte under byte orders that swap the two bytes of a register (spec 3.6); for the implementation see 3.3 and 3.4 | Write ranges are merged by the byte ranges of the tags, not aligned to write units, and `IO_write` passes no length; under Modbus, writing a single byte fails the length check of es-modbus, which throws; `read_from` / `write_to` of Bool and single-byte types ignore `endian` and read and write the wrong byte on `LE` / `BEBS` devices; drivers have no `write_unit`; `set_IO` does not check the alignment of the exchange area | `typed_data/TTag.js`; `#add`, `write` in `typed_data/TGroup.js`; `set_IO`, `IO_write` in `typed_data/TData.js`; `drivers/modbusTCP.js`, `drivers/s7.js` |
 | Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec 5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | The change event of `action_F` in `section_proc.js` |
 
 Implementation:
