@@ -11,14 +11,16 @@
 | `src/cli.js` | The `tlms` command line: parses arguments, calls pm2 or directly `import('./main.js')`. |
 | `src/main.js` | Process entry: validates the layouts, reads the configuration, builds the controller, provides the real drivers reused per connection, starts the Modbus server and the main loop. |
 | `src/runtime.js` | `build_runtime`: creates the TData of the controller, mounts them on `Unit_Map`, calls each `*_init`, and provides one iteration of the main loop `cycle` and `start` / `stop`. The drivers are provided by the caller through `get_drivers(driver_info)`, which lets tests inject fake drivers. |
-| `src/gcl.js` | YAML loader (`yaml` library, YAML 1.1), keeping source line information. |
+| `src/gcl.js` | YAML loader (`yaml` library, YAML 1.2), keeping source line information. |
 | `src/config.js` | Merges several configuration documents, fills in defaults, builds the name and ID indexes. |
 | `src/init.js` | `prepare_controller`: builds the runtime object graph for the selected controller. |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | Initialization (event binding) and periodic processing of actuators (nodes), sections and lines. |
 | `src/action_record.js` | Action records: CSV reading and writing, and browsing by index. |
 | `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, and `createMTServer` / `create_vector` / `Unit_Map` (upward server). |
-| `src/typed_data/` | `TData` / `TTag` / `TGroup`: typed buffers and change events. |
-| `src/structs/` | Memory layout definitions of LINE, SECTION, NODE, COMMAND, RECORD. |
+| `src/typed_data/` | Data layer: `TData` / `TTag` / `TGroup` (typed buffers and change events), `structure.js` (structure expansion and layout validation), `layout.js` (compilation of YAML layout files), `codecs.js` (codecs of the types), `types.js` (type declaration generation). |
+| `src/layouts.yaml` | Layout descriptions of LINE, SECTION, NODE, COMMAND, RECORD. |
+| `src/layouts.js` | Compiles `layouts.yaml` and exports these layouts. |
+| `src/layout_types.d.ts` | Type declarations generated from the layouts (`pnpm gen:types`). |
 | `src/util.js` | log4js logging, `debouncify` / `debounce`, `Object.mixin`. |
 
 ## 2. Startup
@@ -50,13 +52,17 @@
 
 The external requirements and terminology of TData (an instance written tdata) and TTags are in section 3.6 of the spec; this section describes the implementation.
 
-### 3.1 Layout definitions (`src/structs/`)
+### 3.1 Layout definitions (`src/layouts.yaml`)
 
-- Each item contains `{ name, type, offset, length, init_value }`; `offset` and `length` are in bits.
+- The layout description is a YAML 1.2 file: the root key `layouts` maps layout names to item lists; all other root keys are fragments (such as `node_commands`, `node_parameters`, `node_status`), referenced by name from items.
+- Each item contains `{ name, type, offset, init_value }`, optionally `length`, `comment`; `offset` and `length` are in bits, and when `length` is omitted it is given by the type.
+- Only one side of a combined word and its component bits gives `init_value` (spec 3.6): when `build_structure` expands, if the combined word gives none it is composed from the component bits (bits not given are false), and if the combined word gives one the values of the component bits are split from the whole word; when both sides give values, the given values are kept and the validation reports it. All existing layouts give them on the component bits.
 - `type` values (case-insensitive): `Bool`, `Byte`, `SInt`, `USInt`, `Int`, `UInt`, `Word`, `DInt`, `UDInt`, `DWord`, `Real`.
-- A `Word` item with `coupling` is a status word or command word made of Bools; `is_combined: true` links the whole word and its bits in both directions. The `offset` of each coupling entry is relative to the start of the word.
-- `{ includes: [...], offset }` splices in a group of shared items (such as `node_parameters`), shifted as a whole.
-- `share.js#build_structure` expands the items into a flat `items`, computes the total length `length` of the structure, and normalizes coupling into an array of names.
+- A `Word` item with `coupling` (a fragment name or an inline list) is a status word or command word made of Bools; `is_combined: true` links the whole word and its bits in both directions. The `offset` of each coupling entry is relative to the start of the word.
+- `{ includes: <fragment name or inline list>, offset }` splices in a group of shared items (such as `node_parameters`), shifted as a whole, optionally with `name_prefix`.
+- `src/typed_data/layout.js#compile_layout(yaml_path)` reads the file synchronously, resolves fragment references (an error for a missing or cyclic reference), fills in omitted `length`s, then for each layout calls `structure.js#build_structure` to expand it into a flat `items` (computing the total length `length` of the structure and normalizing coupling into an array of names) and validates it, returning `{ layouts, fragments }`.
+- `src/layouts.js` compiles `layouts.yaml` in its directory at load time (the path resolved from the module location; at build time a copy plugin in the rolldown configuration outputs it as a separate file next to `main.js`, not bundled into `main.js`), and exports `LINE`, `SECTION`, `NODE`, `COMMAND`, `RECORD` and the parameter block items `node_parameters`; when a layout is invalid, each violation is written to the error log and the program exits.
+- Each layout is compiled into a Layout (`layout_of`): besides the expanded `name`, `length`, `items`, it has the item table `entries` indexed by name (byte offset, bit mask, codec), the reverse table `tags_at_byte` from bytes to tags, and the TData subclass `Data_Class` dedicated to the structure.
 - Bool position rule: `byte = offset >> 3`, `bit = offset % 8`. The internal buffer is big-endian, so the first byte of a word is the high byte of the register; coupling offsets 8-15 are register bits 0-7, offsets 0-7 bits 8-15. The definition files list 8-15 before 0-7, i.e. in the order of register bit 0 to bit 15; bit k of the word value is register bit k, and the `0xB1` mask is computed with these bit numbers.
 - The point table in [spec-modbus.md](spec-modbus.md) is computed from these definitions by the rules above.
 - The bit numbers of a combined word are fully guaranteed by the offset numbering above; in `buffer` a combined word is big-endian like any other multi-byte type, and neither the upward server nor the drivers swap bytes for combined words separately (spec 3.6).
@@ -67,7 +73,7 @@ The external requirements and terminology of TData (an instance written tdata) a
 
 The layout rules of spec 3.6 are validated together at the layout stage, not scattered over the runtime of TData, TTag and TGroup:
 
-- `share.js` provides `validate_structure(data_struct)`, which validates the flat `items` expanded by `build_structure` and returns an array of violation descriptions (an empty array means valid), without exiting at the first error.
+- `structure.js` provides `validate_structure(data_struct)`, which validates the flat `items` expanded by `build_structure` and returns an array of violation descriptions (an empty array means valid), without exiting at the first error.
 - What is validated:
   - Names: duplicate names in `items`; names conflicting with the members of TData (methods and getters on `TData.prototype`, and instance fields such as `name`, `driver`, `IO_read`).
   - Type and length: `type` not among the supported types; `length` not matching the type (Bool 1, Byte / SInt / USInt 8, Int / UInt / Word 16, DInt / UDInt / DWord / Real 32).
@@ -76,10 +82,11 @@ The layout rules of spec 3.6 are validated together at the layout stage, not sca
   - Combined words: for an item with `coupling`, the `offset` of each component bit lies within `[offset, offset + length)`.
   - Total length: `length % 16 === 0`.
   - The type and range of `init_value` match `type` (a boolean for Bool, otherwise a number representable by the type).
+  - Both a combined word and its component bits give `init_value`.
 - `build_structure` no longer silently skips a duplicate name, but keeps the item and leaves it to the validation report.
 - Callers:
-  - At controller startup (`main.js`, before any TData is created), the validation runs on all structures; on violations, each is written to the error log and the program exits;
-  - `tlms check` runs the validation on all structures and reports its errors together with those of the configuration validation.
+  - `compile_layout` runs the validation on all layouts of the file and on violations throws an error containing all of them; when the controller loads `src/layouts.js`, each is accordingly written to the error log and the program exits;
+  - `tlms check` runs the validation on all structures and reports its errors together with those of the configuration validation (not implemented, see section 11).
 - After the validation passes, TData, TTag and TGroup do not repeat these checks; the `validate` of TTag keeps only defensive assertions.
 
 Main layouts (byte offsets):
@@ -97,9 +104,10 @@ Main layouts (byte offsets):
 - Exposes two buffers:
   - `buffer`: the internal value buffer, always big-endian (BE); the Modbus server reads and writes it directly as big-endian;
   - `IO_buffer`: the buffer exchanged with drivers, in device byte order.
-- Each item creates a `TTag`, and a property of the same name is defined on the TData:
-  - the getter returns `tag.value`;
-  - the setter calls `tag.set_value`, then `check_coupling`, so that a combined word and its bits refresh each other.
+- `new TData(struct, name)` returns an instance of the subclass `Data_Class` compiled from the structure; the accessor of each tag is defined only once on `Data_Class.prototype`, shared by the instances of the same structure:
+  - the getter decodes directly from `buffer` with the codec table;
+  - the setter writes `buffer` with the codec table, then calls `after_write`: runs `check_change` and `check_coupling` of the tag, so that a combined word and its bits refresh each other.
+- Each item also creates a `TTag`, which caches the current value, for change detection and events.
 - When any tag changes, the TData emits `change(tagname, old, new)`; the tag itself emits `change(old, new)`. Business logic subscribes with `data.get(name).on('change', ...)`.
 - After `buffer` is written directly from outside (writes from the server), `check_all_tags()` compares the cached values with the buffer one by one and emits the missed change events.
 - `set_IO(driver, {remote_start, start, length, endian}, ...extras)` binds a driver:
@@ -109,7 +117,7 @@ Main layouts (byte offsets):
 
 ### 3.3 TTag
 
-- Each tag holds the subarray of its own part of `buffer` and caches its current value `value`. `check_change` compares the cached value with the value in the buffer; when they differ, it updates the cache and emits an event, always after the new value has taken effect.
+- Each tag takes its read and write methods from the codec table (`codecs.js`) by type, reads and writes the `buffer` of the TData directly, and caches its current value `value`. `check_change` compares the cached value with the value in the buffer; when they differ, it updates the cache and emits an event, always after the new value has taken effect.
 - `read_from(IO_buffer, endian)` / `write_to(IO_buffer, endian)` convert between the device byte order and the internal big-endian:
   - 2 bytes: `BE` copies as is; `LE` / `little` / `BEBS` swap the two bytes;
   - 4 bytes: the four orders `BE`, `LE` / `little`, `BEBS`, `LEBS` are supported;
@@ -319,7 +327,7 @@ The section layout is planned to change in a future transitional version dedicat
 | --- | --- |
 | `es-modbus` | Modbus TCP client (to the actuators) and server (to the HMI) |
 | `@st-one-io/nodes7` | S7 client (to the actuators) |
-| `yaml` | Configuration parsing (YAML 1.1, with merge keys) |
+| `yaml` | Configuration and layout parsing (YAML 1.2) |
 | `csv-parser` | Reading the action record CSV |
 | `log4js` | Logging |
 | `mri` | Command-line argument parsing |

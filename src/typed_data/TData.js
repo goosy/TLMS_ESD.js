@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { logger } from "../util.js";
 import { TTag } from "./TTag.js";
 import { TGroup } from "./TGroup.js";
+import { layout_of } from "./layout.js";
 
 export class TData extends EventEmitter {
 	/**
@@ -40,8 +41,14 @@ export class TData extends EventEmitter {
 	 */
 	name;
 
+	/**
+	 * The compiled layout of this data block (doc/design-scan.md 2.2).
+	 * The tag accessors are defined once on the prototype of layout.Data_Class.
+	 */
+	layout;
+
 	// Members assigned by set_IO. They are declared here so that
-	// init() rejects tag names that would collide with them.
+	// layout_of() rejects tag names that would collide with them.
 	driver = null;
 	buffer_info = null;
 	IO_read = null;
@@ -176,57 +183,53 @@ export class TData extends EventEmitter {
 		};
 	}
 
-	init(_item) {
-		const { offset, type, name, init_value, coupling, is_combined } = _item;
-		if (name in this || this.#tags[name] != null) {
-			logger.error(`new tag name is duplicated or not allowed: ${name}`);
-			process.exit(1);
-		}
-
-		const tag = new TTag(this.buffer, name, type, offset, init_value);
-		this.#tags[name] = tag;
-		this.#couplings[name] = coupling;
-
-		if (is_combined) {
-			// @todo: Record the overall starting address for coupling tags.
-		}
-
-		tag.on("change", (old_value, new_value) => {
-			this.emit("change", name, old_value, new_value);
-		});
-
-		const self = this;
-		Object.defineProperty(self, name, {
-			get() {
-				return self.#tags[name].value;
-			},
-			set(value) {
-				const tag = self.#tags[name];
-				tag.set_value(value);
-				self.check_coupling(name);
-			},
-			enumerable: true,
-			configurable: false,
-		});
+	/**
+	 * Called by a tag setter after the value is written into the buffer:
+	 * emits the change of the tag and refreshes the coupled tags.
+	 *
+	 * @param {{name: string}} entry - The layout entry of the tag.
+	 */
+	after_write(entry) {
+		this.#tags[entry.name].check_change();
+		this.check_coupling(entry.name);
 	}
 
 	/**
 	 * Creates a new TData instance.
-	 * @param {Object} data_struct - The data structure object.
+	 *
+	 * `new TData(struct, name)` returns an instance of the class compiled for
+	 * the struct (layout.Data_Class), whose prototype holds the tag accessors.
+	 *
+	 * @param {Object} data_struct - The expanded structure or its compiled layout.
 	 * @param {string} data_struct.name - the name of data_struct.
 	 * @param {Array} data_struct.items - Array of data items to initialize.
 	 * @param {string} name - The name of the TData instance.
 	 */
 	constructor(data_struct, name) {
+		if (new.target === TData) {
+			const { Data_Class } = data_struct.Data_Class ? data_struct : layout_of(data_struct);
+			// constructors may return an object: the instance of the compiled subclass
+			return new Data_Class(data_struct, name);
+		}
 		super();
 		this.name = name;
+		this.layout = new.target.layout;
 		this.setMaxListeners(100);
-		const size = data_struct.length >> 3;
-		const buffer = Buffer.alloc(size, 0);
-		this.#buffer = buffer;
+		const size = this.layout.size;
+		this.#buffer = Buffer.alloc(size, 0);
 		this.#IO_buffer = Buffer.alloc(size, 0);
-		for (const item of data_struct.items) {
-			this.init(item);
+		for (const entry of this.layout.entries.values()) {
+			this.#add_tag(entry);
 		}
+	}
+
+	#add_tag(entry) {
+		const { name, item } = entry;
+		const tag = new TTag(this.#buffer, name, item.type, item.offset, item.init_value);
+		this.#tags[name] = tag;
+		this.#couplings[name] = item.coupling;
+		tag.on("change", (old_value, new_value) => {
+			this.emit("change", name, old_value, new_value);
+		});
 	}
 }

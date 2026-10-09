@@ -1,12 +1,8 @@
-import { assert_exits, assert_exits_async, create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
+import { assert_exits_async, create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test, { describe } from "node:test";
-import { NODE } from "../src/structs/node.js";
-import { COMMAND } from "../src/structs/command.js";
-import { LINE } from "../src/structs/line.js";
-import { SECTION } from "../src/structs/section.js";
-import { RECORD } from "../src/structs/record.js";
+import { LINE, SECTION, NODE, COMMAND, RECORD } from "../src/layouts.js";
 import { TData } from "../src/typed_data/TData.js";
 
 const is_arr_equal = (arr1, arr2) => {
@@ -88,15 +84,29 @@ describe("TData layout", () => {
 		]);
 	});
 
-	test("every tag is an enumerable, non-configurable property", () => {
-		const data = create_sample();
+	test("tag accessors are defined once on the prototype of the compiled class", () => {
+		const struct = make_struct(SAMPLE_ITEMS);
+		const data = new TData(struct, "a");
+		const other = new TData(struct, "b");
+		const proto = Object.getPrototypeOf(data);
+		assert.equal(Object.getPrototypeOf(other), proto);
+		assert.ok(data instanceof TData);
 		for (const name of ["id", "status", "bit_0", "bit_1", "bit_8", "value", "count"]) {
-			const desc = Object.getOwnPropertyDescriptor(data, name);
-			assert.ok(desc, name);
+			assert.equal(Object.hasOwn(data, name), false, name);
+			const desc = Object.getOwnPropertyDescriptor(proto, name);
+			assert.ok(desc?.get && desc.set, name);
 			assert.equal(desc.enumerable, true);
 			assert.equal(desc.configurable, false);
 		}
-		assert.throws(() => Object.defineProperty(data, "id", { value: 1 }), TypeError);
+		assert.equal(data.layout, proto.constructor.layout);
+	});
+
+	test("instances of one struct share the class, buffers stay separate", () => {
+		const data = new TData(NODE, "a");
+		const other = new TData(NODE, "b");
+		assert.equal(data.constructor, other.constructor);
+		data.pressure = 1.5;
+		assert.equal(other.pressure, 0);
 	});
 
 	test("get() returns the TTag, undefined for unknown names", () => {
@@ -106,14 +116,14 @@ describe("TData layout", () => {
 		assert.equal(data.get("nope"), undefined);
 	});
 
-	test("tag name colliding with a TData member exits", (t) => {
+	test("tag name colliding with a TData member throws", () => {
 		const items = [{ name: "get", type: "UInt", offset: 0, length: 16, init_value: 0 }];
-		assert_exits(t, () => new TData(make_struct(items), "bad"));
+		assert.throws(() => new TData(make_struct(items), "bad"), /collides with a TData member/);
 	});
 
-	test("tag name colliding with a later-assigned member is rejected", (t) => {
+	test("tag name colliding with a later-assigned member is rejected", () => {
 		const items = [{ name: "driver", type: "UInt", offset: 0, length: 16, init_value: 0 }];
-		assert_exits(t, () => new TData(make_struct(items), "bad"));
+		assert.throws(() => new TData(make_struct(items), "bad"), /collides with a TData member/);
 	});
 });
 

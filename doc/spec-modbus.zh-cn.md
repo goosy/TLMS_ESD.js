@@ -1,7 +1,7 @@
 # TLMS_ESD Modbus 点表
 
 > 本文是 [spec.zh-cn.md](spec.zh-cn.md) 的子文档，描述 HMI/SCADA 通过 Modbus TCP 连接控制器时能看到的全部点量。
-> 点表由 `src/structs/` 的定义生成，与代码不一致时以代码为准；说明文字参考 `data_structure2025.xlsx`，术语按 [spec.zh-cn.md](spec.zh-cn.md) 第 3 节统一。
+> 点表由 `src/layouts.yaml` 的布局生成，与代码不一致时以代码为准；说明文字参考 `data_structure2025.xlsx`，术语按 [spec.zh-cn.md](spec.zh-cn.md) 第 3 节统一。
 
 ## 1. 访问约定
 
@@ -78,7 +78,7 @@
 | 寄存器 | 线圈 | 名称 | 类型 | 初值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | 0 |  | ID | UInt | 0 | 执行器ID |
-| 1 |  | status | Word | 3 | 执行器状态字 |
+| 1 |  | status | Word | 2051 | 执行器状态字 |
 | 1.0 | 24 | comm_OK | Bool | true | 用于维护执行器通讯状态 |
 | 1.1 | 25 | work_OK | Bool | true | 用于维护执行器工作状态 |
 | 1.2 | 26 | pump_run | Bool | false | 本执行器有泵运行 |

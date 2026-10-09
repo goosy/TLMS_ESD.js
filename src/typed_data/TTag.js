@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { logger } from "../util.js";
+import { CODECS } from "./codecs.js";
 
 // Endians that swap the two bytes of a 16-bit register.
 const BYTE_SWAP_ENDIANS = ["LE", "little", "BEBS"];
@@ -152,187 +153,45 @@ export class TTag extends EventEmitter {
 	}
 
 	init() {
-		const tdata_buffer = this.buffer;
-		const index = this.byte_offset;
-		switch (this.type) {
-			case "bool": {
-				this.length = 1;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => (this.tag_buffer.readUInt8() & this.bit_mask) > 0;
-				this.set_value = (v) => {
-					const byte = this.tag_buffer.readUInt8();
-					const new_byte = v ? (byte | this.bit_mask) : (byte & ~this.bit_mask);
-					this.tag_buffer.writeUInt8(new_byte);
-					this.check_change();
-				};
-				this.read_from = (buffer, endian) => {
-					const masked_value = buffer.readUInt8(this.IO_index(endian)) & this.bit_mask;
-					this.set_value(masked_value > 0);
-				};
-				this.write_to = (buffer, endian) => {
-					const IO_index = this.IO_index(endian);
-					const byte = buffer.readUInt8(IO_index);
-					const new_byte = this.get_value() ? (byte | this.bit_mask) : (byte & ~this.bit_mask);
-					buffer.writeUInt8(new_byte, IO_index);
-				};
-				break;
-			}
-			case "sint": {
-				this.length = 1;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readInt8();
-				this.set_value = (v) => {
-					this.tag_buffer.writeInt8(v);
-					this.check_change();
-				};
-				this.read_from = (buffer, endian) => {
-					this.tag_buffer[0] = buffer[this.IO_index(endian)];
-					this.check_change();
-				};
-				this.write_to = (buffer, endian) => {
-					buffer[this.IO_index(endian)] = this.tag_buffer[0];
-				};
-				break;
-			}
-			case "usint":
-			case "byte": {
-				this.length = 1;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readUInt8();
-				this.set_value = (v) => {
-					this.tag_buffer.writeUInt8(v);
-					this.check_change();
-				};
-				this.read_from = (buffer, endian) => {
-					this.set_value(buffer.readUInt8(this.IO_index(endian)));
-				};
-				this.write_to = (buffer, endian) => {
-					buffer.writeUInt8(this.get_value(), this.IO_index(endian));
-				};
-				break;
-			}
-			case "int": {
-				this.length = 2;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readInt16BE();
-				this.set_value = (v) => {
-					this.tag_buffer.writeInt16BE(v);
-					this.check_change();
-				};
-				this.read_from = (buffer, endian) => {
-					convert_endian_2byte(buffer, this.buffer, index, endian);
-					this.check_change();
-				};
-				this.write_to = (buffer, endian) => {
-					convert_endian_2byte(this.buffer, buffer, index, endian);
-				};
-				break;
-			}
-			case "uint": {
-				this.length = 2;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readUInt16BE();
-				this.set_value = (v) => {
-					this.tag_buffer.writeUInt16BE(v);
-					this.check_change();
-				};
-				this.read_from = (buffer, endian) => {
-					convert_endian_2byte(buffer, this.buffer, index, endian);
-					this.check_change();
-				};
-				this.write_to = (buffer, endian) => {
-					convert_endian_2byte(this.buffer, buffer, index, endian);
-				};
-				break;
-			}
-			case "word": {
-				this.length = 2;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readUInt16BE();
-				this.set_value = (v) => {
-					this.tag_buffer.writeUInt16BE(v);
-					this.check_change();
-				};
-				// the word tag combined from bits and bytes, needs to have its endian reversed.
-				this.read_from = (buffer, endian) => {
-					convert_endian_2byte(buffer, this.buffer, index, endian);
-					this.check_change();
-				};
-				this.write_to = (buffer, endian) => {
-					convert_endian_2byte(this.buffer, buffer, index, endian);
-				};
-				break;
-			}
-			case "dint":
-				this.length = 4;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readInt32BE();
-				this.set_value = (v) => {
-					this.tag_buffer.writeInt32BE(v);
-					this.check_change();
-				};
-				this.read_from = (buffer, endian) => {
-					convert_endian_4bytes(buffer, this.buffer, index, endian);
-					this.check_change();
-				};
-				this.write_to = (buffer, endian) => {
-					convert_endian_4bytes(this.buffer, buffer, index, endian);
-				};
-				break;
-			case "udint":
-				this.length = 4;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readUInt32BE();
-				this.set_value = (v) => {
-					this.tag_buffer.writeUInt32BE(v);
-					this.check_change();
-				};
-				this.read_from = (buffer, endian) => {
-					convert_endian_4bytes(buffer, this.buffer, index, endian);
-					this.check_change();
-				};
-				this.write_to = (buffer, endian) => {
-					convert_endian_4bytes(this.buffer, buffer, index, endian);
-				};
-				break;
-			case "dword": {
-				this.length = 4;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readUInt32BE();
-				this.set_value = (v) => {
-					this.tag_buffer.writeUInt32BE(v);
-					this.check_change();
-				};
-				// the dword tag combined from bits and bytes, needs to have its endian reversed.
-				this.read_from = (buffer, endian) => {
-					convert_endian_4bytes(buffer, this.buffer, index, endian);
-					this.check_change();
-				};
-				this.write_to = (buffer, endian) => {
-					convert_endian_4bytes(this.buffer, buffer, index, endian);
-				};
-				break;
-			}
-			case "real": {
-				this.length = 4;
-				this.tag_buffer = tdata_buffer.subarray(index, index + this.length);
-				this.get_value = () => this.tag_buffer.readFloatBE();
-				this.set_value = (v) => {
-					this.tag_buffer.writeFloatBE(v);
-					this.check_change();
-				};
-				this.read_from = (buffer, endian) => {
-					convert_endian_4bytes(buffer, this.buffer, index, endian);
-					this.check_change();
-				};
-				this.write_to = (buffer, endian) => {
-					convert_endian_4bytes(this.buffer, buffer, index, endian);
-				};
-				break;
-			}
-			default:
-				logger.error(`Unknown tag type: ${this.type}`);
-				process.exit(1);
+		const codec = CODECS[this.type];
+		if (!codec) {
+			logger.error(`Unknown tag type: ${this.type}`);
+			process.exit(1);
+		}
+		const byte = this.byte_offset;
+		const mask = this.bit_mask;
+		this.length = codec.size;
+		this.get_value = () => codec.get(this.buffer, byte, mask);
+		this.set_value = (v) => {
+			codec.set(this.buffer, byte, mask, v);
+			this.check_change();
+		};
+		if (this.type === "bool") {
+			this.read_from = (buffer, endian) => {
+				codec.set(this.buffer, byte, mask, buffer[this.IO_index(endian)] & mask);
+				this.check_change();
+			};
+			this.write_to = (buffer, endian) => {
+				codec.set(buffer, this.IO_index(endian), mask, this.get_value());
+			};
+		} else if (codec.size === 1) {
+			// Byte, SInt, USInt: the byte is copied unchanged
+			this.read_from = (buffer, endian) => {
+				this.buffer[byte] = buffer[this.IO_index(endian)];
+				this.check_change();
+			};
+			this.write_to = (buffer, endian) => {
+				buffer[this.IO_index(endian)] = this.buffer[byte];
+			};
+		} else {
+			const convert = codec.size === 2 ? convert_endian_2byte : convert_endian_4bytes;
+			this.read_from = (buffer, endian) => {
+				convert(buffer, this.buffer, byte, endian);
+				this.check_change();
+			};
+			this.write_to = (buffer, endian) => {
+				convert(this.buffer, buffer, byte, endian);
+			};
 		}
 		this.set_value(this.value); // initialize the buffer with the initial value
 	}

@@ -1,11 +1,5 @@
 import { prepare_controller } from "./init.js";
 import { read_config } from "./config.js";
-import { LINE } from "./structs/line.js";
-import { SECTION } from "./structs/section.js";
-import { NODE } from "./structs/node.js";
-import { COMMAND } from "./structs/command.js";
-import { RECORD } from "./structs/record.js";
-import { validate_structure } from "./structs/share.js";
 import { Action_Record } from "./action_record.js";
 import { MTClient, createMTServer } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
@@ -76,13 +70,6 @@ async function run_controller(controller) {
 process.on("uncaughtException", (error) => {
 	logger.error(`uncaughtException: ${error.message}`);
 });
-
-// validate all data block layouts before any TData is created
-const layout_errors = [LINE, SECTION, NODE, COMMAND, RECORD].flatMap(validate_structure);
-if (layout_errors.length > 0) {
-	for (const error of layout_errors) logger.error(`invalid layout: ${error}`);
-	process.exit(1);
-}
 
 const controller_name = process.argv[2];
 await read_config(process.cwd());

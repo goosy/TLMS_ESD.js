@@ -1,17 +1,13 @@
 import { make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import test, { describe } from "node:test";
-import { LINE } from "../src/structs/line.js";
-import { SECTION } from "../src/structs/section.js";
-import { NODE } from "../src/structs/node.js";
-import { COMMAND } from "../src/structs/command.js";
-import { RECORD } from "../src/structs/record.js";
-import { validate_structure } from "../src/structs/share.js";
+import { LINE, SECTION, NODE, COMMAND, RECORD } from "../src/layouts.js";
+import { validate_structure } from "../src/typed_data/structure.js";
 
 const VALID_ITEMS = [
 	{ name: "id", type: "UInt", offset: 0, length: 16, init_value: 0 },
 	{
-		name: "status", type: "Word", offset: 16, length: 16, init_value: 0,
+		name: "status", type: "Word", offset: 16, length: 16,
 		is_combined: true, coupling: [
 			{ name: "bit_0", type: "Bool", offset: 8, length: 1, init_value: false },
 			{ name: "bit_8", type: "Bool", offset: 0, length: 1, init_value: false },
@@ -137,13 +133,60 @@ describe("layout validation", () => {
 	test("coupled bit outside its word is reported", () => {
 		assert_error([
 			{
-				name: "w", type: "Word", offset: 0, length: 16, init_value: 0,
+				name: "w", type: "Word", offset: 0, length: 16,
 				is_combined: true, coupling: [
 					{ name: "b", type: "Bool", offset: 16, length: 1, init_value: false },
 				],
 			},
 			{ name: "pad", type: "Byte", offset: 24, length: 8, init_value: 0 },
 		], "T.w", "outside");
+	});
+
+	test("init_value on both a word and its bits is reported", () => {
+		assert_error([
+			{
+				name: "w", type: "Word", offset: 0, length: 16, init_value: 0,
+				is_combined: true, coupling: [
+					{ name: "b0", type: "Bool", offset: 8, length: 1, init_value: true },
+					{ name: "b1", type: "Bool", offset: 9, length: 1 },
+				],
+			},
+		], "T.w", "both on the word and on its bits b0");
+	});
+
+	test("a word without init_value is composed from its bits", () => {
+		const struct = make_struct([
+			{
+				name: "w", type: "Word", offset: 0, length: 16,
+				is_combined: true, coupling: [
+					{ name: "b0", type: "Bool", offset: 8, length: 1, init_value: true },
+					{ name: "b11", type: "Bool", offset: 3, length: 1, init_value: true },
+					{ name: "b1", type: "Bool", offset: 9, length: 1 },
+				],
+			},
+		], "T");
+		const init = (name) => struct.items.find((it) => it.name === name).init_value;
+		assert.equal(init("w"), 0x0801);
+		assert.equal(init("b1"), false);
+		assert.deepEqual(validate_structure(struct), []);
+	});
+
+	test("bits without init_value take theirs from the word", () => {
+		const struct = make_struct([
+			{
+				name: "w", type: "Word", offset: 0, length: 16, init_value: 0x0801,
+				is_combined: true, coupling: [
+					{ name: "b0", type: "Bool", offset: 8, length: 1 },
+					{ name: "b11", type: "Bool", offset: 3, length: 1 },
+					{ name: "b1", type: "Bool", offset: 9, length: 1 },
+				],
+			},
+		], "T");
+		const init = (name) => struct.items.find((it) => it.name === name).init_value;
+		assert.equal(init("b0"), true);
+		assert.equal(init("b11"), true);
+		assert.equal(init("b1"), false);
+		assert.deepEqual(validate_structure(struct), []);
 	});
 
 	test("length that is not whole registers is reported", () => {

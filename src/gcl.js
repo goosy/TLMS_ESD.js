@@ -58,7 +58,7 @@ export class GCL {
 			this.#source = file_or_yaml;
 		}
 		this.get_lines();
-		this.#document = parseDocument(this.#source, { version: "1.1" }); // only YAML 1.1 support merge key
+		this.#document = parseDocument(this.#source, { version: "1.2" });
 		this.#document.gcl = this;
 	}
 }

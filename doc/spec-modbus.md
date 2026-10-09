@@ -3,7 +3,7 @@
 > English version of [spec-modbus.zh-cn.md](spec-modbus.zh-cn.md), the primary Chinese version. When the two differ, update both.
 >
 > This document is a sub-document of [spec.md](spec.md) and describes all the points the HMI/SCADA sees when it connects to the controller over Modbus TCP.
-> The point table is generated from the definitions in `src/structs/`; where it differs from the code, the code prevails. The descriptions follow `data_structure2025.xlsx`, and the terms follow section 3 of [spec.md](spec.md).
+> The point table is generated from the layouts in `src/layouts.yaml`; where it differs from the code, the code prevails. The descriptions follow `data_structure2025.xlsx`, and the terms follow section 3 of [spec.md](spec.md).
 
 ## 1. Access conventions
 
@@ -80,7 +80,7 @@ The node data area comes from the actuator; the controller reads it periodically
 | Register | Coil | Name | Type | Initial | Description |
 | --- | --- | --- | --- | --- | --- |
 | 0 |  | ID | UInt | 0 | Actuator ID |
-| 1 |  | status | Word | 3 | Actuator status word |
+| 1 |  | status | Word | 2051 | Actuator status word |
 | 1.0 | 24 | comm_OK | Bool | true | Maintains the communication state of the actuator |
 | 1.1 | 25 | work_OK | Bool | true | Maintains the working state of the actuator |
 | 1.2 | 26 | pump_run | Bool | false | This actuator has a pump running |

@@ -1,6 +1,6 @@
 import { debouncify } from "./util.js";
 import { logger } from "./util.js";
-import { node_parameters } from "./structs/share.js";
+import { node_parameters } from "./layouts.js";
 
 const parameters_tags = node_parameters.map((item) => item.name);
 

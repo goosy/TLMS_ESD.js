@@ -100,6 +100,7 @@ A tdata must meet the following requirements:
   - the byte ranges of non-Bool TTags do not overlap;
   - each bit belongs to at most one Bool TTag;
   - a Bool inside the byte range of a non-Bool TTag must be a component bit of that TTag (a combined word); conversely, each component bit of a combined word must lie within the range of the word;
+  - only one side of a combined word and its component bits may give initial values: when the combined word gives one, the initial values of the component bits follow from the whole word; when it does not, the component bits give them (bits not given are false), and the initial value of the whole word is composed from them;
   - the total length of a tdata is a whole number of registers (a multiple of 16 bits).
 - **Layout validation**: at startup the controller validates all layouts; on violations it reports all of them and refuses to start; the configuration check command (see 5.6) runs the same validation.
 - **Combined word bit numbers**: in a 16-bit combined word, bit k of the word value is bit k of the register, guaranteed by the offset numbering of the bits in the layout; neither inside the controller nor at the upward server or the driver boundary are bytes swapped additionally for combined words.
@@ -122,7 +123,7 @@ TTags are the interface:
 
 ## 4. Configuration requirements
 
-- All `*.yaml` / `*.yml` files in the working directory are read and merged; YAML 1.1 merge keys (`<<`) are supported.
+- All `*.yaml` / `*.yml` files in the working directory are read and merged; they are parsed as YAML 1.2, and the YAML 1.1 merge keys (`<<`) are not supported.
 - Top-level keys: `controllers`, `lines`, `sections`, `actuators`.
 - Controller:
   - `name`, `records_size` (number of action records kept, default 10);
@@ -277,7 +278,7 @@ TTags are the interface:
 - Reading and writing holding registers, reading input registers, and reading and writing coils are supported. A write from the HMI triggers the processing of the resulting state changes immediately.
 - Addresses of a unit without a data area (e.g. the gap between the node data area and the command block in an actuator unit) read as 0 and writes to them are ignored, without an exception response, so a block read across the gap still succeeds.
 - When the upward service cannot start (e.g. the port is in use), the controller logs an error and exits, to be restarted by the background process management; it does not keep running without the upward service.
-- The layouts are defined by `src/structs/` and must stay consistent with the HMI and the actuator programs. The complete point table is in [spec-modbus.md](spec-modbus.md).
+- The layouts are defined by `src/layouts.yaml` and must stay consistent with the HMI and the actuator programs. The complete point table is in [spec-modbus.md](spec-modbus.md).
 
 ### 5.6 Running and operation
 

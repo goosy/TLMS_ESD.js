@@ -1,0 +1,215 @@
+# Data block layouts of the controller (doc/spec.md 3.6, doc/design-scan.md 2.1).
+# These layouts are the memory images of the actuator data / command areas and
+# the HMI register map: changing an offset is a protocol change.
+#
+# Root keys other than `layouts` are fragments, referenced by name from
+# `coupling` and `includes`. Offsets and lengths are in bits; `length` is
+# omitted where it follows from the type. Coupled bits are listed from the
+# high byte (offsets 8..15 are register bits 0..7, offsets 0..7 bits 8..15).
+
+node_commands:  # bits of a command word
+  - { name: stop_pumps, type: Bool, offset: 8, init_value: false, comment: "Stop pump command" }
+  - { name: cancel_stop, type: Bool, offset: 9, init_value: false, comment: "Cancel stop pump" }
+  - { name: horn, type: Bool, offset: 10, init_value: false, comment: "Output alarm" }
+  - { name: reset_horn, type: Bool, offset: 11, init_value: false, comment: "Stop alarm" }
+  - { name: enable_pressure_SD, type: Bool, offset: 12, init_value: false, comment: "Set pressure linked pump stop" }
+  - { name: disable_pressure_SD, type: Bool, offset: 13, init_value: false, comment: "Cancel pressure linked pump stop" }
+  - { name: read_paras, type: Bool, offset: 14, init_value: false, comment: "Read all parameters" }
+  - { name: write_paras, type: Bool, offset: 15, init_value: false, comment: "Write parameter command" }
+  - { name: enable_pressure_alarm, type: Bool, offset: 0, init_value: false, comment: "Allow pressure alarm" }
+  - { name: disable_pressure_alarm, type: Bool, offset: 1, init_value: false, comment: "Disable pressure alarm" }
+  - { name: enable, type: Bool, offset: 2, init_value: false, comment: "Allow the node to work" }
+  - { name: disable, type: Bool, offset: 3, init_value: false, comment: "Disable the node" }
+  - { name: reset_CPU, type: Bool, offset: 4, init_value: false, comment: "Reset CPU" }
+  - { name: reset_conn, type: Bool, offset: 5, init_value: false, comment: "Reset connection" }
+  - { name: reserve, type: Bool, offset: 6, init_value: false, comment: "Reserve" }
+  - { name: executing, type: Bool, offset: 7, init_value: false, comment: "Executing" }
+
+node_parameters:  # parameter block of a node
+  - { name: temperature_zero_raw, type: Int, offset: 0, init_value: 0, comment: "Raw temperature zero point" }
+  - { name: temperature_span_raw, type: Int, offset: 16, init_value: 27648, comment: "Raw temperature range" }
+  - { name: temperature_underflow, type: Int, offset: 32, init_value: -500, comment: "Temperature underflow setting value" }
+  - { name: temperature_overflow, type: Int, offset: 48, init_value: 28000, comment: "Temperature overflow setting value" }
+  - { name: temperature_zero, type: Real, offset: 64, init_value: 0, comment: "Temperature zero point" }
+  - { name: temperature_span, type: Real, offset: 96, init_value: 100, comment: "Temperature range" }
+  - { name: temperature_AH, type: Real, offset: 128, init_value: 0, comment: "Temperature AH value" }
+  - { name: temperature_WH, type: Real, offset: 160, init_value: 0, comment: "Temperature WH value" }
+  - { name: temperature_WL, type: Real, offset: 192, init_value: 0, comment: "Temperature WL value" }
+  - { name: temperature_AL, type: Real, offset: 224, init_value: 0, comment: "Temperature AL value" }
+  - { name: temperature_DZ, type: Real, offset: 256, init_value: 0.5, comment: "Temperature comparison dead zone" }
+  - { name: temperature_FT, type: UDInt, offset: 288, init_value: 0, comment: "Temperature comparison fault tolerance time" }
+  - { name: pressure_zero_raw, type: Int, offset: 320, init_value: 0, comment: "Raw pressure zero point" }
+  - { name: pressure_span_raw, type: Int, offset: 336, init_value: 27648, comment: "Raw pressure range" }
+  - { name: pressure_underflow, type: Int, offset: 352, init_value: -500, comment: "Pressure underflow setting value" }
+  - { name: pressure_overflow, type: Int, offset: 368, init_value: 28000, comment: "Pressure overflow setting value" }
+  - { name: pressure_zero, type: Real, offset: 384, init_value: 0, comment: "Pressure zero point" }
+  - { name: pressure_span, type: Real, offset: 416, init_value: 4, comment: "Pressure range" }
+  - { name: pressure_AH, type: Real, offset: 448, init_value: 0, comment: "Pressure AH value" }
+  - { name: pressure_WH, type: Real, offset: 480, init_value: 0, comment: "Pressure WH value" }
+  - { name: pressure_WL, type: Real, offset: 512, init_value: 0, comment: "Pressure WL value" }
+  - { name: pressure_AL, type: Real, offset: 544, init_value: 0, comment: "Pressure AL value" }
+  - { name: pressure_DZ, type: Real, offset: 576, init_value: 0.05, comment: "Pressure comparison dead zone" }
+  - { name: pressure_FT, type: UDInt, offset: 608, init_value: 0, comment: "Pressure comparison fault tolerance time" }
+  - { name: reserve1, type: Real, offset: 640, init_value: 0, comment: "Reserve 1" }
+  - { name: reserve2, type: Real, offset: 672, init_value: 0, comment: "Reserve 2" }
+  - { name: reserve3, type: Real, offset: 704, init_value: 0, comment: "Reserve 3" }
+  - { name: invalid_value_of_AI, type: Real, offset: 736, init_value: -100000, comment: "Value when AI is invalid" }
+  - { name: delay_protect_time, type: UDInt, offset: 768, init_value: 5000, comment: "Communication interrupt delay protection time" }
+  - { name: flow_smooth_factor, type: Real, offset: 800, init_value: 0.9, comment: "Flow smoothing factor" }
+  - { name: equS1, type: DInt, offset: 832, init_value: 10000, comment: "Flow 1 equivalent value" }
+  - { name: equS2, type: DInt, offset: 864, init_value: 10000, comment: "Flow 2 equivalent value" }
+  - { name: equS3, type: DInt, offset: 896, init_value: 10000, comment: "Flow 3 equivalent value" }
+  - { name: equS4, type: DInt, offset: 928, init_value: 10000, comment: "Flow 4 equivalent value" }
+  - { name: equS5, type: DInt, offset: 960, init_value: 10000, comment: "Flow 5 equivalent value" }
+  - { name: pump_change_delay, type: UDInt, offset: 992, init_value: 180000, comment: "Pump operation delay" }
+
+node_status:  # status word of a node
+  - { name: comm_OK, type: Bool, offset: 8, init_value: true, comment: "Used to maintain node communication status" }
+  - { name: work_OK, type: Bool, offset: 9, init_value: true, comment: "Used to maintain node work status" }
+  - { name: pump_run, type: Bool, offset: 10, init_value: false, comment: "Is the pump running in this node?" }
+  - { name: pump_change_F, type: Bool, offset: 11, init_value: false, comment: "Whether the pump is in the delay of operation on this node" }
+  - { name: pump_run_1, type: Bool, offset: 12, init_value: false, comment: "Running status of pump 1" }
+  - { name: pump_run_2, type: Bool, offset: 13, init_value: false, comment: "Running status of pump 2" }
+  - { name: pump_run_3, type: Bool, offset: 14, init_value: false, comment: "Running status of pump 3" }
+  - { name: pump_run_4, type: Bool, offset: 15, init_value: false, comment: "Running status of pump 4" }
+  - { name: pressure_enabled, type: Bool, offset: 0, init_value: false, comment: "Whether pressure alarm is enabled" }
+  - { name: temperature_enabled, type: Bool, offset: 1, init_value: false, comment: "Whether temperature alarm is enabled" }
+  - { name: pressure_SD_F, type: Bool, offset: 2, init_value: false, comment: "Whether pressure linked to stop pump is enabled" }
+  - { name: delay_protect, type: Bool, offset: 3, init_value: true, comment: "Whether communication interrupt delay protection is enabled" }
+  - { name: pressure_AH_F, type: Bool, offset: 4, init_value: false, comment: "Whether pressure AH limit alarm is enabled" }
+  - { name: pressure_WH_F, type: Bool, offset: 5, init_value: false, comment: "Whether pressure WH limit alarm is enabled" }
+  - { name: pressure_WL_F, type: Bool, offset: 6, init_value: false, comment: "Whether pressure WL limit alarm is enabled" }
+  - { name: pressure_AL_F, type: Bool, offset: 7, init_value: false, comment: "Whether pressure AL limit alarm is enabled" }
+
+section_status:  # status word of a section
+  - { name: comm_OK, type: Bool, offset: 8, init_value: false, comment: "Whether all nodes in this section communicate normally" }
+  - { name: work_OK, type: Bool, offset: 9, init_value: false, comment: "Whether all nodes in this section work normally" }
+  - { name: protect_F, type: Bool, offset: 10, init_value: false, comment: "Whether this section is in protective mode" }
+  - { name: hangon_AF, type: Bool, offset: 11, init_value: false, comment: "Whether this section is automatically hung up" }
+  - { name: flow_override, type: Bool, offset: 12, init_value: false, comment: "Whether this section is manually hung up" }
+  - { name: action_F, type: Bool, offset: 13, init_value: false, comment: "Whether this section is in the action of stopping the pump due to leakage" }
+  - { name: flow_warning_F, type: Bool, offset: 14, init_value: false, comment: "Whether this section is in the flow warning status" }
+  - { name: flow_alarm_F, type: Bool, offset: 15, init_value: false, comment: "Whether this section is in the flow alarm status" }
+  - { name: press_warning_F, type: Bool, offset: 0, init_value: false, comment: "Whether this section is in the pressure warning status" }
+  - { name: press_alarm_F, type: Bool, offset: 1, init_value: false, comment: "Whether this section is in the pressure alarm status" }
+  - { name: autoStopCmd, type: Bool, offset: 2, init_value: false, comment: "Whether this section is in the auto stop status" }
+  - { name: manStopCmd, type: Bool, offset: 3, init_value: false, comment: "Whether this section is in the manual stop status" }
+  - { name: line_action_source, type: Bool, offset: 4, init_value: false, comment: "Whether this section is the source of the line action" }
+  - { name: pump_run, type: Bool, offset: 5, init_value: false, comment: "Whether this section has an open pump" }
+  - { name: pump_change_F, type: Bool, offset: 6, init_value: false, comment: "Whether there is a pump operation in the current time period" }
+  - { name: pre_stop_notice, type: Bool, offset: 7, init_value: false, comment: "Whether this section is in the pre-stop status" }
+
+section_inner_tags:  # internal trigger bits of a section
+  - { name: flow_warning_trigger, type: Bool, offset: 8, init_value: false, comment: "Whether flow warning has been triggered" }
+  - { name: flow_alarm_trigger, type: Bool, offset: 9, init_value: false, comment: "Whether flow alarm has been triggered" }
+  - { name: stop_pumps, type: Bool, offset: 11, init_value: false, comment: "Whether this section has executed stop pump" }
+
+layouts:
+  LINE:
+    - name: status
+      type: Word
+      offset: 0
+      comment: "status word"
+      is_combined: true
+      coupling:
+        - { name: flow_override, type: Bool, offset: 8, init_value: false, comment: "Manual hang-up of the whole line" }
+        - { name: pump_run, type: Bool, offset: 9, init_value: false, comment: "Whether this line pumps" }
+        - { name: alarm_F, type: Bool, offset: 10, init_value: false, comment: "Whether this line alarms" }
+        - { name: autoStopCmd, type: Bool, offset: 11, init_value: false, comment: "Auto stop command" }
+        - { name: manStopCmd, type: Bool, offset: 12, init_value: false, comment: "Manual stop command" }
+        - { name: pre_stop_notice, type: Bool, offset: 13, init_value: false, comment: "Stop notice" }
+    - { name: ID, type: UInt, offset: 16, init_value: 0, comment: "Line ID" }
+    - { name: action_section_ID, type: UInt, offset: 32, init_value: 0, comment: "Section ID of the flow difference action" }
+    - { name: flow_diff, type: Real, offset: 48, init_value: 0, comment: "Flow difference bypass (reserved, not implemented)" }
+  SECTION:
+    - { name: ID, type: UInt, offset: 0, init_value: 0, comment: "Section ID" }
+    - { name: upward_input, type: Word, offset: 16, init_value: 0, comment: "Upward input area, writable by the upward clients (reserved)" }
+    - name: status
+      type: Word
+      offset: 32
+      comment: "status word"
+      is_combined: true
+      coupling: section_status
+    - { name: flow_begin, type: Real, offset: 48, init_value: 0, comment: "Total flow of the starting node" }
+    - { name: flow_end, type: Real, offset: 80, init_value: 0, comment: "Total flow of the ending node" }
+    - { name: flow_diff, type: Real, offset: 112, init_value: 0, comment: "Flow difference" }
+    - { name: flow_diff_WH, type: Real, offset: 144, init_value: 20, comment: "Flow warning difference upper limit" }
+    - { name: flow_diff_WH_delay, type: DInt, offset: 176, init_value: 3000, comment: "Flow warning tolerance time (in milliseconds)" }
+    - { name: flow_diff_AH, type: Real, offset: 208, init_value: 50, comment: "Flow difference alarm upper limit" }
+    - { name: flow_diff_AH_delay, type: DInt, offset: 240, init_value: 3000, comment: "Flow alarm tolerance time (in milliseconds)" }
+    - { name: action_time, type: DInt, offset: 272, init_value: 60000, comment: "Linked action time (in milliseconds)" }
+    - { name: countdown, type: Int, offset: 304, init_value: 0, comment: "Linked action countdown (in seconds)" }
+    - name: inner_word
+      type: Word
+      offset: 320
+      comment: "inner word"
+      coupling: section_inner_tags
+  NODE:
+    - { name: ID, type: UInt, offset: 0, init_value: 0 }
+    - name: status
+      type: Word
+      offset: 16
+      comment: "the status of the node"
+      is_combined: true
+      coupling: node_status
+    - { name: temperature, type: Real, offset: 32, init_value: 0 }
+    - { name: pressure, type: Real, offset: 64, init_value: 0 }
+    - { name: flowmeter, type: Real, offset: 96, init_value: 0 }
+    - name: response_code
+      type: Word
+      offset: 128
+      comment: "Execution response"
+      is_combined: true
+      coupling: node_commands
+    - { includes: node_parameters, offset: 144 }
+  COMMAND:
+    - { name: response_code, type: Word, offset: 0, init_value: 0, comment: "No longer used" }
+    - { name: overtime, type: Int, offset: 16, init_value: 5000, comment: "Response timeout setting (milliseconds) No longer used" }
+    - name: extra_commands
+      type: Word
+      offset: 48
+      comment: "Extended commands"
+      is_combined: true
+      coupling:
+        - { name: has_commands, type: Bool, offset: 8, init_value: false, comment: "Whether there are commands to be sent" }
+        - { name: reset_paras, type: Bool, offset: 9, init_value: false, comment: "Reset the parameter values to the node parameter values" }
+    - { name: ID, type: UInt, offset: 128, init_value: 0, comment: "Node ID" }
+    - name: commands
+      type: Word
+      offset: 144
+      comment: "Commands"
+      is_combined: true
+      coupling: node_commands
+    - { includes: node_parameters, offset: 160 }
+  RECORD:
+    - { name: year, type: Uint, offset: 0, init_value: 0, comment: "Year" }
+    - { name: month, type: Uint, offset: 16, init_value: 0, comment: "Month" }
+    - { name: day, type: Uint, offset: 32, init_value: 0, comment: "Day" }
+    - { name: hour, type: Uint, offset: 48, init_value: 0, comment: "Hour" }
+    - { name: minute, type: Uint, offset: 64, init_value: 0, comment: "Minute" }
+    - { name: second, type: Uint, offset: 80, init_value: 0, comment: "Second" }
+    - { name: section_ID, type: UInt, offset: 96, init_value: 0, comment: "Section ID for action, 0 for no record" }
+    - { name: flow_begin, type: Real, offset: 112, init_value: 0, comment: "Flow sum of the start node of the action section" }
+    - { name: flow_end, type: Real, offset: 144, init_value: 0, comment: "Flow sum of the end node of the action section" }
+    - { name: flow_diff, type: Real, offset: 176, init_value: 0, comment: "Flow difference of the action section" }
+    - { name: node1_press, type: Real, offset: 208, init_value: 0, comment: "Pressure of node 1 of the action section" }
+    - { name: node2_press, type: Real, offset: 240, init_value: 0, comment: "Pressure of node 2 of the action section" }
+    - { name: node3_press, type: Real, offset: 272, init_value: 0, comment: "Pressure of node 3 of the action section" }
+    - { name: node4_press, type: Real, offset: 304, init_value: 0, comment: "Pressure of node 4 of the action section" }
+    - { name: node1_ID, type: UInt, offset: 336, init_value: 0, comment: "Node 1 ID of the action section" }
+    - { name: node2_ID, type: UInt, offset: 352, init_value: 0, comment: "Node 2 ID of the action section" }
+    - { name: node3_ID, type: UInt, offset: 368, init_value: 0, comment: "Node 3 ID of the action section" }
+    - { name: node4_ID, type: UInt, offset: 384, init_value: 0, comment: "Node 4 ID of the action section" }
+    - name: status
+      type: Word
+      offset: 400
+      comment: "status"
+      is_combined: true
+      coupling:
+        - { name: press_action, type: Bool, offset: 8, init_value: false, comment: "Pressure exceeds the limit and takes action" }
+        - { name: flow_action, type: Bool, offset: 9, init_value: false, comment: "Flow difference exceeds the limit and takes action" }
+        - { name: node1_pump_run, type: Bool, offset: 10, init_value: false, comment: "Node 1 of the action section has an open pump" }
+        - { name: node2_pump_run, type: Bool, offset: 11, init_value: false, comment: "Node 2 of the action section has an open pump" }
+        - { name: node3_pump_run, type: Bool, offset: 12, init_value: false, comment: "Node 3 of the action section has an open pump" }
+        - { name: node4_pump_run, type: Bool, offset: 13, init_value: false, comment: "Node 4 of the action section has an open pump" }
+    - { name: index, type: Int, offset: 416, init_value: -1, comment: "The reverse order of the record, 0 for the latest" }
