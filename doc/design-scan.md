@@ -251,7 +251,7 @@ Driver events and the results of asynchronous reads and writes no longer change 
 | State | Updated when |
 | --- | --- |
 | `connected` | The driver's `connect` / `connfailed` events |
-| `read_ok` | Each read completes: true on success, false on failure (today's `data_error`) |
+| `read_ok` | Each read completes: true on success, false on failure (today's `io_error` of the driver) |
 | `write_done(group)` | A write of a group completes; records the completion sequence number and result, for rules to decide "the write requested last time has completed" |
 
 After every state change Binding calls `request_scan()`. These states are dependency keys of rules (7.1); they are inputs, written only by Binding.
@@ -621,7 +621,7 @@ The scheduler neither picks the breaking point automatically nor evaluates repea
 | Existing processing | Rule kind |
 | --- | --- |
 | After `connfailed`, `comm_OK = false` after the delay `delay_protect_time`; true on `connect` | derive: `comm_OK = off_delay(ticker, connected, delay_protect_time)`; `comm_OK` is not in the loaded group and is written only by this rule |
-| After `data_error`, `work_OK = false` after the delay | act: sets `work_OK = false` when `off_delay(ticker, read_ok, delay_protect_time)` is false; after a successful read, the loading restores the value reported by the actuator (the loading writes `work_OK` too, so it is an act) |
+| After `io_error`, `work_OK = false` after the delay | act: sets `work_OK = false` when `off_delay(ticker, read_ok, delay_protect_time)` is false; after a successful read, the loading restores the value reported by the actuator (the loading writes `work_OK` too, so it is an act) |
 | `reset_parameters` 2 s after `connect` | act, by edge: the rising edge of `connected` starts timing by tick, and after 2 s the parameters of data are copied to command; a disconnection in between stops it |
 | Actuator `pump_run` = OR of `pump_run_1..4` | Deleted: the actuator already reports `pump_run` after the OR, and the reported value prevails; like `pump_run_1..4` it is an input of the loading |
 | Withdrawing the `stop_pumps` command on the falling edge of the actuator's `pump_run` | act |
@@ -642,6 +642,7 @@ The scheduler neither picks the breaking point automatically nor evaluates repea
 | Issuing `stop_pumps` / `cancel_stop` to the actuators with pumps on changes of the section's `stop_pumps` | act |
 | Clearing `autoStopCmd` / `manStopCmd` on the falling edge of the `pump_run` of a section or line | act |
 | The line's `pump_run`, `alarm_F`, `pre_stop_notice` | derive |
+| Loading the corresponding record on changes of the action record `index` (clearing the time when -1, restoring the old value when out of range) | act |
 | Logging of the various state changes | Event handlers (section 8) |
 
 The current processing order of `section_loop` is itself scan-like; after it is split into the rules of the table above, the order between the rules is decided by the ordering, and the evaluation conditions inside the rules stay the same.
@@ -659,7 +660,7 @@ The parameters of an actuator are copied in both directions: `write_paras` copie
 Two points differ from the current state and need confirming during the migration:
 
 - After delays are counted by tick, the actual delay of `delay_protect_time` has a step of `MAIN_PERIOD`, at most one period later than today's `setTimeout`.
-- Today the delay timer of `data_error` is never cancelled: even if reads recover within the delay, `work_OK = false` is set once when it expires and then overwritten by the next read; with counting, the count resets as soon as reads recover, and this brief false no longer occurs.
+- Today the delay timer of `io_error` is never cancelled: even if reads recover within the delay, `work_OK = false` is set once when it expires and then overwritten by the next read; with counting, the count resets as soon as reads recover, and this brief false no longer occurs.
 
 ### 7.6 Checking the dependency declarations
 
@@ -725,5 +726,5 @@ The scan scheduler and the rule ordering go live before the business migration. 
 ## 11. Out of scope
 
 - Layouts, point tables and protocols are all unchanged.
-- The connection establishment and reconnection of drivers (the tick of `Base_Driver`, `reconnect_time`, the automatic reconnection of each driver library) are unchanged; only the connection events no longer change tags directly but are recorded as Binding states (4.4).
+- The connection establishment and reconnection of drivers (the tick of `Base_Driver`, `reconnect_time`, `connfailed_time`, the automatic reconnection of each driver library) are unchanged; only the connection events no longer change tags directly but are recorded as Binding states (4.4).
 - The unimplemented items listed in section 11 of design.md are not handled this time (except the command masking by actuator configuration, see 7.5), but the new structure must leave room for them: `tlms check` can call the rule ordering checks directly.

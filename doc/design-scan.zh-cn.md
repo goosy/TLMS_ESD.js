@@ -249,7 +249,7 @@ for (const i of group.bytes) {
 | 状态 | 更新时机 |
 | --- | --- |
 | `connected` | 驱动的 `connect` / `connfailed` 事件 |
-| `read_ok` | 每次读取完成：成功为 true，失败（对应现在的 `data_error`）为 false |
+| `read_ok` | 每次读取完成：成功为 true，失败（对应现在驱动的 `io_error`）为 false |
 | `write_done(group)` | 某个分组的一次写入完成，记录完成序号和结果，供规则判断“上次请求的写入已完成” |
 
 每次状态变化后 Binding 调用 `request_scan()`。这些状态是规则的依赖键（7.1 节），属于输入，只由 Binding 写入。
@@ -619,7 +619,7 @@ derive({
 | 现有处理 | 规则类型 |
 | --- | --- |
 | `connfailed` 后延时 `delay_protect_time` 置 `comm_OK = false`，`connect` 时置 true | derive：`comm_OK = off_delay(ticker, connected, delay_protect_time)`；`comm_OK` 不在装载的分组中，只由这条规则写入 |
-| `data_error` 后延时置 `work_OK = false` | act：`off_delay(ticker, read_ok, delay_protect_time)` 为 false 时置 `work_OK = false`；读取成功后由装载恢复执行器上报的值（装载也写 `work_OK`，所以是 act） |
+| `io_error` 后延时置 `work_OK = false` | act：`off_delay(ticker, read_ok, delay_protect_time)` 为 false 时置 `work_OK = false`；读取成功后由装载恢复执行器上报的值（装载也写 `work_OK`，所以是 act） |
 | `connect` 后 2 s 执行 `reset_parameters` | act，按边沿：`connected` 上升沿开始按 tick 计时，满 2 s 时把 data 的参数复制到 command；其间断开则停止 |
 | 执行器 `pump_run` = `pump_run_1..4` 的“或” | 删除：执行器已上报“或”运算后的 `pump_run`，以上报值为准；它和 `pump_run_1..4` 一样是装载的输入 |
 | 执行器 `pump_run` 下降沿收回 `stop_pumps` 命令 | act |
@@ -640,6 +640,7 @@ derive({
 | 段的 `stop_pumps` 变化时向带泵执行器下发 `stop_pumps` / `cancel_stop` | act |
 | 段、线的 `pump_run` 下降沿清除 `autoStopCmd` / `manStopCmd` | act |
 | 线的 `pump_run`、`alarm_F`、`pre_stop_notice` | derive |
+| 动作记录 `index` 变化时装载对应记录（为 -1 时清空时间，越界时恢复原值） | act |
 | 各种状态变化的日志 | 事件处理器（第 8 节） |
 
 `section_loop` 现在的处理顺序本身就是扫描式的，拆分为上表中的若干规则后，规则之间的顺序由排序决定，规则内部的判定条件不变。
@@ -657,7 +658,7 @@ derive({
 与现状有差异、需要在迁移时确认的两点：
 
 - 延时改为按 tick 计数后，`delay_protect_time` 的实际延时以 `MAIN_PERIOD` 为步长，最多比现在的 `setTimeout` 晚一个周期。
-- 现在 `data_error` 的延时定时器不会被取消，即使读取在延时内恢复，到期后仍会置一次 `work_OK = false`，再被下一次读取覆盖；改为计数后，读取恢复即清零计数，不再出现这次短暂的 false。
+- 现在 `io_error` 的延时定时器不会被取消，即使读取在延时内恢复，到期后仍会置一次 `work_OK = false`，再被下一次读取覆盖；改为计数后，读取恢复即清零计数，不再出现这次短暂的 false。
 
 ### 7.6 依赖声明的核对
 
@@ -723,5 +724,5 @@ derive({
 ## 11. 不在本次范围内
 
 - 布局、点表、协议均不变。
-- 驱动的连接建立与重连机制（`Base_Driver` 的 tick、`reconnect_time`、各驱动库的自动重连）不变；只是连接事件不再直接改写 tag，而是记录为 Binding 状态（4.4 节）。
+- 驱动的连接建立与重连机制（`Base_Driver` 的 tick、`reconnect_time`、`connfailed_time`、各驱动库的自动重连）不变；只是连接事件不再直接改写 tag，而是记录为 Binding 状态（4.4 节）。
 - design.md 第 11 节列出的未实现项不在本次处理（按执行器配置的命令屏蔽除外，见 7.5 节），但新结构需为其留出位置：`tlms check` 可直接调用规则排序检查。

@@ -6,7 +6,7 @@
 
 ## 1. Principles
 
-- **Every step is deliverable on its own**: at its end `pnpm test` and the Biome check all pass, and it can be committed and reverted on its own.
+- **Every step is deliverable on its own**: at its end `pnpm test` and `pnpm lint` all pass, and it can be committed and reverted on its own.
 - **Behavior changes come late**: steps 1-5 do not change external behavior (they only replace internal mechanisms); timing changes appear only in steps 6-8, and each step introduces only the changes listed in section 9 and at the end of 7.5 of design-scan.md.
 - **Tests first, then the implementation**: each step first adds tests that constrain the behavior of the step and pass on the old implementation, then replaces the implementation.
 - **The spec changes with the behavior**: the step that changes a behavior described by the spec also changes the corresponding entry of `doc/spec.md`.
@@ -36,13 +36,16 @@
 
 Changes:
 
-1. **Extract the test fixture**: move `build_line()` and `settle()` of `test/section_proc_test.js` to `test/harness.js`, extended to build the complete object graph "line + sections + actuators (data, command, fake driver)", simulating actuators with `create_fake_driver`.
-   - Tests are written only as "set inputs -> `settle()` -> assert outputs", without depending on the moments events fire;
-   - `settle()` is implemented for now as waiting longer than the debounce chain; from step 5 on it drives scheduler scans instead, and the test cases themselves do not change.
+1. **System test fixture**:
+   - Extract the part of `main.js` that builds the runtime object graph into `src/runtime.js#build_runtime` (drivers provided by the caller), and the vector of the upward server into `create_vector(unit_map)`; `main.js` is responsible only for the configuration, the real driver pool, the server and the startup;
+   - `test/harness.js` calls `build_runtime` with the configuration of `test/fixtures/system/`, simulates actuators with fake drivers (covering Modbus BE, S7 and Modbus LEBS), simulates HMI writes through the vector, and advances time with the fake timers of `node:test`;
+   - Tests are written only as "set inputs -> advance time -> assert outputs", without depending on the moments events fire; from step 5 on only the way the fixture advances changes, and the test cases themselves do not change;
+   - `test/section_proc_test.js` calls internal functions of sections directly and stays for now; its scenarios are covered by the system tests (except the scenario of not erasing `action_section_ID` across sections), and it is deleted or rewritten in steps 6 and 7 when the internal functions are replaced.
 2. **Add behavior tests** covering each row of existing processing in the table of 7.5 of design-scan.md, including at least:
    - Actuators: `pump_run` aggregation, `response_code` handshake, `pressure_SD_F` clearing command bits, `read_paras` / `write_paras`, sending `commands` and resending after 3 cycles, command masking;
    - Sections and lines: the aggregated values, the flow difference delays, the countdown and its interruption by a manual hang-on, setting and resetting the pressure / flow difference actions, issuing `stop_pumps` / `cancel_stop`, the line `flow_override` master switch, clearing `autoStopCmd` / `manStopCmd`, action records;
-   - Upward server: after the vector writes registers and coils through `Unit_Map`, the corresponding tag events are emitted and the linked processing runs.
+   - Upward server: after the vector writes registers and coils, the linked processing runs; a Real spanning two registers is written completely at once.
+   - Cases exposing existing defects are marked `todo` (run but not counted as failures), and the defects are recorded in section 11 of design.md.
 3. **Open questions** (results recorded in section 5 of this document):
    - 0.1 whether es-modbus, when handling function codes 15 / 16, calls the vector in turn within one synchronous call (deciding whether the merging conclusion of 3.2 of design-scan.md holds);
    - 0.2 whether any existing handler depends on "the order of the events of a combined word and its component bits" (10.1 of design-scan.md);
@@ -142,7 +145,7 @@ Verification: all tests pass; run the behavior tests with the dependency tracing
 
 One commit with three parts:
 
-- Actions of sections and lines: the pressure action, the flow difference action, `autoStopCmd`, `line_action_source`, `action_section_ID`, action records; clearing commands on the falling edge of `pump_run`; issuing `stop_pumps` / `cancel_stop`. The interlock actions run in every scan. Delete the coarse rule of `section_loop`.
+- Actions of sections and lines: the pressure action, the flow difference action, `autoStopCmd`, `line_action_source`, `action_section_ID`, action records (creating records, and loading a record when the HMI writes `index`); clearing commands on the falling edge of `pump_run`; issuing `stop_pumps` / `cancel_stop`. The interlock actions run in every scan. Delete the coarse rule of `section_loop`.
 - Actuator commands: the acknowledgement handshake, `pressure_SD_F` clearing command bits, `read_paras` / `write_paras` (with the `write_done` state), command sending becoming a registered `request_write(commands_payload)`, resending after 3 cycles (with a Ticker, timed per actuator), command masking by actuator configuration (`supported_commands`, 12.1 of design.md, replacing the common `& 0xB1`). The command Binding is registered with the scheduler as write-only (6.5 of design-scan.md). Delete `debounce_send_commands` and the coarse rule of `node_loop`.
 - Connection states: driver events only update Binding states; `comm_OK`, `work_OK` and refreshing the parameters 2 s after connecting become act rules; delete the corresponding driver event callbacks and `setTimeout`. The drivers of the test fixture change to start disconnected and connect after startup, like the real drivers.
 
@@ -181,5 +184,5 @@ Filled in after step 0:
 | No. | Conclusion | Effect |
 | --- | --- | --- |
 | 0.1 | Confirmed from the source: `ModbusServer.js` of es-modbus v0.3.0-beta.2, when handling function codes 15 / 16, calls `set_coil` / `set_register` for each point in one synchronous loop. Step 0 adds a test to pin this behavior | The merging conclusion of 3.2 of design-scan.md holds |
-| 0.2 | To be confirmed | |
-| 0.3 | To be confirmed | |
+| 0.2 | No dependency. Only the command block subscribes to both a combined word and its component bits (`commands` and `read_paras` / `write_paras`), and the handlers of the three do not read or write each other's results synchronously; sections and lines subscribe only to status bits, and the actuator tdata only to the whole word `response_code`. `tags_at_byte` follows the order of the layout items (the combined word first, its component bits after), so the order of events on the HMI write path is the same as today | None |
+| 0.3 | No dependency. Only `read_paras` (reset in nextTick after being set) and the `index` of the action record (restoring the old value when out of range) change several times in one processing, and both become act rules in step 7; in the final form event handlers only log, and merging only reduces the number of log entries | The handling of the action record `index` is added to 7.5 of design-scan.md and to step 7a |

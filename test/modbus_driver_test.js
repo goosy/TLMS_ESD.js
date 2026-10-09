@@ -332,6 +332,23 @@ describe("createMTServer", () => {
 		assert.equal(data.check_count, 3); // one per register written
 	});
 
+	// The scan request of a write is coalesced with setImmediate
+	// (doc/design-scan.md 3.2): it relies on es-modbus calling the vector for
+	// every register of an FC 16 request within one synchronous call.
+	test("an FC 16 request writes all its registers in one synchronous call", async (t) => {
+		const { hmi, data } = await setup(t);
+		let turn_ended = false;
+		const turns = [];
+		data.check_all_tags = function () {
+			if (turns.length === 0) setImmediate(() => { turn_ended = true; });
+			turns.push(turn_ended);
+		};
+
+		assert.equal(await hmi.write([16, 2, 3], Buffer.from([1, 2, 3, 4, 5, 6]), UNIT), true);
+
+		assert.deepEqual(turns, [false, false, false]);
+	});
+
 	test("coil addr maps to bit addr % 8 of byte addr >> 3", async (t) => {
 		const { hmi, data } = await setup(t);
 		data.buffer[1] = 0b0000_0010; // coil 9 set, coils 8 and 10..15 clear
