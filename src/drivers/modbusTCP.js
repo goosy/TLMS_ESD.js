@@ -166,10 +166,12 @@ const get_coil_info = (addr, units) => {
 };
 
 /**
- * @param {string} host the ip of the TCP Port - required.
- * @param {number} port the Port number - default 502.
+ * Creates the es-modbus server vector that serves the data blocks of a unit map.
+ *
+ * @param {Unit_Map} unit_map - The data blocks attached per unit id.
+ * @return {Object} The vector: get_input_register, get_holding_register, set_register, get_coil, set_coil.
  */
-export function createMTServer(host = "0.0.0.0", port = 502, unit_map = {}) {
+export function create_vector(unit_map) {
 	// An unmapped address (e.g. the gap between the node data and command
 	// blocks) reads as 0 and ignores writes, so that a block read by the HMI
 	// spanning the gap still succeeds. Each one is logged once.
@@ -225,7 +227,16 @@ export function createMTServer(host = "0.0.0.0", port = 502, unit_map = {}) {
 			tdata.check_all_tags();
 		},
 	};
+	return vector;
+}
 
+/**
+ * @param {string} host the ip of the TCP Port - required.
+ * @param {number} port the Port number - default 502.
+ * @param {Unit_Map} unit_map - The data blocks served per unit id.
+ */
+export function createMTServer(host = "0.0.0.0", port = 502, unit_map = {}) {
+	const vector = create_vector(unit_map);
 	const server = new Modbus_Server(vector, { host, port, unit_id: unit_map.unit_ids });
 	server.on("start", () => {
 		logger.info(`ModbusTCP server listening on modbus://${host}:${port}`);

@@ -7,13 +7,14 @@
 | 路径 | 职责 |
 | --- | --- |
 | `src/cli.js` | `tlms` 命令行，解析参数，调用 pm2 或直接 `import('./main.js')`。 |
-| `src/main.js` | 进程入口：读取配置，构建控制器，创建 TData 并挂载到 Modbus 服务端，启动主循环。 |
+| `src/main.js` | 进程入口：校验布局，读取配置，构建控制器，提供按连接复用的真实驱动，启动 Modbus 服务端和主循环。 |
+| `src/runtime.js` | `build_runtime`：为控制器创建 TData、挂到 `Unit_Map`、调用各 `*_init`，并提供主循环的一次迭代 `cycle` 与 `start` / `stop`。驱动由调用方经 `get_drivers(driver_info)` 提供，测试据此注入假驱动。 |
 | `src/gcl.js` | YAML 加载器（`yaml` 库，YAML 1.1），保留源码行号信息。 |
 | `src/config.js` | 合并多份配置文档，填充默认值，建立名称与 ID 索引。 |
 | `src/init.js` | `prepare_controller`：为选定的控制器构建运行时对象图。 |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | 执行器（节点）、段、线的初始化（事件绑定）与周期处理。 |
 | `src/action_record.js` | 动作记录：CSV 读写，以及基于 index 的浏览。 |
-| `src/drivers/` | `Base_Driver`、`MTClient`（Modbus TCP 客户端）、`S7Client`，以及 `createMTServer` / `Unit_Map`（对上服务端）。 |
+| `src/drivers/` | `Base_Driver`、`MTClient`（Modbus TCP 客户端）、`S7Client`，以及 `createMTServer` / `create_vector` / `Unit_Map`（对上服务端）。 |
 | `src/typed_data/` | `TData` / `TTag` / `TGroup`：带类型的缓冲区与变化事件。 |
 | `src/structs/` | LINE、SECTION、NODE、COMMAND、RECORD 的内存布局定义。 |
 | `src/util.js` | log4js 日志、`debouncify` / `debounce`、`Object.mixin`。 |
@@ -38,10 +39,10 @@
    3. 执行器的 `driver_info` 携带协议、地址和数据 / 命令区；
    4. 同时按首端、末端、泵站分别放入 `section.begin_nodes` / `end_nodes` / `pump_nodes`。
 6. `run_controller`：
-   1. 初始化动作记录，挂到 `unit_id.action_records`；
-   2. 按 线 → 段 → 执行器 的顺序创建 TData 并 `attach_unit`，再调用各自的 `*_init`；
+   1. 初始化动作记录；
+   2. 调用 `build_runtime`（`runtime.js`）：把动作记录挂到 `unit_id.action_records`，按 线 → 段 → 执行器 的顺序创建 TData 并 `attach_unit`，再调用各自的 `*_init`；执行器的驱动由 `main.js` 的 `get_drivers` 按连接复用提供；
    3. 启动 Modbus TCP 服务端并等待其就绪；启动失败（如端口被占用）时记录错误并以退出码 1 退出，由 pm2 重启；
-   4. 用 `setInterval(MAIN_PERIOD = 500)` 执行全部段的 `section_loop` 和全部执行器的 `node_loop`（`line_loop` 为空，未调用）。
+   4. `runtime.start()` 用 `setInterval(MAIN_PERIOD = 500)` 执行全部段的 `section_loop` 和全部执行器的 `node_loop`（`line_loop` 为空，未调用）。
 
 ## 3. 带类型数据层
 
@@ -159,6 +160,8 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 - 由于 `S7Endpoint.connect()` 不完善，暂时使用库自带的自动重连（`autoReconnect`，取 `reconnect_time`，默认 5000 ms，间隔固定），`start_tick` 同样被重写（代码中已标记为临时代码）。
 
 ### 4.4 对上服务端（createMTServer + Unit_Map）
+
+- `create_vector(unit_map)` 生成服务 `Unit_Map` 的 vector，`createMTServer` 用它创建 es-modbus 服务端；测试直接调用 vector 模拟 HMI 请求。
 
 - `Unit_Map.attach_unit(unit_id, tdata, start)` 把 TData 挂到某个单元的字节区间 `[start, start + size)`，一个单元可以挂多个 TData。
   - 执行器单元：data 挂在字节 0，command 挂在字节 400（即寄存器 200 起）。
@@ -340,7 +343,7 @@ v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级�
 | --- | --- | --- | --- |
 | 按执行器配置屏蔽命令 | 每个执行器在配置中用 `supported_commands` 列出支持的命令，控制器只发送支持的命令，其余命令位直接复位（规范 5.1）；实现方式见 12.1 节 | 配置中没有该字段；`node_loop` 对所有执行器统一执行 `command.commands &= 0xB1`，只保留位 0、4、5、7（`stop_pumps`、`enable_pressure_SD`、`disable_pressure_SD`、`write_paras`），`cancel_stop` 也因此被复位 | `config.js` 的执行器解析；`node_proc.js` 的 `node_loop` |
 | ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个 tdata 共用 ID（规范 4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
-| ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 4.1、5.5） | `run_controller` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `main.js` 的 `run_controller` |
+| ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 4.1、5.5） | `build_runtime` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `runtime.js` 的 `build_runtime` |
 | 配置检查命令 | `tlms check` 读取并校验配置和全部布局（3.1 节 `validate_structure`）、报告全部错误，不启动控制器（规范 3.6、5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃；布局校验已在启动时执行（`main.js`），尚未接入命令行 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
 | 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 的 `add_action_record` |
 
