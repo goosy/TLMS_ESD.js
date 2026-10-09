@@ -121,11 +121,11 @@ describe("TGroup write units", () => {
 		assert.deepEqual(driver.writes.map(({ start, bytes }) => [start, bytes]), [[2, [0x01, 0x00]]]);
 	});
 
-	test("unaligned IO area exits", (t) => {
+	test("unaligned IO area throws", () => {
 		const data = new TData(make_struct(GROUP_ITEMS), "group");
-		assert_exits(t, () => data.set_IO(create_fake_driver(2), { start: 1, length: 4 }));
-		assert_exits(t, () => data.set_IO(create_fake_driver(2), { remote_start: 3 }));
-		assert_exits(t, () => data.set_IO(create_fake_driver(2), { length: 5 }));
+		assert.throws(() => data.set_IO(create_fake_driver(2), { start: 1, length: 4 }), /not aligned/);
+		assert.throws(() => data.set_IO(create_fake_driver(2), { remote_start: 3 }), /not aligned/);
+		assert.throws(() => data.set_IO(create_fake_driver(2), { length: 5 }), /not aligned/);
 	});
 
 	test("odd IO area is accepted with write unit 1", () => {

@@ -1,8 +1,8 @@
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
-import { logger } from "../util.js";
 import { TTag } from "./TTag.js";
 import { TGroup } from "./TGroup.js";
+import { Observer } from "./observer.js";
 import { layout_of } from "./layout.js";
 
 export class TData extends EventEmitter {
@@ -11,7 +11,7 @@ export class TData extends EventEmitter {
 	 * @readonly
 	 * @description Internal buffer
 	 * all data items, including combined words, are stored in Big-Endian format.
-	 * Device endianness is converted only at the IO boundary (TTag.read_from/write_to).
+	 * Device endianness is converted only at the IO boundary (endian.js).
 	 */
 	#buffer;
 	/**
@@ -41,11 +41,12 @@ export class TData extends EventEmitter {
 	 */
 	name;
 
+	#layout;
 	/**
-	 * The compiled layout of this data block (doc/design-scan.md 2.2).
+	 * The compiled layout of this data block (doc/design-scan.md 2.2), read-only.
 	 * The tag accessors are defined once on the prototype of layout.Data_Class.
 	 */
-	layout;
+	get layout() { return this.#layout; }
 
 	// Members assigned by set_IO. They are declared here so that
 	// layout_of() rejects tag names that would collide with them.
@@ -56,43 +57,42 @@ export class TData extends EventEmitter {
 	IO_read_all = null;
 	create_tag_group = null;
 
+	/** @type {Observer} */
+	#observer;
+	/** "immediate" or "deferred" (doc/spec-data-api.md 4) */
+	#detection;
+	/** called after each write, after its detection in the immediate mode */
+	#on_write;
+	/** The change detector of this data block (doc/design-scan.md 5). */
+	get observer() { return this.#observer; }
+
 	/**
-	 * @type {Object.<string, TTag>}
-	 * @private
-	 * @description A collection of TTag objects, where the key is the tag name (string) and the value is the TTag object.
+	 * @type {Map<string, TTag>}
+	 * @description The tag handles created so far, by tag name.
 	 */
-	#tags = {};
+	#handles = new Map();
 	/**
-	 * Retrieves a TTag object by its name.
+	 * Retrieves the handle of a tag, creating it on first use.
 	 * @param {string} tagname - The name of the tag to retrieve.
-	 * @returns {TTag|undefined} The TTag object if found, undefined otherwise.
+	 * @returns {TTag|undefined} The TTag handle, undefined for an unknown name.
 	 */
 	get(tagname) {
-		return this.#tags[tagname];
+		let tag = this.#handles.get(tagname);
+		if (tag) return tag;
+		const entry = this.layout.entries.get(tagname);
+		if (!entry) return undefined;
+		tag = new TTag(this, entry);
+		this.#handles.set(tagname, tag);
+		return tag;
 	}
 
-	#couplings = {};
-	check_tag(tag) {
-		const name = tag.name ?? tag;
-		const _tag = this.#tags[name];
-		if (_tag == null) {
-			logger.debug(`${this.name} has no tag named ${name}`);
-			return;
-		}
-		_tag.check_change();
-	}
-
-	check_coupling(tagname) {
-		const coupling = this.#couplings[tagname];
-		if (Array.isArray(coupling)) for (const tn of coupling) {
-			this.check_tag(tn);
-		}
-	}
-
-	check_all_tags() {
-		for (const tag of Object.values(this.#tags)) {
-			this.check_tag(tag);
-		}
+	/**
+	 * Detects every change since the last detection and emits its events
+	 * (doc/spec-data-api.md 2.6). Needed after writing the buffer directly,
+	 * and in the deferred mode whenever the user chooses.
+	 */
+	detect() {
+		this.#observer.diff();
 	}
 
 	/**
@@ -105,6 +105,7 @@ export class TData extends EventEmitter {
 	 * @param {number} [options.length] The effective length of the exchange data area, defaults to the remaining length of the buffer
 	 * @param {string} [options.endian] - Endianness for data interpretation
 	 * @return {void}
+	 * @throws {Error} When the IO area is not aligned to the write unit of the driver.
 	 */
 	set_IO(driver, options, ...extras) {
 		if (driver == null) {
@@ -114,7 +115,6 @@ export class TData extends EventEmitter {
 			this.IO_write = null;
 			return;
 		}
-		this.driver = driver;
 
 		// starting position of exchange data segment in the current TData buffer.
 		const IO_start = options.start ?? 0;
@@ -126,9 +126,9 @@ export class TData extends EventEmitter {
 		// smallest writable unit of the driver in bytes
 		const write_unit = driver.write_unit ?? 1;
 		if (IO_start % write_unit || remote_start % write_unit || IO_length % write_unit) {
-			logger.error(`${this.name}: IO area ${JSON.stringify({ IO_start, remote_start, IO_length })} is not aligned to the write unit ${write_unit}`);
-			process.exit(1);
+			throw new Error(`${this.name}: IO area ${JSON.stringify({ IO_start, remote_start, IO_length })} is not aligned to the write unit ${write_unit}`);
 		}
+		this.driver = driver;
 
 		this.create_tag_group = (...tags) => {
 			const tgroup = new TGroup(
@@ -143,15 +143,10 @@ export class TData extends EventEmitter {
 
 		const offset = remote_start - IO_start;
 		const check_driver = (range) => {
-			if (!driver.is_connected) {
-				console.error("driver is not connected");
-				return false;
-			}
 			if (range.start < IO_start || range.start + range.length > IO_start + IO_length) {
-				logger.error(`invalid range ${JSON.stringify(range)}`);
-				process.exit(1);
+				throw new Error(`${this.name}: invalid range ${JSON.stringify(range)}`);
 			}
-			return true;
+			return driver.is_connected;
 		};
 		this.IO_read = async (range) => {
 			if (!check_driver(range)) return false;
@@ -185,13 +180,14 @@ export class TData extends EventEmitter {
 
 	/**
 	 * Called by a tag setter after the value is written into the buffer:
-	 * emits the change of the tag and refreshes the coupled tags.
+	 * detects the change at once in the immediate mode, then notifies the
+	 * user in both modes (doc/spec-data-api.md 4.2).
 	 *
-	 * @param {{name: string}} entry - The layout entry of the tag.
+	 * @param {{name: string}} _entry - The layout entry of the tag.
 	 */
-	after_write(entry) {
-		this.#tags[entry.name].check_change();
-		this.check_coupling(entry.name);
+	after_write(_entry) {
+		if (this.#detection === "immediate") this.#observer.diff();
+		this.#on_write?.(this);
 	}
 
 	/**
@@ -204,32 +200,37 @@ export class TData extends EventEmitter {
 	 * @param {string} data_struct.name - the name of data_struct.
 	 * @param {Array} data_struct.items - Array of data items to initialize.
 	 * @param {string} name - The name of the TData instance.
+	 * @param {Object} [options]
+	 * @param {"immediate"|"deferred"} [options.detection="immediate"] - When changes are detected.
+	 * @param {(tdata: TData) => void} [options.on_write] - Called after each write, after its detection in the immediate mode.
 	 */
-	constructor(data_struct, name) {
+	constructor(data_struct, name, options = {}) {
 		if (new.target === TData) {
 			const { Data_Class } = data_struct.Data_Class ? data_struct : layout_of(data_struct);
 			// constructors may return an object: the instance of the compiled subclass
-			return new Data_Class(data_struct, name);
+			return new Data_Class(data_struct, name, options);
 		}
 		super();
+		const { detection = "immediate", on_write } = options;
+		if (detection !== "immediate" && detection !== "deferred") {
+			throw new Error(`${name}: unknown detection mode ${detection}`);
+		}
+		this.#detection = detection;
+		this.#on_write = on_write;
 		this.name = name;
-		this.layout = new.target.layout;
+		this.#layout = new.target.layout;
 		this.setMaxListeners(100);
 		const size = this.layout.size;
 		this.#buffer = Buffer.alloc(size, 0);
 		this.#IO_buffer = Buffer.alloc(size, 0);
-		for (const entry of this.layout.entries.values()) {
-			this.#add_tag(entry);
+		// init values in layout order: the bits of a combined word after the word
+		for (const { codec, byte, mask, init_value } of this.layout.entries.values()) {
+			codec.set(this.#buffer, byte, mask, init_value);
 		}
-	}
-
-	#add_tag(entry) {
-		const { name, item } = entry;
-		const tag = new TTag(this.#buffer, name, item.type, item.offset, item.init_value);
-		this.#tags[name] = tag;
-		this.#couplings[name] = item.coupling;
-		tag.on("change", (old_value, new_value) => {
-			this.emit("change", name, old_value, new_value);
+		this.#observer = new Observer(this.#buffer, this.layout, (entry, old_value, new_value) => {
+			// the data block event first, as when it relayed the tag events
+			this.emit("change", entry.name, old_value, new_value);
+			this.#handles.get(entry.name)?.emit("change", old_value, new_value);
 		});
 	}
 }

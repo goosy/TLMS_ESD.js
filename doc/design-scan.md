@@ -109,7 +109,7 @@ for (const entry of entries) {
 - A combined word and its component bits share the same bytes; after writing either side, the other side naturally reads the new value, and `check_coupling` is not needed.
 - The type declarations `src/layout_types.d.ts` are generated from the layout file (one interface per layout, the tags as properties, `comment` as doc comments), providing editor completion for access by name; the generated file goes into version control, and a test checks it matches the layout file.
 
-Name conflicts: a tag name must not equal a member of TData, a rule still checked by `validate_structure`. Since Binding and Observer no longer hang on TData, the members of TData are reduced to a few such as `name`, `layout`, `buffer`, `size`, `get`, `after_write` and the write methods of 3.2, and the reserved name table shrinks accordingly.
+Name conflicts: a tag name must not equal a member of TData, a rule still checked by `validate_structure`. Since Binding and Observer no longer hang on TData, the members of TData are reduced to a few such as `name`, `layout`, `buffer`, `size`, `get`, `after_write`, `observer` and the write methods of 3.2, and the reserved name table shrinks accordingly.
 
 ## 3. TData
 
@@ -283,7 +283,7 @@ diff() {
 
 - The old value is decoded from the snapshot and needs no cache.
 - `same_value` treats two NaN as the same, consistent with today's `check_change`.
-- The comparison and the snapshot update are completed first, then the events are emitted together in layout order: for each change, first the block-wide `change(name, old, new)`, then the `change(old, new)` of the TTag; events are always emitted after the new values take effect.
+- The comparison and the snapshot update are completed first, then the events are emitted together in layout order: for each change, first the block-wide `change(name, old, new)`, then the `change(old, new)` of the TTag (the same order as when the TTag forwarded the block-wide event before); events are always emitted after the new values take effect.
 - Several writes within one detection merge into one event, whose old value is the value at the previous detection; a value that changed and was then restored emits no event.
 - When handlers write again while changes are reported, another round of comparison follows; when there are still new changes after 16 consecutive rounds, an exception is thrown to prevent oscillation.
 - Benchmark (the NODE structure, 74 tags, 146 bytes): with no or few changes it is 9 to 16 times faster than today's tag-by-tag check, and about 2 times faster with all values changed.
@@ -704,10 +704,10 @@ The controller always uses the immediate detection mode (3.3). Until all derived
 - When a handler assigns again in an event, the nested detection only registers, and after the current round has been reported another round of comparison follows, until there are no new changes; when there are still new changes after 16 consecutive rounds, an exception is thrown to prevent oscillation;
 - Edge checks in rules use the scan snapshot (5.3).
 
-The order of events in the immediate detection mode differs from today in two places, and the first step of the migration must confirm that no handler depends on them:
+The order of events in the immediate detection mode differs from before in two places, and open question 0.2 has confirmed that no handler depends on them:
 
-- Today the side that is written emits its event first, and the other side follows through `check_coupling`; this changes to emitting in layout order, the combined word first and its component bits after;
-- Today when a handler writes a tag again, the nested events are emitted immediately; this changes to emitting after the current round of changes has been reported.
+- Before, the side that was written emitted its event first, and the other side followed through `check_coupling`; now events are emitted in layout order, the combined word first and its component bits after;
+- Before, when a handler wrote a tag again, the nested events were emitted immediately; now they are emitted after the current round of changes has been reported.
 
 After the migration the controller still uses the immediate detection mode and does not switch to the deferred mode.
 

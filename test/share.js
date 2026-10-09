@@ -7,6 +7,7 @@ import { Buffer } from "node:buffer";
 process.env.LOG_LEVEL ??= "off";
 // imported after LOG_LEVEL is set: it loads src/util.js through TData
 const { build_structure } = await import("../src/typed_data/structure.js");
+const { TData } = await import("../src/typed_data/TData.js");
 
 export class Exit_Called extends Error {
 	constructor(code) {
@@ -70,4 +71,13 @@ export function create_fake_driver(write_unit = 1, remote_size = 256) {
 			return this.write_results.shift() ?? true;
 		},
 	};
+}
+
+/** A data block of `size` bytes with one tag named "tag". */
+export function one_tag(type, init_value, offset = 0, size = 4) {
+	return new TData({
+		name: "T",
+		length: size * 8,
+		items: [{ name: "tag", type, offset, init_value }],
+	}, "t");
 }

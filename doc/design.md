@@ -101,27 +101,33 @@ Main layouts (byte offsets):
 
 ### 3.2 TData
 
+- `name` is writable; `layout`, `size`, `buffer`, `IO_buffer` are read-only (getters only, assignment throws a `TypeError`), and the content of `buffer` can be read and written.
 - Exposes two buffers:
   - `buffer`: the internal value buffer, always big-endian (BE); the Modbus server reads and writes it directly as big-endian;
   - `IO_buffer`: the buffer exchanged with drivers, in device byte order.
 - `new TData(struct, name)` returns an instance of the subclass `Data_Class` compiled from the structure; the accessor of each tag is defined only once on `Data_Class.prototype`, shared by the instances of the same structure:
   - the getter decodes directly from `buffer` with the codec table;
-  - the setter writes `buffer` with the codec table, then calls `after_write`: runs `check_change` and `check_coupling` of the tag, so that a combined word and its bits refresh each other.
-- Each item also creates a `TTag`, which caches the current value, for change detection and events.
-- When any tag changes, the TData emits `change(tagname, old, new)`; the tag itself emits `change(old, new)`. Business logic subscribes with `data.get(name).on('change', ...)`.
-- After `buffer` is written directly from outside (writes from the server), `check_all_tags()` compares the cached values with the buffer one by one and emits the missed change events.
+  - the setter writes `buffer` with the codec table, then calls `after_write`: in the immediate detection mode the Observer detects the changes immediately; then, in both modes, the `on_write(tdata)` passed at creation is called.
+- `new TData(struct, name, { detection, on_write })`: `detection` is `"immediate"` (default) or `"deferred"` (4.2 of spec-data-api.md). The controller uses the immediate mode throughout (3.3 of design-scan.md).
+- A combined word and its component bits share the same bytes; after writing either side, the other side naturally reads the new value, and no extra linkage is needed.
+- Change detection is the job of the Observer (`observer.js`) of each TData: it holds a snapshot of `buffer`, on comparison decodes only the tags related to changed bytes (the reverse table `tags_at_byte`), decodes old values from the snapshot, and caches no values; after comparing it updates the snapshot, then reports the changes in layout order.
+  - For each change, first the TData emits `change(tagname, old, new)`, then the handle of the tag emits `change(old, new)`; events are always emitted after the new value takes effect. Business logic subscribes with `data.get(name).on('change', ...)`.
+  - When an event handler writes a tag again, the nested comparison only registers, and after the current round of changes has been reported another round of comparison follows; when there are still new changes after 16 consecutive rounds, an exception is thrown to prevent oscillation.
+  - `detect()` runs one comparison; it is called by the writer after `buffer` is written directly from outside (server writes, group loading), and by the user when needed in the deferred mode.
+  - `observer.previous(name)` / `take_scan_snapshot()` are reserved for the coming scan cycle (5.3 of design-scan.md).
+- On errors TData throws (layout conflicts, an IO area not aligned to the write unit, accesses outside the IO exchange area), without logging or exiting.
 - `set_IO(driver, {remote_start, start, length, endian}, ...extras)` binds a driver:
   - the local `IO_buffer[start .. start+length)` corresponds to the remote area of the same length from `remote_start`;
   - `extras` is passed to the driver as is: `unit_id` for Modbus, `area, db` for S7;
   - creates `IO_read_all` (reads the whole area into `IO_buffer`), `IO_write` (writes by range) and `create_tag_group`.
 
-### 3.3 TTag
+### 3.3 TTag and byte order conversion
 
-- Each tag takes its read and write methods from the codec table (`codecs.js`) by type, reads and writes the `buffer` of the TData directly, and caches its current value `value`. `check_change` compares the cached value with the value in the buffer; when they differ, it updates the cache and emits an event, always after the new value has taken effect.
-- `read_from(IO_buffer, endian)` / `write_to(IO_buffer, endian)` convert between the device byte order and the internal big-endian:
+- `data.get(name)` returns the `TTag` of the tag, created and cached on first access, `undefined` when the name does not exist. A TTag holds no value: reading `value` decodes from the `buffer` of the TData, and writing `value` is exactly equivalent to `data[name] = v`; `change` events are emitted by the Observer.
+- The conversion between the device byte order and the internal big-endian is done per layout item in `endian.js` (`load_entry` / `store_entry` / `io_index` / `io_range`), changing only `buffer` or `IO_buffer`, without detecting changes:
   - 2 bytes: `BE` copies as is; `LE` / `little` / `BEBS` swap the two bytes;
   - 4 bytes: the four orders `BE`, `LE` / `little`, `BEBS`, `LEBS` are supported;
-  - Bool and the single-byte types (Byte, SInt, USInt) read and write only one byte, without conversion within the byte; their index in the IO buffer is computed per 16-bit register: `byte_offset ^ 1` for `LE` / `little` / `BEBS`, `byte_offset` for `BE` / `LEBS`. A Bool changes only its own bit by `bit_mask`.
+  - Bool and the single-byte types (Byte, SInt, USInt) read and write only one byte, without conversion within the byte; their index in the IO buffer is computed per 16-bit register: `byte ^ 1` for `LE` / `little` / `BEBS`, `byte` for `BE` / `LEBS`. A Bool changes only its own bit by its bit mask.
 
 ### 3.4 TGroup
 
@@ -129,11 +135,11 @@ Main layouts (byte offsets):
 - The overlap rules of the layout are guaranteed by the layout validation (3.1), and TGroup no longer checks overlaps. When a tag is added:
   - adding the same tag again is ignored;
   - a tag whose byte range exceeds the IO exchange area is an error, and the program exits;
-  - the byte range the tag actually occupies in the IO buffer (with the indexes of Bool and single-byte types computed as in 3.3) is extended outward to a whole multiple of the driver write unit `driver.write_unit`, then merged into the write ranges (`#areas`); it is merged with existing ranges it intersects or adjoins, possibly several at once.
-- The `start`, `remote_start` and `length` of the IO exchange area must be whole multiples of the write unit; `set_IO` checks this and otherwise reports an error and exits, so that the extended write ranges never leave the exchange area and the local write units align with the remote write units.
-- `read()`: first `IO_read_all`, then each tag of the group calls `read_from` and runs `check_coupling`, which triggers the change events and refreshes combined words and their bits.
-- `write()`: each tag of the group first calls `write_to` into `IO_buffer`, then `IO_write` is called for each merged range, passing the length of the range to the driver as well. Bytes within a range that belong to no tag of the group take the values last read into `IO_buffer`; by the write ownership rule these bytes are also written by the controller, so the data of the actuator is not overwritten.
-- `copy_from(tdata)`: copies the values of the tags of the same name from another TData and runs `check_coupling`, used to synchronize the parameter block between data and command.
+  - the byte range the tag actually occupies in the IO buffer (`io_range`, with the indexes of Bool and single-byte types computed as in 3.3) is extended outward to a whole multiple of the driver write unit `driver.write_unit`, then merged into the write ranges (`#areas`); it is merged with existing ranges it intersects or adjoins, possibly several at once.
+- The `start`, `remote_start` and `length` of the IO exchange area must be whole multiples of the write unit; `set_IO` checks this and otherwise throws, so that the extended write ranges never leave the exchange area and the local write units align with the remote write units.
+- `read()`: first `IO_read_all`, then loads each tag of the group from `IO_buffer` into `buffer` (`load_entry`), and runs one comparison after all are loaded, so event handlers see the data after the whole group has been loaded.
+- `write()`: each tag of the group is first exported into `IO_buffer` (`store_entry`), then `IO_write` is called for each merged range, passing the length of the range to the driver as well. Bytes within a range that belong to no tag of the group take the values last read into `IO_buffer`; by the write ownership rule these bytes are also written by the controller, so the data of the actuator is not overwritten.
+- `copy_from(tdata)`: copies the values of the tags of the same name from another TData and runs one comparison after all are copied, used to synchronize the parameter block between data and command.
 
 ## 4. Drivers
 
@@ -176,7 +182,7 @@ Main layouts (byte offsets):
 - `Unit_Map.attach_unit(unit_id, tdata, start)` mounts a TData on the byte range `[start, start + size)` of a unit; a unit can hold several TData.
   - Actuator unit: data at byte 0, command at byte 400 (i.e. from register 200).
 - Register `addr` corresponds to byte `addr * 2`, read and written big-endian in `tdata.buffer`; coil `addr` corresponds to bit `addr % 8` of byte `addr >> 3`.
-- After every write, `tdata.check_all_tags()` is called, which turns the write of the HMI into tag change events.
+- After every write, `tdata.detect()` is called, and the Observer finds the changes caused by the HMI write and emits the events.
 - The vector method names are the snake_case names required by es-modbus: `get_holding_register`, `get_input_register`, `set_register`, `get_coil` (used for both FC 1 and FC 2), `set_coil`.
 - Unmapped addresses (e.g. the gap between the node data area and the command block in an actuator unit) read as 0 / false and writes to them are ignored, so a block read of the HMI across the gap still succeeds. A warning is logged only once per (type, unit, address), to avoid flooding the log while polling.
 - Requests are validated by es-modbus first: an unregistered unit id is answered with exception 0x0B, an illegal function code, quantity or address out of range with 0x01 / 0x03 / 0x02; when the vector throws, 0x04 is answered and the `vector_error` event logs it.

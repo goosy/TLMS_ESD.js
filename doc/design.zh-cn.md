@@ -99,27 +99,33 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 
 ### 3.2 TData
 
+- `name` 可写；`layout`、`size`、`buffer`、`IO_buffer` 只读（只有 getter，赋值抛出 `TypeError`），`buffer` 的内容可以读写。
 - 对外暴露两个缓冲区：
   - `buffer`：内部值缓冲区，统一按大端（BE）存放，Modbus 服务端直接按大端读写它；
   - `IO_buffer`：与驱动交换数据用的缓冲区，按设备字节序存放。
 - `new TData(struct, name)` 返回该结构编译出的子类 `Data_Class` 的实例；每个 tag 的访问器只在 `Data_Class.prototype` 上定义一次，同一结构的实例共用：
   - getter 用编解码表直接从 `buffer` 解码；
-  - setter 用编解码表写入 `buffer`，再调用 `after_write`：执行该 tag 的 `check_change` 和 `check_coupling`，让组合字与它的各个位相互刷新。
-- 每个条目另生成一个 `TTag`，缓存当前值，用于变化检测和事件。
-- 任一 tag 发生变化时，TData 发出 `change(tagname, old, new)`；tag 自身也发出 `change(old, new)`。业务逻辑通过 `data.get(name).on('change', ...)` 订阅。
-- 外部直接改写 `buffer`（服务端写入）后，调用 `check_all_tags()` 逐个比较缓存值与缓冲区内容，补发变化事件。
+  - setter 用编解码表写入 `buffer`，再调用 `after_write`：立即检测模式下由 Observer 立即检测变化；然后在两种模式下都调用创建时传入的 `on_write(tdata)`。
+- `new TData(struct, name, { detection, on_write })`：`detection` 为 `"immediate"`（默认）或 `"deferred"`（spec-data-api.md 4.2 节）。控制器全部使用立即模式（design-scan.md 3.3 节）。
+- 组合字与它的组成位共用同一块字节，写任何一方，另一方读到的自然是新值，不需要额外联动。
+- 变化检测由每个 TData 的 Observer（`observer.js`）负责：它持有 `buffer` 的快照，比对时只对变化的字节解码相关 tag（字节反查表 `tags_at_byte`），旧值从快照解码，不缓存任何值；比对后更新快照，再按布局顺序报告变化。
+  - 每个变化先由 TData 发出 `change(tagname, old, new)`，再由该 tag 的句柄发出 `change(old, new)`；事件总在新值生效之后发出。业务逻辑通过 `data.get(name).on('change', ...)` 订阅。
+  - 事件处理器中再写 tag 时，嵌套的比对只登记，等当前这一轮变化报告完再比对一轮；连续 16 轮仍有新变化时抛出异常，防止振荡。
+  - `detect()` 做一次比对；外部直接改写 `buffer`（服务端写入、分组装载）后由写入方调用，延迟模式下由使用方在需要时调用。
+  - `observer.previous(name)` / `take_scan_snapshot()` 为后续的扫描周期预留（design-scan.md 5.3 节）。
+- TData 出错时抛出异常（布局冲突、IO 区未按写入单元对齐、访问 IO 交换区以外的范围），不写日志、不退出。
 - `set_IO(driver, {remote_start, start, length, endian}, ...extras)` 绑定驱动：
   - 本地 `IO_buffer[start .. start+length)` 对应远端 `remote_start` 起的同长度区域；
   - `extras` 原样传给驱动：Modbus 为 `unit_id`，S7 为 `area, db`；
   - 生成 `IO_read_all`（整段读入 `IO_buffer`）、`IO_write`（按区间写出）以及 `create_tag_group`。
 
-### 3.3 TTag
+### 3.3 TTag 与字节序转换
 
-- 每个 tag 按类型从编解码表（`codecs.js`）取得读写方法，直接读写 TData 的 `buffer`，并缓存当前值 `value`。`check_change` 比较缓存值与缓冲区中的值，不同时更新缓存并发出事件，事件总在新值生效之后发出。
-- `read_from(IO_buffer, endian)` / `write_to(IO_buffer, endian)` 负责在设备字节序与内部大端之间转换：
+- `data.get(name)` 返回该 tag 的 `TTag`，首次访问时创建并缓存，名称不存在时返回 `undefined`。TTag 不持有值：读 `value` 从 TData 的 `buffer` 解码，写 `value` 与 `data[name] = v` 完全等价；`change` 事件由 Observer 发出。
+- 设备字节序与内部大端之间的转换在 `endian.js` 中按布局条目进行（`load_entry` / `store_entry` / `io_index` / `io_range`），只改 `buffer` 或 `IO_buffer`，不检测变化：
   - 2 字节：`BE` 原样复制；`LE` / `little` / `BEBS` 交换两个字节；
   - 4 字节：支持 `BE`、`LE` / `little`、`BEBS`、`LEBS` 四种排列；
-  - Bool 和单字节类型（Byte、SInt、USInt）只读写一个字节，不做字节内转换；它在 IO 缓冲区中的下标按 16 位寄存器换算：`LE` / `little` / `BEBS` 时为 `byte_offset ^ 1`，`BE` / `LEBS` 时为 `byte_offset`。Bool 按 `bit_mask` 只改自己的位。
+  - Bool 和单字节类型（Byte、SInt、USInt）只读写一个字节，不做字节内转换；它在 IO 缓冲区中的下标按 16 位寄存器换算：`LE` / `little` / `BEBS` 时为 `byte ^ 1`，`BE` / `LEBS` 时为 `byte`。Bool 按位掩码只改自己的位。
 
 ### 3.4 TGroup
 
@@ -127,11 +133,11 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 - 布局的重叠规则已由布局校验保证（3.1 节），TGroup 不再判断重叠。添加 tag 时：
   - 同一 tag 重复添加时忽略；
   - tag 的字节范围超出 IO 交换区时报错退出；
-  - tag 在 IO 缓冲区中实际占用的字节范围（Bool 和单字节类型按 3.3 节换算下标）向外扩展到驱动写入单元 `driver.write_unit` 的整数倍，再并入写区间（`#areas`）；与已有区间相交或相邻时合并，可能一次合并多个区间。
-- IO 交换区的 `start`、`remote_start` 和 `length` 必须是写入单元的整数倍，`set_IO` 时检查，否则报错退出，保证扩展后的写区间不越出交换区，且本地写入单元与远端写入单元对齐。
-- `read()`：先 `IO_read_all`，再让组内每个 tag `read_from` 并执行 `check_coupling`，从而触发变化事件并刷新组合字与各位。
-- `write()`：组内每个 tag 先 `write_to` 到 `IO_buffer`，再按合并后的区间逐段调用 `IO_write`，并把区间长度一并传给驱动。区间内不属于组内 tag 的字节取 `IO_buffer` 中最近一次读入的值；按写入所有权规则，这些字节也由控制器写入，不会覆盖执行器的数据。
-- `copy_from(tdata)`：按同名 tag 从另一个 TData 复制值并执行 `check_coupling`，用于在 data 与 command 之间同步参数块。
+  - tag 在 IO 缓冲区中实际占用的字节范围（`io_range`，Bool 和单字节类型按 3.3 节换算下标）向外扩展到驱动写入单元 `driver.write_unit` 的整数倍，再并入写区间（`#areas`）；与已有区间相交或相邻时合并，可能一次合并多个区间。
+- IO 交换区的 `start`、`remote_start` 和 `length` 必须是写入单元的整数倍，`set_IO` 时检查，否则抛出异常，保证扩展后的写区间不越出交换区，且本地写入单元与远端写入单元对齐。
+- `read()`：先 `IO_read_all`，再把组内每个 tag 从 `IO_buffer` 装载到 `buffer`（`load_entry`），全部装载完后做一次比对，所以事件处理器看到的是整组装载后的数据。
+- `write()`：组内每个 tag 先导出到 `IO_buffer`（`store_entry`），再按合并后的区间逐段调用 `IO_write`，并把区间长度一并传给驱动。区间内不属于组内 tag 的字节取 `IO_buffer` 中最近一次读入的值；按写入所有权规则，这些字节也由控制器写入，不会覆盖执行器的数据。
+- `copy_from(tdata)`：按同名 tag 从另一个 TData 复制值，全部复制完后做一次比对，用于在 data 与 command 之间同步参数块。
 
 ## 4. 驱动
 
@@ -174,7 +180,7 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 - `Unit_Map.attach_unit(unit_id, tdata, start)` 把 TData 挂到某个单元的字节区间 `[start, start + size)`，一个单元可以挂多个 TData。
   - 执行器单元：data 挂在字节 0，command 挂在字节 400（即寄存器 200 起）。
 - 寄存器 `addr` 对应字节 `addr * 2`，按大端读写 `tdata.buffer`；线圈 `addr` 对应字节 `addr >> 3` 的第 `addr % 8` 位。
-- 每次写入后调用 `tdata.check_all_tags()`，把 HMI 的写操作转换为 tag 变化事件。
+- 每次写入后调用 `tdata.detect()`，由 Observer 比对出 HMI 写入引起的变化并发出事件。
 - vector 方法名为 es-modbus 要求的 snake_case：`get_holding_register`、`get_input_register`、`set_register`、`get_coil`（同时用于 FC 1 和 FC 2）、`set_coil`。
 - 未映射的地址（例如执行器单元中节点数据区与命令块之间的空档）读为 0 / false，写入被忽略，因此 HMI 跨越空档的整块读取仍能成功。每个（类型、单元、地址）只记录一次警告，避免轮询时刷屏。
 - 请求由 es-modbus 先行校验：未登记的单元号应答异常 0x0B，非法功能码、数量或地址越界应答 0x01 / 0x03 / 0x02；vector 抛出异常时应答 0x04，并通过 `vector_error` 事件记录日志。

@@ -35,12 +35,20 @@ export function layout_of(data_struct) {
 		const { name, offset, init_value } = item;
 		const type = item.type.toLowerCase();
 		const codec = CODECS[type];
-		if (!codec) throw new Error(`${data_struct.name}.${name}: unknown tag type ${item.type}`);
-		if (entries.has(name)) throw new Error(`${data_struct.name}.${name}: duplicated tag name`);
-		if (is_reserved_name(name)) throw new Error(`${data_struct.name}.${name}: tag name collides with a TData member`);
+		const fail = (message) => {
+			throw new Error(`${data_struct.name}.${name}: ${message}`);
+		};
+		if (!codec) fail(`unknown tag type ${item.type}`);
+		if (entries.has(name)) fail("duplicated tag name");
+		if (is_reserved_name(name)) fail("tag name collides with a TData member");
+		// defensive checks of what a TData relies on; validate_structure reports them all
+		if (type !== "bool" && offset % 8 !== 0) fail(`bit offset ${offset % 8} on a ${item.type}`);
+		if (codec.size > 1 && (offset >> 3) % 2 !== 0) fail(`${item.type} at the odd byte ${offset >> 3}`);
+		if (!["number", "boolean"].includes(typeof init_value)) fail(`init_value ${init_value} is not a number or boolean`);
 		const byte = offset >> 3;
 		const entry = {
 			name, type, init_value, byte,
+			index: entries.size,
 			size: codec.size,
 			mask: type === "bool" ? 1 << (offset % 8) : 0xff,
 			codec,
