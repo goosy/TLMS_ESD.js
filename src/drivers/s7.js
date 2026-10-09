@@ -26,7 +26,8 @@ export class S7Client extends S7Endpoint {
 	 * @return {void}
 	 */
 	constructor(config, options) {
-		config.autoReconnect = 5000; // the time to wait before trying to connect to the PLC again, in ms.If set to 0, disables the functionality
+		// the time to wait before trying to connect to the PLC again, in ms; 0 disables it
+		config.autoReconnect = options?.reconnect_time ?? 5000;
 		config.host ??= "localhost";
 		config.port ??= 102;
 		config.rack ??= 0;
@@ -35,8 +36,8 @@ export class S7Client extends S7Endpoint {
 
 		const period_time = options?.period_time;
 		if (period_time) this.period_time = period_time;
-		const reconnect_time = options?.reconnect_time;
-		if (reconnect_time) this.reconnect_time = reconnect_time;
+		const connfailed_time = options?.connfailed_time;
+		if (connfailed_time) this.connfailed_time = connfailed_time;
 		this.conn_str = `s7://${config.host}:${config.port} rack${config.rack} slot${config.slot}`;
 		this.on("error", this.on_error);
 		this.on("disconnect", this.on_error);
@@ -68,7 +69,7 @@ export class S7Client extends S7Endpoint {
 	get is_connected() { return super.isConnected; }
 	on_error(error) {
 		if (!this.connfailed) {
-			this.emit("connfailed", error ?? "unknown error");
+			this.emit("connfailed", error?.message ?? error ?? "unknown error");
 		}
 		this.connfailed = true;
 	};
@@ -86,8 +87,8 @@ export class S7Client extends S7Endpoint {
 	 */
 	read(range, area, db_no) {
 		const { start, length } = range;
-		const resolve = this.emit_data_ok.bind(this);
-		const reject = this.emit_data_error.bind(this);
+		const resolve = this.emit_io_ok.bind(this);
+		const reject = this.emit_io_error.bind(this);
 		return this.readArea(
 			area_map[area],
 			start, length,
@@ -106,11 +107,11 @@ export class S7Client extends S7Endpoint {
 	 */
 	write(buffer, range, area, db_no) {
 		const resolve = () => {
-			this.emit_data_ok();
+			this.emit_io_ok();
 			return true;
 		};
 		const reject = (e) => {
-			this.emit_data_error(e);
+			this.emit_io_error(e);
 			return false;
 		};
 		return this.writeArea(

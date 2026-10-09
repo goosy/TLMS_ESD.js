@@ -40,7 +40,7 @@
 6. `run_controller`：
    1. 初始化动作记录，挂到 `unit_id.action_records`；
    2. 按 线 → 段 → 执行器 的顺序创建 TData 并 `attach_unit`，再调用各自的 `*_init`；
-   3. 启动 Modbus TCP 服务端；
+   3. 启动 Modbus TCP 服务端并等待其就绪；启动失败（如端口被占用）时记录错误并以退出码 1 退出，由 pm2 重启；
    4. 用 `setInterval(MAIN_PERIOD = 500)` 执行全部段的 `section_loop` 和全部执行器的 `node_loop`（`line_loop` 为空，未调用）。
 
 ## 3. 带类型数据层
@@ -131,9 +131,11 @@
 - 以 `Object.mixin(this, new Base_Driver())` 的方式混入：只补充子类缺少的属性，判断时包含原型链，因此既不覆盖子类自己定义的 `start_tick` 等，也不遮蔽从驱动库继承的 `connect` / `disconnect`。
 - `stop()` 停止定时器并调用库的 `disconnect()`（两个库在显式断开后都不再自动重连）；之后再 `start()` 时先调用 `connect()` 重新连接。
 - `start()` 每 `period_time`（1000 ms）执行一次 `start_tick`，已连接时发出 `tick`。
-- `emit_data_ok` / `emit_data_error` 包装每次读写的结果：
-  - 首次出错时发出 `data_error`；
-  - 若 `reconnect_time`（5000 ms）内一直没有成功的读写，就调用 `on_error`，进而发出 `connfailed`。
+- `emit_io_ok` / `emit_io_error` 包装每次读写的结果：
+  - 首次出错时发出 `io_error`，出错后首次成功时发出 `io_ok`（不用 es-modbus 自带的逐事务 `data_error` 事件名，避免与之混淆）；
+  - 若 `connfailed_time`（5000 ms）内一直没有成功的读写，就调用 `on_error`，进而发出 `connfailed`；
+  - `connfailed` 和 `io_error` 的参数是错误消息字符串（库给出 `Error` 时取其 `message`）。
+- `reconnect_time` 只表示重连间隔，`connfailed_time` 只表示上面的升级时长，两者分开配置。驱动构造时的第二个参数 `options` 可传入 `period_time`、`reconnect_time`、`connfailed_time`（Modbus 另有 `reconnect_max`）；控制器不传，用默认值。
 - 驱动实例按连接参数复用：
   - Modbus 按 `host:port`；
   - S7 按 `host:port rack slot`；
@@ -141,16 +143,20 @@
 
 ### 4.2 MTClient（es-modbus）
 
-- 地址换算：配置和 TData 中的区域都以字节计，字节起点 `start` 对应保持寄存器 `40000 + (start >> 1) + 1`，长度为 `length >> 1` 个寄存器。
-- 只访问保持寄存器：es-modbus 按 `4xxxx` 前缀选用功能码 03 读、06（单个寄存器）/ 16（多个寄存器）写。不使用线圈、离散输入和输入寄存器。
+- 地址换算：配置和 TData 中的区域都以字节计，字节起点 `start` 对应保持寄存器 PDU 地址 `start >> 1`（0 基），长度为 `length >> 1` 个寄存器；以 es-modbus 的结构化范围 `[func_code, pdu_addr, length]` 传入，不使用 Modicon 写法。
+- es-modbus 对非法参数（范围、数量上限、unit_id）同步抛出；`read` / `write` 捕获后记录错误日志，并按读写失败处理（`emit_io_error`）。
+- 只访问保持寄存器：功能码由 MTClient 显式给出，03 读，06（单个寄存器）/ 16（多个寄存器）写。不使用线圈、离散输入和输入寄存器。
 - `write_unit = 2`：写入单元为一个寄存器。
-- 断线重连使用 es-modbus 自带的机制，`start_tick` 被重写为只发出 `tick`。
+- 写入的回显检查：es-modbus 的 `write()` 以“响应是否回显了请求”兑现。回显不符视为写入未确认：记录警告，按读写失败处理（`emit_io_error`），`write` 返回 `false`。
+- 断线重连使用 es-modbus 自带的机制，`start_tick` 被重写为只发出 `tick`：
+  - 重连间隔从 `reconnect_time`（5000 ms）开始，每次失败加倍，最长 `reconnect_max`（20000 ms），连接稳定后回到初值；
+  - 连续 3 次请求超时（es-modbus 的 `max_timeouts` 默认值）视为死链，关闭连接并照常重连；连接断开时所有挂起的请求以 `connection lost` 失败。
 
 ### 4.3 S7Client（@st-one-io/nodes7）
 
 - 通过 `readArea` / `writeArea` 读写 `DB` 或 `M` 区，起点与长度都以字节为单位。
 - `write_unit = 1`：写入单元为一个字节。
-- 由于 `S7Endpoint.connect()` 不完善，暂时使用库自带的 `autoReconnect = 5000`，`start_tick` 同样被重写（代码中已标记为临时代码）。
+- 由于 `S7Endpoint.connect()` 不完善，暂时使用库自带的自动重连（`autoReconnect`，取 `reconnect_time`，默认 5000 ms，间隔固定），`start_tick` 同样被重写（代码中已标记为临时代码）。
 
 ### 4.4 对上服务端（createMTServer + Unit_Map）
 
@@ -158,7 +164,9 @@
   - 执行器单元：data 挂在字节 0，command 挂在字节 400（即寄存器 200 起）。
 - 寄存器 `addr` 对应字节 `addr * 2`，按大端读写 `tdata.buffer`；线圈 `addr` 对应字节 `addr >> 3` 的第 `addr % 8` 位。
 - 每次写入后调用 `tdata.check_all_tags()`，把 HMI 的写操作转换为 tag 变化事件。
-- 访问未映射的地址时记录错误日志，读操作返回 0 或 false。
+- vector 方法名为 es-modbus 要求的 snake_case：`get_holding_register`、`get_input_register`、`set_register`、`get_coil`（同时用于 FC 1 和 FC 2）、`set_coil`。
+- 未映射的地址（例如执行器单元中节点数据块与命令块之间的空档）读为 0 / false，写入被忽略，因此 HMI 跨越空档的整块读取仍能成功。每个（类型、单元、地址）只记录一次警告，避免轮询时刷屏。
+- 请求由 es-modbus 先行校验：未登记的单元号应答异常 0x0B，非法功能码、数量或地址越界应答 0x01 / 0x03 / 0x02；vector 抛出异常时应答 0x04，并通过 `vector_error` 事件记录日志。
 
 ## 5. 执行器处理（`node_proc.js`）
 
@@ -185,7 +193,7 @@
 - 驱动事件：
   - `connfailed`：延时 `delay_protect_time` 后置 `comm_OK = false`；
   - `connect`：置 `comm_OK = true`，2 s 后执行 `reset_parameters`（command 参数块 ← data）；
-  - `data_error`：延时后置 `work_OK = false`。
+  - `io_error`：延时后置 `work_OK = false`。
 - `response_code` 变化（应答握手）：
   1. `commands &= ~response_code`，清除已应答的命令位；
   2. `executing = false`；
