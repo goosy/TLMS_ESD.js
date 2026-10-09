@@ -61,10 +61,13 @@ export function node_init(actuator) {
 	}
 
 	data.ID = ID;
+	// new device data or a state change requests a scan, which loads the data
+	const on_update = () => actuator.scheduler?.request_scan();
 	const data_binding = new Binding(data, data_driver, {
 		remote_start: driver_info.data.start,
 		start: 0, length: data.size,
 		endian,
+		on_update,
 	}, ...data_extras);
 	actuator.data_binding = data_binding;
 
@@ -196,9 +199,8 @@ let no_response_count = 0;
 
 export function node_loop(actuator) {
 	const { command, data_driver } = actuator;
+	// the node data are read by the scan: started on periodic ticks, loaded when they arrive
 	if (data_driver.is_connected) {
-		// read a node data.
-		actuator.data_payload.read();
 		// @TODO check the correctness of the ID
 		// @TODO interim command masking for all actuators: keep only bits
 		// 0, 4, 5, 7 (stop_pumps, enable_pressure_SD, disable_pressure_SD,

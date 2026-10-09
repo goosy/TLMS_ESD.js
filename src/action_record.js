@@ -36,10 +36,14 @@ export class Action_Record {
 	data;
 	name;
 	file;
-	constructor(name) {
+	/**
+	 * @param {string} name - The name of the record, and of its CSV file.
+	 * @param {Object} [data_options] - Options of the record data block (detection, on_write).
+	 */
+	constructor(name, data_options) {
 		this.name = name;
 		this.file = `${name}.csv`;
-		this.data = new TData(RECORD, name);
+		this.data = new TData(RECORD, name, data_options);
 	}
 
 	get(index) {
