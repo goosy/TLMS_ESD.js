@@ -9,13 +9,14 @@
 | Path | Responsibility |
 | --- | --- |
 | `src/cli.js` | The `tlms` command line: parses arguments, calls pm2 or directly `import('./main.js')`. |
-| `src/main.js` | Process entry: reads the configuration, builds the controller, creates the TData and mounts them on the Modbus server, starts the main loop. |
+| `src/main.js` | Process entry: validates the layouts, reads the configuration, builds the controller, provides the real drivers reused per connection, starts the Modbus server and the main loop. |
+| `src/runtime.js` | `build_runtime`: creates the TData of the controller, mounts them on `Unit_Map`, calls each `*_init`, and provides one iteration of the main loop `cycle` and `start` / `stop`. The drivers are provided by the caller through `get_drivers(driver_info)`, which lets tests inject fake drivers. |
 | `src/gcl.js` | YAML loader (`yaml` library, YAML 1.1), keeping source line information. |
 | `src/config.js` | Merges several configuration documents, fills in defaults, builds the name and ID indexes. |
 | `src/init.js` | `prepare_controller`: builds the runtime object graph for the selected controller. |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | Initialization (event binding) and periodic processing of actuators (nodes), sections and lines. |
 | `src/action_record.js` | Action records: CSV reading and writing, and browsing by index. |
-| `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, and `createMTServer` / `Unit_Map` (upward server). |
+| `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, and `createMTServer` / `create_vector` / `Unit_Map` (upward server). |
 | `src/typed_data/` | `TData` / `TTag` / `TGroup`: typed buffers and change events. |
 | `src/structs/` | Memory layout definitions of LINE, SECTION, NODE, COMMAND, RECORD. |
 | `src/util.js` | log4js logging, `debouncify` / `debounce`, `Object.mixin`. |
@@ -40,10 +41,10 @@
    3. the `driver_info` of an actuator carries the protocol, the address and the data / command areas;
    4. actuators are also put into `section.begin_nodes` / `end_nodes` / `pump_nodes` by begin, end and pump station.
 6. `run_controller`:
-   1. initializes the action record and mounts it on `unit_id.action_records`;
-   2. creates the TData in the order line -> section -> actuator, calls `attach_unit`, then each `*_init`;
+   1. initializes the action record;
+   2. calls `build_runtime` (`runtime.js`): mounts the action record on `unit_id.action_records`, creates the TData in the order line -> section -> actuator, calls `attach_unit`, then each `*_init`; the drivers of the actuators are provided by `get_drivers` of `main.js`, reused per connection;
    3. starts the Modbus TCP server and waits until it is ready; when it fails to start (e.g. the port is in use), logs an error and exits with exit code 1, to be restarted by pm2;
-   4. runs `section_loop` of all sections and `node_loop` of all actuators with `setInterval(MAIN_PERIOD = 500)` (`line_loop` is empty and not called).
+   4. `runtime.start()` runs `section_loop` of all sections and `node_loop` of all actuators with `setInterval(MAIN_PERIOD = 500)` (`line_loop` is empty and not called).
 
 ## 3. Typed data layer
 
@@ -161,6 +162,8 @@ Main layouts (byte offsets):
 - Because `S7Endpoint.connect()` is incomplete, the library's own automatic reconnection is used for now (`autoReconnect`, taking `reconnect_time`, default 5000 ms, at a fixed interval), and `start_tick` is overridden too (marked as temporary code in the source).
 
 ### 4.4 Upward server (createMTServer + Unit_Map)
+
+- `create_vector(unit_map)` creates the vector serving `Unit_Map`, and `createMTServer` uses it to create the es-modbus server; tests call the vector directly to simulate HMI requests.
 
 - `Unit_Map.attach_unit(unit_id, tdata, start)` mounts a TData on the byte range `[start, start + size)` of a unit; a unit can hold several TData.
   - Actuator unit: data at byte 0, command at byte 400 (i.e. from register 200).
@@ -342,7 +345,7 @@ Requirements of the spec that the current code does not implement yet:
 | --- | --- | --- | --- |
 | Command masking by actuator configuration | Each actuator lists its supported commands with `supported_commands` in the configuration; the controller sends only supported commands and resets the other command bits directly (spec 5.1); for the implementation see 12.1 | The configuration has no such field; `node_loop` runs `command.commands &= 0xB1` for all actuators alike, keeping only bits 0, 4, 5, 7 (`stop_pumps`, `enable_pressure_SD`, `disable_pressure_SD`, `write_paras`), so `cancel_stop` is reset too | Actuator parsing in `config.js`; `node_loop` in `node_proc.js` |
 | ID uniqueness check | The IDs of lines, sections and actuators are all distinct (across types); several tdata of the same object share its ID (spec 4.1) | `config.js` only checks that an actuator `id` is a non-zero number; lines, sections and actuators are each indexed by `ID<id>`, and neither duplicates nor equal IDs across types are reported; a duplicate of the same type silently overwrites the earlier one | `add_conf` in `config.js` |
-| ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec 4.1, 5.5) | `run_controller` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `run_controller` in `main.js` |
+| ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec 4.1, 5.5) | `build_runtime` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `build_runtime` in `runtime.js` |
 | Configuration check command | `tlms check` reads and validates the configuration and all layouts (`validate_structure` of 3.1), reports all errors, and does not start the controller (spec 3.6, 5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly; the layout validation already runs at startup (`main.js`) but is not yet wired into the command line | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
 | Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec 5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | `add_action_record` in `section_proc.js` |
 

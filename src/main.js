@@ -1,9 +1,5 @@
 import { prepare_controller } from "./init.js";
-import { read_config, MAIN_PERIOD } from "./config.js";
-import { line_init } from "./line_proc.js";
-import { section_loop, section_init } from "./section_proc.js";
-import { node_loop, node_init } from "./node_proc.js";
-import { TData } from "./typed_data/TData.js";
+import { read_config } from "./config.js";
 import { LINE } from "./structs/line.js";
 import { SECTION } from "./structs/section.js";
 import { NODE } from "./structs/node.js";
@@ -11,14 +7,11 @@ import { COMMAND } from "./structs/command.js";
 import { RECORD } from "./structs/record.js";
 import { validate_structure } from "./structs/share.js";
 import { Action_Record } from "./action_record.js";
-import { MTClient, Unit_Map, createMTServer } from "./drivers/modbusTCP.js";
+import { MTClient, createMTServer } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
+import { build_runtime } from "./runtime.js";
 import { logger } from "./util.js";
 
-// for run controller
-const running_lines = [];
-const running_sections = [];
-const running_nodes = [];
 const modbusTCP_clients = {};
 const S7_clients = {};
 
@@ -40,82 +33,36 @@ function get_s7_client(host, port, rack, slot) {
 }
 
 /**
- * Adds a node to the system and sets up its data and command drivers.
+ * Returns the actuator-side drivers of a node, shared by connection.
  *
- * @param {Object} node - The node object to be added.
- * @param {Unit_Map} unit_map - The unit map object to attach the node's data and command.
- * @return {void} This function does not return anything.
+ * @param {Object} driver_info - The driver information of the node.
+ * @return {{data_driver: Object, command_driver: Object}}
  */
-function add_node(node, unit_map) {
-	const driver_info = node.driver_info;
-	let data_driver = null;
-	let command_driver = null;
-	// for actuator side
+function get_drivers(driver_info) {
 	if (driver_info.protocol === "modbusTCP") {
-		data_driver = get_modbusTCP_client(driver_info.IP, driver_info.data.port);
-		command_driver = get_modbusTCP_client(driver_info.IP, driver_info.commands.port);
-	} else if (driver_info.protocol === "S7") {
-		const { port, host, rack, slot } = driver_info;
-		data_driver = command_driver = get_s7_client(host, port, rack, slot);
+		return {
+			data_driver: get_modbusTCP_client(driver_info.IP, driver_info.data.port),
+			command_driver: get_modbusTCP_client(driver_info.IP, driver_info.commands.port),
+		};
 	}
-	node.data_driver = data_driver;
-	node.command_driver = command_driver;
-
-	// for controller side, do not use `node.driver_info.unit_id;`
-	const name = node.name;
-	const s_unit_id = node.section.line.controller.modbus_server.unit_id[name];
-	const data = new TData(NODE, name);
-	node.data = data;
-	unit_map.attach_unit(s_unit_id, data, 0);
-	const command = new TData(COMMAND, name);
-	node.command = command;
-	unit_map.attach_unit(s_unit_id, command, 400);
-
-	node_init(node);
-	running_nodes.push(node);
+	if (driver_info.protocol === "S7") {
+		const { port, host, rack, slot } = driver_info;
+		const driver = get_s7_client(host, port, rack, slot);
+		return { data_driver: driver, command_driver: driver };
+	}
+	return { data_driver: null, command_driver: null };
 }
 
 async function run_controller(controller) {
-	const unit_id_map = controller.modbus_server.unit_id;
-	const unit_map = new Unit_Map();
-
-	// action records
 	const action_record = new Action_Record("action_records");
 	action_record.records_size = controller.records_size ?? 10;
 	action_record.init();
-	controller.action_record = action_record;
-	unit_map.attach_unit(
-		unit_id_map.action_records,
-		action_record.data,
-		0,
-	);
 
-	for (const line of controller.lines) { // lines
-		const name = line.name;
-		const data = new TData(LINE, name);
-		line.data = data;
-		unit_map.attach_unit(unit_id_map[name], data, 0);
-		line_init(line);
-		running_lines.push(line);
-		for (const section of line.sections) { // sections
-			const name = section.name;
-			const data = new TData(SECTION, name);
-			section.data = data;
-			unit_map.attach_unit(unit_id_map[name], data, 0);
-			for (const node of section.begin_nodes) {
-				add_node(node, unit_map);
-			}
-			for (const node of section.end_nodes) {
-				add_node(node, unit_map);
-			}
-			section_init(section);
-			running_sections.push(section);
-		}
-	}
+	const runtime = build_runtime(controller, { get_drivers, action_record });
 
 	// start modbus TCP server
 	// without its upward server the controller is useless: exit and let pm2 restart it
-	const server = createMTServer("0.0.0.0", controller.modbus_server.port, unit_map);
+	const server = createMTServer("0.0.0.0", controller.modbus_server.port, runtime.unit_map);
 	try {
 		await server.start();
 	} catch (e) {
@@ -123,12 +70,7 @@ async function run_controller(controller) {
 		process.exit(1);
 	}
 
-	// main loop
-	setInterval(() => {
-		// for (const line of running_lines) line_loop(line);
-		for (const section of running_sections) section_loop(section);
-		for (const node of running_nodes) node_loop(node);
-	}, MAIN_PERIOD);
+	runtime.start();
 }
 
 process.on("uncaughtException", (error) => {
