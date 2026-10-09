@@ -13,6 +13,7 @@
   - line, section and action record units: the data block starts at register 0;
   - actuator units: the node data block starts at register 0, the command block at register 200.
 - Holding registers and input registers have the same content; registers are readable and writable, and the controller processes a write as a change immediately.
+- Addresses of a unit without a data block read as 0 and writes to them are ignored, without an exception response (e.g. registers 73-199 of an actuator unit); a nonexistent unit id is answered with exception code 0x0B.
 - Multi-register values (`Real`, `DInt`, `UDInt`) are big-endian, the high word at the lower address (ABCD order).
 - Bit addresses are written `register.bit`, bit 0 being the lowest bit of the register. E.g. `1.0` is the lowest bit of register 1.
 - Coils: each Bool can also be accessed as a coil, coil address = byte offset x 8 + bit. The tables give the coil addresses within the data block; the command block as a whole starts at register 200, so 3200 must be added to access its coils.

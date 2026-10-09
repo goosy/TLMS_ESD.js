@@ -275,6 +275,8 @@ TTags are the interface:
 - Each line, each section, each actuator and the action record take one unit id each: the unit id of a line, section or actuator is its ID (see 4.1), and the action record is fixed at unit id 0.
 - In an actuator unit, the node data block starts at register 0 and the command block at register 200.
 - Reading and writing holding registers, reading input registers, and reading and writing coils are supported. A write from the HMI triggers the processing of the resulting state changes immediately.
+- Addresses of a unit without a data block (e.g. the gap between the node data block and the command block in an actuator unit) read as 0 and writes to them are ignored, without an exception response, so a block read across the gap still succeeds.
+- When the upward service cannot start (e.g. the port is in use), the controller logs an error and exits, to be restarted by the background process management; it does not keep running without the upward service.
 - The register layouts of the data blocks are defined by `src/structs/` and must stay consistent with the HMI and the actuator programs. The complete point table is in [spec-modbus.md](spec-modbus.md).
 
 ### 5.6 Running and operation
@@ -298,7 +300,8 @@ TTags are the interface:
 ## 6. Performance and timing
 
 - Main loop period 500 ms (`MAIN_PERIOD`); the flow difference delays and the countdown accumulate in this step.
-- Driver polling period 1 s; reconnect 5 s after a disconnection.
+- Driver polling period 1 s. Reconnection starts 5 s after a disconnection; the reconnect interval of Modbus TCP doubles each time up to 20 s, and returns to 5 s once the connection is stable again; S7 reconnects every 5 s at a fixed interval.
+- When reads and writes with an actuator keep failing for 5 s, it is a communication failure (handled the same as a disconnection).
 - State aggregation is debounced by 50 ms, command sending by 100 ms.
 
 ## 7. Implementation constraints

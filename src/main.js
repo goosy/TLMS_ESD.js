@@ -75,7 +75,7 @@ function add_node(node, unit_map) {
 	running_nodes.push(node);
 }
 
-function run_controller(controller) {
+async function run_controller(controller) {
 	const unit_id_map = controller.modbus_server.unit_id;
 	const unit_map = new Unit_Map();
 
@@ -114,8 +114,14 @@ function run_controller(controller) {
 	}
 
 	// start modbus TCP server
+	// without its upward server the controller is useless: exit and let pm2 restart it
 	const server = createMTServer("0.0.0.0", controller.modbus_server.port, unit_map);
-	server.start();
+	try {
+		await server.start();
+	} catch (e) {
+		logger.error(`cannot start the Modbus TCP server: ${e.message}`);
+		process.exit(1);
+	}
 
 	// main loop
 	setInterval(() => {
@@ -139,5 +145,5 @@ if (layout_errors.length > 0) {
 const controller_name = process.argv[2];
 await read_config(process.cwd());
 const controller = await prepare_controller(controller_name);
-if (controller) run_controller(controller); // run controller
+if (controller) await run_controller(controller); // run controller
 else logger.error(`Controller ${controller_name} not found!`);

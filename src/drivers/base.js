@@ -3,13 +3,15 @@ import "../util.js";  // the side effects need to be executed
 export class Base_Driver {
 	period_time = 1000;
 	reconnect_time = 5000;
+	// an IO error lasting this long is reported as `connfailed`
+	connfailed_time = 5000;
 
 	constructor() {
 		// private fields
 		let started = false;
 		let connecting = false;
 		let disconnect_time = 10000; // Ensure that the connection is made initially
-		let data_error = false;
+		let io_error = false;
 		Object.defineProperty(this, "started", {
 			get: () => started,
 			configurable: false,
@@ -25,8 +27,8 @@ export class Base_Driver {
 			configurable: false,
 			enumerable: true,
 		});
-		Object.defineProperty(this, "data_error", {
-			get: () => data_error,
+		Object.defineProperty(this, "io_error", {
+			get: () => io_error,
 			configurable: false,
 			enumerable: true,
 		});
@@ -75,26 +77,26 @@ export class Base_Driver {
 
 		let timeout_id;
 		/**
-		 * Emits a 'data_ok' event if there was a previous data error and resets the error flag.
+		 * Emits an 'io_ok' event if there was a previous IO error and resets the error flag.
 		 *
 		 * @param {Buffer} data - The value returned by the resolved promise.
 		 * @return {Promise<Buffer>} A promise that resolves with the input data.
 		 */
-		this.emit_data_ok = async function (data) {
+		this.emit_io_ok = async function (data) {
 			clearTimeout(timeout_id);
-			if (data_error) {
-				data_error = false;
-				this.emit("data_ok");
+			if (io_error) {
+				io_error = false;
+				this.emit("io_ok");
 			}
 			return data;
 		};
-		this.emit_data_error = async function (e) {
-			if (!data_error) {
-				data_error = true;
+		this.emit_io_error = async function (e) {
+			if (!io_error) {
+				io_error = true;
 				timeout_id = setTimeout(() => {
 					this.on_error("unable to retrieve data");
-				}, this.reconnect_time);
-				this.emit("data_error", `unable to retrieve data - ${e}`);
+				}, this.connfailed_time);
+				this.emit("io_error", `unable to retrieve data - ${e?.message ?? e}`);
 			}
 			return null;
 		};

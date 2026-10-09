@@ -42,7 +42,7 @@
 6. `run_controller`:
    1. initializes the action record and mounts it on `unit_id.action_records`;
    2. creates the TData in the order line -> section -> actuator, calls `attach_unit`, then each `*_init`;
-   3. starts the Modbus TCP server;
+   3. starts the Modbus TCP server and waits until it is ready; when it fails to start (e.g. the port is in use), logs an error and exits with exit code 1, to be restarted by pm2;
    4. runs `section_loop` of all sections and `node_loop` of all actuators with `setInterval(MAIN_PERIOD = 500)` (`line_loop` is empty and not called).
 
 ## 3. Typed data layer
@@ -133,9 +133,11 @@ Main layouts (byte offsets):
 - Mixed in with `Object.mixin(this, new Base_Driver())`: it only adds the properties the subclass lacks, taking the prototype chain into account, so it neither overrides those the subclass defines itself, such as `start_tick`, nor shadows `connect` / `disconnect` inherited from the driver library.
 - `stop()` stops the timer and calls the library's `disconnect()` (neither library reconnects automatically after an explicit disconnect); a later `start()` first calls `connect()` to reconnect.
 - `start()` runs `start_tick` every `period_time` (1000 ms) and emits `tick` when connected.
-- `emit_data_ok` / `emit_data_error` wrap the result of every read and write:
-  - on the first error, `data_error` is emitted;
-  - when no read or write succeeds within `reconnect_time` (5000 ms), `on_error` is called, which emits `connfailed`.
+- `emit_io_ok` / `emit_io_error` wrap the result of every read and write:
+  - on the first error, `io_error` is emitted, and on the first success after an error, `io_ok` (not the per-transaction `data_error` event name of es-modbus, to avoid confusion with it);
+  - when no read or write succeeds within `connfailed_time` (5000 ms), `on_error` is called, which emits `connfailed`;
+  - the argument of `connfailed` and `io_error` is the error message string (its `message` when the library gives an `Error`).
+- `reconnect_time` means only the reconnect interval, and `connfailed_time` only the escalation time above; the two are configured separately. The second constructor argument `options` of a driver can pass `period_time`, `reconnect_time`, `connfailed_time` (and `reconnect_max` for Modbus); the controller passes none and uses the defaults.
 - Driver instances are reused by connection parameters:
   - Modbus by `host:port`;
   - S7 by `host:port rack slot`;
@@ -143,16 +145,20 @@ Main layouts (byte offsets):
 
 ### 4.2 MTClient (es-modbus)
 
-- Address conversion: areas in the configuration and in TData are in bytes; the byte start `start` corresponds to holding register `40000 + (start >> 1) + 1`, and the length is `length >> 1` registers.
-- Only holding registers are accessed: by the `4xxxx` prefix es-modbus selects function code 03 for reading and 06 (single register) / 16 (multiple registers) for writing. Coils, discrete inputs and input registers are not used.
+- Address conversion: areas in the configuration and in TData are in bytes; the byte start `start` corresponds to the holding register PDU address `start >> 1` (0-based), and the length is `length >> 1` registers; they are passed as the structured range `[func_code, pdu_addr, length]` of es-modbus, not in Modicon notation.
+- es-modbus throws synchronously on invalid arguments (range, quantity limits, unit_id); `read` / `write` catch it, log an error, and treat it as a read / write failure (`emit_io_error`).
+- Only holding registers are accessed: MTClient gives the function codes explicitly, 03 for reading, 06 (single register) / 16 (multiple registers) for writing. Coils, discrete inputs and input registers are not used.
 - `write_unit = 2`: the write unit is one register.
-- Reconnection uses the mechanism of es-modbus itself; `start_tick` is overridden to only emit `tick`.
+- Echo check of writes: the `write()` of es-modbus resolves with whether the response echoed the request. A mismatching echo means the write is unconfirmed: a warning is logged, it is treated as a read / write failure (`emit_io_error`), and `write` returns `false`.
+- Reconnection uses the mechanism of es-modbus itself; `start_tick` is overridden to only emit `tick`:
+  - the reconnect interval starts at `reconnect_time` (5000 ms), doubles on every failure up to `reconnect_max` (20000 ms), and returns to the initial value once the connection is stable;
+  - 3 consecutive request timeouts (the default `max_timeouts` of es-modbus) mean a dead link: the connection is closed and reconnected as usual; when the connection drops, all pending requests fail with `connection lost`.
 
 ### 4.3 S7Client (@st-one-io/nodes7)
 
 - Reads and writes the `DB` or `M` area with `readArea` / `writeArea`; start and length are in bytes.
 - `write_unit = 1`: the write unit is one byte.
-- Because `S7Endpoint.connect()` is incomplete, the library's own `autoReconnect = 5000` is used for now, and `start_tick` is overridden too (marked as temporary code in the source).
+- Because `S7Endpoint.connect()` is incomplete, the library's own automatic reconnection is used for now (`autoReconnect`, taking `reconnect_time`, default 5000 ms, at a fixed interval), and `start_tick` is overridden too (marked as temporary code in the source).
 
 ### 4.4 Upward server (createMTServer + Unit_Map)
 
@@ -160,7 +166,9 @@ Main layouts (byte offsets):
   - Actuator unit: data at byte 0, command at byte 400 (i.e. from register 200).
 - Register `addr` corresponds to byte `addr * 2`, read and written big-endian in `tdata.buffer`; coil `addr` corresponds to bit `addr % 8` of byte `addr >> 3`.
 - After every write, `tdata.check_all_tags()` is called, which turns the write of the HMI into tag change events.
-- Accesses to unmapped addresses log an error; reads return 0 or false.
+- The vector method names are the snake_case names required by es-modbus: `get_holding_register`, `get_input_register`, `set_register`, `get_coil` (used for both FC 1 and FC 2), `set_coil`.
+- Unmapped addresses (e.g. the gap between the node data block and the command block in an actuator unit) read as 0 / false and writes to them are ignored, so a block read of the HMI across the gap still succeeds. A warning is logged only once per (type, unit, address), to avoid flooding the log while polling.
+- Requests are validated by es-modbus first: an unregistered unit id is answered with exception 0x0B, an illegal function code, quantity or address out of range with 0x01 / 0x03 / 0x02; when the vector throws, 0x04 is answered and the `vector_error` event logs it.
 
 ## 5. Actuator processing (`node_proc.js`)
 
@@ -187,7 +195,7 @@ Main layouts (byte offsets):
 - Driver events:
   - `connfailed`: sets `comm_OK = false` after the delay `delay_protect_time`;
   - `connect`: sets `comm_OK = true` and runs `reset_parameters` 2 s later (command parameter block <- data);
-  - `data_error`: sets `work_OK = false` after the delay.
+  - `io_error`: sets `work_OK = false` after the delay.
 - Change of `response_code` (acknowledgement handshake):
   1. `commands &= ~response_code` clears the acknowledged command bits;
   2. `executing = false`;

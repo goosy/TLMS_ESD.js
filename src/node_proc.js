@@ -31,7 +31,7 @@ export function node_init(actuator) {
 	const endian = driver_info.endian;
 
 	let reset_comm_id;
-	data_driver.on("data_error", (e) => {
+	data_driver.on("io_error", (e) => {
 		setTimeout(() => {
 			data.work_OK = false;
 		}, data.delay_protect_time);
