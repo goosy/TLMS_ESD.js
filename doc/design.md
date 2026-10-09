@@ -130,7 +130,8 @@ Main layouts (byte offsets):
 
 ### 4.1 Base_Driver
 
-- Mixed in with `Object.mixin(this, new Base_Driver())`: it only adds the properties the subclass lacks, and does not override those the subclass defines itself, such as `start_tick`.
+- Mixed in with `Object.mixin(this, new Base_Driver())`: it only adds the properties the subclass lacks, taking the prototype chain into account, so it neither overrides those the subclass defines itself, such as `start_tick`, nor shadows `connect` / `disconnect` inherited from the driver library.
+- `stop()` stops the timer and calls the library's `disconnect()` (neither library reconnects automatically after an explicit disconnect); a later `start()` first calls `connect()` to reconnect.
 - `start()` runs `start_tick` every `period_time` (1000 ms) and emits `tick` when connected.
 - `emit_data_ok` / `emit_data_error` wrap the result of every read and write:
   - on the first error, `data_error` is emitted;

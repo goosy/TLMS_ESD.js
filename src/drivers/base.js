@@ -54,14 +54,23 @@ export class Base_Driver {
 			}
 		};
 
+		// set by stop(): the transport was closed explicitly and
+		// will not reconnect by itself until connect() is called
+		let stopped = false;
 		this.start = function () {
 			started = true;
+			if (stopped) {
+				stopped = false;
+				this.connect().catch(() => { });
+			}
 			if (this.loop) clearInterval(this.loop);
 			this.loop = setInterval(this.start_tick.bind(this), this.period_time);
 		};
 		this.stop = function () {
 			started = false;
-			this.disconnect();
+			stopped = true;
+			// es-modbus 0.1.x returns the socket, newer drivers a Promise
+			Promise.resolve(this.disconnect()).catch(() => { });
 		};
 
 		let timeout_id;
