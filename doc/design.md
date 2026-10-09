@@ -128,7 +128,8 @@
 
 ### 4.1 Base_Driver
 
-- 以 `Object.mixin(this, new Base_Driver())` 的方式混入：只补充子类缺少的属性，不覆盖子类自己定义的 `start_tick` 等。
+- 以 `Object.mixin(this, new Base_Driver())` 的方式混入：只补充子类缺少的属性，判断时包含原型链，因此既不覆盖子类自己定义的 `start_tick` 等，也不遮蔽从驱动库继承的 `connect` / `disconnect`。
+- `stop()` 停止定时器并调用库的 `disconnect()`（两个库在显式断开后都不再自动重连）；之后再 `start()` 时先调用 `connect()` 重新连接。
 - `start()` 每 `period_time`（1000 ms）执行一次 `start_tick`，已连接时发出 `tick`。
 - `emit_data_ok` / `emit_data_error` 包装每次读写的结果：
   - 首次出错时发出 `data_error`；

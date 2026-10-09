@@ -71,6 +71,8 @@ export const logger = {
 
 /**
  * Mixes properties from multiple objects into a target object.
+ * A property is added only when the target lacks it, including along its
+ * prototype chain, so members inherited from a superclass are never shadowed.
  *
  * @param {Object} target - The target object to mix properties into.
  * @param {...Object} mixin_items - The objects containing properties to mix into the target object.
@@ -78,7 +80,7 @@ export const logger = {
  */
 function mixin(target, mixin_item) {
 	for (const key of Reflect.ownKeys(mixin_item)) {
-		if (!Object.hasOwn(target, key)) {
+		if (!(key in target)) {
 			Object.defineProperty(
 				target, key,
 				Object.getOwnPropertyDescriptor(mixin_item, key),
