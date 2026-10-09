@@ -33,11 +33,11 @@ function next_event(emitter, name) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** A minimal TData stand-in: the server only uses buffer, size and check_all_tags. */
+/** A minimal TData stand-in: the server only uses buffer, size and detect. */
 function fake_tdata(size) {
 	const buffer = Buffer.alloc(size);
 	for (let i = 0; i < size; i++) buffer[i] = i & 0xff;
-	return { buffer, size, check_count: 0, check_all_tags() { this.check_count++; } };
+	return { buffer, size, check_count: 0, detect() { this.check_count++; } };
 }
 
 /**
@@ -339,7 +339,7 @@ describe("createMTServer", () => {
 		const { hmi, data } = await setup(t);
 		let turn_ended = false;
 		const turns = [];
-		data.check_all_tags = function () {
+		data.detect = function () {
 			if (turns.length === 0) setImmediate(() => { turn_ended = true; });
 			turns.push(turn_ended);
 		};

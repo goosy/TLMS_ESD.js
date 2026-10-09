@@ -202,7 +202,7 @@ export function create_vector(unit_map) {
 				return;
 			}
 			tdata.buffer.writeUInt16BE(value, offset);
-			tdata.check_all_tags();
+			tdata.detect();
 		},
 
 		get_coil: (addr, unit_id) => {
@@ -224,7 +224,7 @@ export function create_vector(unit_map) {
 			if (value) byte = byte | bit_mask;
 			else byte = byte & ~bit_mask;
 			tdata.buffer.writeUInt8(byte, offset);
-			tdata.check_all_tags();
+			tdata.detect();
 		},
 	};
 	return vector;

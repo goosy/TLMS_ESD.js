@@ -1,4 +1,4 @@
-import { assert_exits_async, create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import test, { describe } from "node:test";
@@ -139,13 +139,13 @@ describe("TData change event", () => {
 		assert.deepEqual(events, [["count", -1, 5, 5]]);
 	});
 
-	test("check_all_tags reports direct buffer writes (server path)", () => {
+	test("detect reports direct buffer writes (server path)", () => {
 		const data = create_sample();
 		const events = [];
 		data.on("change", (name, old_value, new_value) => events.push([name, old_value, new_value]));
 		data.buffer.writeUInt16BE(0x0002, 2);
 		data.buffer.writeUInt16BE(9, 0);
-		data.check_all_tags();
+		data.detect();
 		assert.deepEqual(events.sort(), [
 			["bit_0", true, false],
 			["bit_1", false, true],
@@ -155,20 +155,13 @@ describe("TData change event", () => {
 		]);
 	});
 
-	test("check_tag accepts a tag or a tag name", () => {
+	test("the data block event comes before the tag event", () => {
 		const data = create_sample();
-		let count = 0;
-		data.on("change", () => count++);
-		data.buffer.writeUInt16BE(1, 0);
-		data.check_tag("id");
-		data.buffer.writeUInt16BE(2, 0);
-		data.check_tag(data.get("id"));
-		assert.equal(count, 2);
-	});
-
-	test("check_tag ignores unknown tag names", () => {
-		const data = create_sample();
-		assert.doesNotThrow(() => data.check_tag("nope"));
+		const order = [];
+		data.get("id").on("change", () => order.push("tag"));
+		data.on("change", () => order.push("data"));
+		data.id = 1;
+		assert.deepEqual(order, ["data", "tag"]);
 	});
 });
 
@@ -184,13 +177,13 @@ describe("TData combined word", () => {
 		assert.deepEqual(events.sort(), ["bit_0", "bit_1", "bit_8", "status"]);
 	});
 
-	test("writing a bit updates the word", () => {
+	test("writing a bit updates the word, reported in layout order", () => {
 		const data = create_sample();
 		const events = [];
 		data.on("change", (name, old_value, new_value) => events.push([name, old_value, new_value]));
 		data.bit_1 = true;
 		assert.equal(data.status, 0x0103);
-		assert.deepEqual(events, [["bit_1", false, true], ["status", 0x0101, 0x0103]]);
+		assert.deepEqual(events, [["status", 0x0101, 0x0103], ["bit_1", false, true]]);
 	});
 
 	test("coupling offset 8..15 is the low byte, 0..7 the high byte", () => {
@@ -251,15 +244,14 @@ describe("TData set_IO", () => {
 		assert.deepEqual(driver.writes, [{ start: 106, length: 2, bytes: [1, 2], extras: ["extra"] }]);
 	});
 
-	test("range outside the exchange area exits", async (t) => {
+	test("range outside the exchange area is rejected", async () => {
 		const { data } = setup();
-		await assert_exits_async(t, () => data.IO_read({ start: 0, length: 2 }));
-		await assert_exits_async(t, () => data.IO_read({ start: 8, length: 4 }));
-		await assert_exits_async(t, () => data.IO_write(Buffer.alloc(2), { start: 10, length: 2 }));
+		await assert.rejects(() => data.IO_read({ start: 0, length: 2 }), /invalid range/);
+		await assert.rejects(() => data.IO_read({ start: 8, length: 4 }), /invalid range/);
+		await assert.rejects(() => data.IO_write(Buffer.alloc(2), { start: 10, length: 2 }), /invalid range/);
 	});
 
-	test("returns false when the driver is not connected", async (t) => {
-		t.mock.method(console, "error", () => { });
+	test("returns false when the driver is not connected", async () => {
 		const { data, driver } = setup();
 		driver.is_connected = false;
 		assert.equal(await data.IO_read_all(), false);

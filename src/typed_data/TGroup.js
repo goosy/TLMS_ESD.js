@@ -1,4 +1,5 @@
 import { logger } from "../util.js";
+import { io_range, load_entry, store_entry } from "./endian.js";
 
 export class TGroup {
 	#tags = [];
@@ -22,18 +23,18 @@ export class TGroup {
 	}
 
 	/**
-	 * Reads data from  the device to the IO buffer
-	 * and updates all tags in the group.
+	 * Reads data from the device to the IO buffer, loads all tags of the
+	 * group into the TData buffer, then detects their changes at once.
 	 * @returns {Promise<boolean>} Returns true if the read operation was successful, false otherwise.
 	 */
 	async read() {
 		const read_OK = await this.tdata.IO_read_all();
 		if (!read_OK) return false;
-		const IO_buffer = this.tdata.IO_buffer;
-		for (const tag of this.#tags) {
-			tag.read_from(IO_buffer, this.endian);
-			this.tdata.check_coupling(tag.name);
+		const { IO_buffer, buffer } = this.tdata;
+		for (const entry of this.#tags) {
+			load_entry(entry, IO_buffer, buffer, this.endian);
 		}
+		this.tdata.detect();
 		return true;
 	}
 
@@ -44,9 +45,9 @@ export class TGroup {
 	 */
 	async write() {
 		let write_OK = true;
-		const IO_buffer = this.tdata.IO_buffer;
-		for (const tag of this.#tags) {
-			tag.write_to(IO_buffer, this.endian);
+		const { IO_buffer, buffer } = this.tdata;
+		for (const entry of this.#tags) {
+			store_entry(entry, buffer, IO_buffer, this.endian);
 		}
 		for (const area of this.#areas) {
 			const { start, end } = area;
@@ -59,7 +60,7 @@ export class TGroup {
 	}
 
 	#add(tagname) {
-		const tag = this.tdata.get(tagname);
+		const tag = this.tdata.layout.entries.get(tagname);
 		if (!tag) {
 			logger.error("Invalid tag configuration: no such tag");
 			process.exit(1);
@@ -69,7 +70,7 @@ export class TGroup {
 
 		// Overlap rules are enforced by the layout validation,
 		// so the group only merges the byte ranges it has to write.
-		const { start: tag_start, end: tag_end } = tag.IO_range(this.endian);
+		const { start: tag_start, end: tag_end } = io_range(tag, this.endian);
 		if (
 			tag_start < this.IO_start
 			|| tag_end > this.IO_start + this.IO_length
@@ -105,12 +106,17 @@ export class TGroup {
 		}
 	}
 
+	/**
+	 * Copies the values of the tags of the group from another data block,
+	 * by name, then detects their changes at once.
+	 */
 	copy_from(tdata) {
-		for (const tag of this.#tags) {
-			const value = tdata[tag.name];
+		const buffer = this.tdata.buffer;
+		for (const { name, codec, byte, mask } of this.#tags) {
+			const value = tdata[name];
 			if (value === undefined) continue;
-			tag.set_value(value);
-			this.tdata.check_coupling(tag.name);
+			codec.set(buffer, byte, mask, value);
 		}
+		this.tdata.detect();
 	}
 }
