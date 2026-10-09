@@ -1,26 +1,26 @@
-import { exec } from 'node:child_process';
-import { join } from 'node:path';
-import mri from 'mri';
-import pkg from '../package.json' with { type: 'json' };
+import { exec } from "node:child_process";
+import { join } from "node:path";
+import mri from "mri";
+import pkg from "../package.json" with { type: "json" };
 
 const argv = mri(process.argv.slice(2), {
-    boolean: ['help', 'version'],
-    alias: {
-        help: ['H', 'h'],
-        version: ['V', 'v'],
-        path: 'P',
-    }
+	boolean: ["help", "version"],
+	alias: {
+		help: ["H", "h"],
+		version: ["V", "v"],
+		path: "P",
+	},
 });
-const [cmd = 'help', controller_name = ''] = argv._;
+const [cmd = "help", controller_name = ""] = argv._;
 
-const _path = argv.path ?? '.';
+const _path = argv.path ?? ".";
 process.chdir(_path);
 const work_path = process.cwd();
 const module_path = import.meta.dirname;
 const version = pkg.version;
 
 function show_help() {
-    console.log(`usage:
+	console.log(`usage:
 
 tlms [subcommand] [controller_name] [options]
 
@@ -85,35 +85,35 @@ tlms stop                    停止
 }
 
 if (argv.version) {
-    console.log(`V${version}`);
+	console.log(`V${version}`);
 } else if (argv.help) {
-    show_help();
-} else if (cmd === 'start' || cmd === 'restart') {
-    process.env.TLMS = 'controller';
-	const main_js = join(module_path, 'main.js').replace(/\\/g, '/');
-    const main_para = controller_name ? `-- ${controller_name}` : '';
-    exec('pm2 delete "tlms_esd"', () => exec(
-        `pm2 start --name="tlms_esd" "${main_js}" ${main_para}`,
-        { cwd: work_path }
-    ));
-} else if (cmd === 'stop') {
-    exec('pm2 delete "tlms_esd"');
-} else if (cmd === 'list') {
-    exec('pm2 list', (error, stdout, _) => {
-        if (error) {
-            console.error(`exec error: ${error}`);
-            return;
-        }
-        console.log(stdout);
-    });
-} else if (cmd === 'debug') {
-    process.argv[2] = controller_name;
-    process.env.LOG_LEVEL = 'debug';
-    import('./main.js');
-} else if (cmd === 'log') {
-    exec('pm2 log');
-} else if (cmd === 'flush') {
-    exec('pm2 flush');
+	show_help();
+} else if (cmd === "start" || cmd === "restart") {
+	process.env.TLMS = "controller";
+	const main_js = join(module_path, "main.js").replace(/\\/g, "/");
+	const main_para = controller_name ? `-- ${controller_name}` : "";
+	exec("pm2 delete \"tlms_esd\"", () => exec(
+		`pm2 start --name="tlms_esd" "${main_js}" ${main_para}`,
+		{ cwd: work_path },
+	));
+} else if (cmd === "stop") {
+	exec("pm2 delete \"tlms_esd\"");
+} else if (cmd === "list") {
+	exec("pm2 list", (error, stdout, _) => {
+		if (error) {
+			console.error(`exec error: ${error}`);
+			return;
+		}
+		console.log(stdout);
+	});
+} else if (cmd === "debug") {
+	process.argv[2] = controller_name;
+	process.env.LOG_LEVEL = "debug";
+	import("./main.js");
+} else if (cmd === "log") {
+	exec("pm2 log");
+} else if (cmd === "flush") {
+	exec("pm2 flush");
 } else {
-    show_help();
+	show_help();
 }
