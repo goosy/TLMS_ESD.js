@@ -20,6 +20,7 @@
 | `src/layouts.js` | 编译 `layouts.yaml` 并导出这些布局。 |
 | `src/layout_types.d.ts` | 由布局生成的类型声明（`pnpm gen:types`）。 |
 | `src/util.js` | log4js 日志、`debouncify` / `debounce`、`Object.mixin`。 |
+| `src/scan.js` / `src/rules.js` | 扫描调度器（`Scheduler`）与规则（`derive` / `act`、排序与启动检查、`Ticker`、`on_delay` / `off_delay`），见 design-scan.md 第 6、7 节。尚未接入运行流程。 |
 
 ## 2. 启动流程
 
@@ -111,7 +112,8 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
   - 每个变化先由 TData 发出 `change(tagname, old, new)`，再由该 tag 的句柄发出 `change(old, new)`；事件总在新值生效之后发出。业务逻辑通过 `data.get(name).on('change', ...)` 订阅。
   - 事件处理器中再写 tag 时，嵌套的比对只登记，等当前这一轮变化报告完再比对一轮；连续 16 轮仍有新变化时抛出异常，防止振荡。
   - `detect()` 做一次比对；外部直接改写 `buffer`（分组装载、`copy_from`）后由写入方调用，延迟模式下由使用方在需要时调用。
-  - `observer.previous(name)` / `take_scan_snapshot()` 为后续的扫描周期预留（design-scan.md 5.3 节）。
+  - `observer.previous(name)` / `take_scan_snapshot()` 供扫描调度器使用（design-scan.md 5.3 节）。
+- `set_access_tracer(tracer | null)`（`layout.js`）：设置后，访问器每次读写 tag 都调用 `tracer(tdata, name, "read" | "write")`，供调度器的依赖追踪测试模式使用；未设置时访问器只多一次判断。
 - TData 出错时抛出异常（布局冲突、值越界），不写日志、不退出。
 
 ### 3.3 TTag 与字节序转换
