@@ -98,16 +98,16 @@ export class Base_Driver {
     /**
      * Reads the holding registers within the specified area asynchronously.
      *
-     * @param {{start:number, length:number}} area - The area to read from, specified as an object with start and length properties with unit byte.
+     * @param {{start:number, length:number}} _area - The area to read from, specified as an object with start and length properties with unit byte.
      * @return {Promise<Buffer>} A promise that resolves with the buffer containing the read data, or rejects with an error if the read operation fails.
      */
-    async read(area) { } // abstract
+    async read(_area) { } // abstract
     /**
      * Writes the given buffer to the specified area asynchronously.
      *
-     * @param {Buffer} buffer - The buffer containing the data to be written.
-     * @param {{start:number, length:number}} area - The area to write to, specified as an object with start and length properties with unit byte.
+     * @param {Buffer} _buffer - The buffer containing the data to be written.
+     * @param {{start:number, length:number}} _area - The area to write to, specified as an object with start and length properties with unit byte.
      * @return {Promise<void>} A promise that resolves when the write operation is complete, or rejects with an error if the write operation fails.
      */
-    async write(buffer, area) { } // abstract
+    async write(_buffer, _area) { } // abstract
 }

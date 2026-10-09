@@ -194,7 +194,7 @@ export function node_init(actuator) {
 let no_response_count = 0;
 
 export function node_loop(actuator) {
-    const { data, command, data_driver } = actuator;
+    const { command, data_driver } = actuator;
     if (data_driver.is_connected) {
         // read a node data.
         actuator.data_payload.read();

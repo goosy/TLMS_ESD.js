@@ -316,7 +316,7 @@ When the section data block is next adjusted, `press_action` / `flow_action` are
 
 - Package manager: pnpm.
 - Tests: `node --test`.
-- Linting: Biome.
+- Linting: ESLint with `@stylistic/eslint-plugin` (`eslint.config.js`, `pnpm lint`); JS is indented with tabs. ESLint finds code problems; @stylistic only regulates whitespace, quotes, semicolons and the like, without re-wrapping lines, so the hand-aligned layout tables are kept. Formatters that re-wrap lines (Biome, Prettier) are not used. In addition, the globals equivalent to the `Number` namespace (`isNaN`, `isFinite`, `parseInt`, `parseFloat`, `NaN`, `Infinity`) are forbidden; `Number.isNaN` and the like are used instead.
 
 ### 10.4 Build and release
 
