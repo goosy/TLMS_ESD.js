@@ -52,7 +52,14 @@ async function run_controller(controller) {
 	action_record.records_size = controller.records_size ?? 10;
 	action_record.init();
 
-	const runtime = build_runtime(controller, { get_drivers, action_record });
+	let runtime;
+	try {
+		runtime = build_runtime(controller, { get_drivers, action_record });
+	} catch (e) {
+		// a configuration that cannot be built (e.g. an unaligned IO area): refuse to start
+		logger.error(`cannot build controller ${controller.name}: ${e.message}`);
+		process.exit(1);
+	}
 
 	// start modbus TCP server
 	// without its upward server the controller is useless: exit and let pm2 restart it

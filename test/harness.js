@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { read_config, MAIN_PERIOD } from "../src/config.js";
 import { prepare_controller } from "../src/init.js";
 import { build_runtime } from "../src/runtime.js";
-import { create_vector } from "../src/drivers/modbusTCP.js";
+import { create_vector } from "../src/typed_data/server.js";
 import { TData } from "../src/typed_data/TData.js";
 import { LINE, SECTION, NODE, COMMAND, RECORD } from "../src/layouts.js";
 

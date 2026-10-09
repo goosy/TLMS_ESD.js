@@ -6,7 +6,8 @@ import net from "node:net";
 import test, { describe } from "node:test";
 import { Modbus_Client } from "es-modbus";
 import { S7Endpoint } from "@st-one-io/nodes7";
-import { MTClient, Unit_Map, createMTServer } from "../src/drivers/modbusTCP.js";
+import { MTClient, createMTServer } from "../src/drivers/modbusTCP.js";
+import { Unit_Map } from "../src/typed_data/server.js";
 import { S7Client } from "../src/drivers/s7.js";
 
 const HOST = "127.0.0.1";
@@ -33,11 +34,26 @@ function next_event(emitter, name) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** A minimal TData stand-in: the server only uses buffer, size and detect. */
+/**
+ * A minimal TData stand-in: the server reads buffer and size, and writes
+ * through write_register and write_bit; check_count counts the writes.
+ */
 function fake_tdata(size) {
 	const buffer = Buffer.alloc(size);
 	for (let i = 0; i < size; i++) buffer[i] = i & 0xff;
-	return { buffer, size, check_count: 0, detect() { this.check_count++; } };
+	return {
+		buffer,
+		size,
+		check_count: 0,
+		write_register(offset, value) {
+			buffer.writeUInt16BE(value, offset);
+			this.check_count++;
+		},
+		write_bit(offset, mask, value) {
+			buffer[offset] = value ? buffer[offset] | mask : buffer[offset] & ~mask;
+			this.check_count++;
+		},
+	};
 }
 
 /**
@@ -339,9 +355,11 @@ describe("createMTServer", () => {
 		const { hmi, data } = await setup(t);
 		let turn_ended = false;
 		const turns = [];
-		data.detect = function () {
+		const write_register = data.write_register;
+		data.write_register = function (offset, value) {
 			if (turns.length === 0) setImmediate(() => { turn_ended = true; });
 			turns.push(turn_ended);
+			write_register.call(this, offset, value);
 		};
 
 		assert.equal(await hmi.write([16, 2, 3], Buffer.from([1, 2, 3, 4, 5, 6]), UNIT), true);
