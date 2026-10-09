@@ -1,6 +1,7 @@
 import { debouncify } from "./util.js";
 import { logger } from "./util.js";
 import { node_parameters } from "./layouts.js";
+import { Binding } from "./drivers/binding.js";
 
 const parameters_tags = node_parameters.map((item) => item.name);
 
@@ -60,14 +61,14 @@ export function node_init(actuator) {
 	}
 
 	data.ID = ID;
-	const start = 0; // The local buffer start address where data needs to be copied
-	data.set_IO(data_driver, {
+	const data_binding = new Binding(data, data_driver, {
 		remote_start: driver_info.data.start,
-		start, length: data.size,
+		start: 0, length: data.size,
 		endian,
 	}, ...data_extras);
+	actuator.data_binding = data_binding;
 
-	actuator.data_payload = data.create_tag_group(
+	actuator.data_payload = data_binding.create_group(
 		"ID",
 		"work_OK", "pump_run", "pump_change_F", "pump_run_1", "pump_run_2", "pump_run_3", "pump_run_4",
 		"pressure_enabled", "temperature_enabled", "pressure_SD_F", "pressure_AH_F", "pressure_WH_F",
@@ -75,7 +76,7 @@ export function node_init(actuator) {
 		"response_code",
 		...parameters_tags,
 	);
-	actuator.data_parameters = data.create_tag_group(...parameters_tags);
+	actuator.data_parameters = data_binding.create_group(...parameters_tags);
 
 	data.on("change", (tagname, old_value, new_value) => {
 		logger.debug(`actuator_${name}_data: ${tagname} ${old_value} => ${new_value}`);
@@ -150,13 +151,14 @@ export function node_init(actuator) {
 	});
 
 	command.ID = ID;
-	command.set_IO(command_driver, {
+	const command_binding = new Binding(command, command_driver, {
 		remote_start: driver_info.commands.start,
 		start: 16, length: command.size - 16,
 		endian,
 	}, ...commands_extras);
+	actuator.command_binding = command_binding;
 
-	actuator.commands_payload = command.create_tag_group(
+	actuator.commands_payload = command_binding.create_group(
 		"ID",
 		"commands",
 		...parameters_tags,

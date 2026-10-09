@@ -45,7 +45,7 @@ describe("layout validation", () => {
 		], "T.a", "duplicated name");
 	});
 
-	for (const name of ["get", "driver", "on", "size"]) {
+	for (const name of ["get", "name", "on", "size"]) {
 		test(`name ${name} colliding with a TData member is reported`, () => {
 			assert_error([{ name, type: "UInt", offset: 0, length: 16, init_value: 0 }], "collides");
 		});

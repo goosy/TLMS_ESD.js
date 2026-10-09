@@ -4,7 +4,7 @@ import { section_loop, section_init } from "./section_proc.js";
 import { node_loop, node_init } from "./node_proc.js";
 import { TData } from "./typed_data/TData.js";
 import { LINE, SECTION, NODE, COMMAND } from "./layouts.js";
-import { Unit_Map } from "./drivers/modbusTCP.js";
+import { Unit_Map } from "./typed_data/server.js";
 
 /**
  * Builds the runtime object graph of a prepared controller: the data blocks

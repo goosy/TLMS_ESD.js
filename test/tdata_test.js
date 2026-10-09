@@ -1,6 +1,5 @@
-import { create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
+import { make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
-import { Buffer } from "node:buffer";
 import test, { describe } from "node:test";
 import { LINE, SECTION, NODE, COMMAND, RECORD } from "../src/layouts.js";
 import { TData } from "../src/typed_data/TData.js";
@@ -70,8 +69,6 @@ describe("TData layout", () => {
 		const data = create_sample();
 		assert.equal(data.size, 12);
 		assert.equal(data.buffer.length, 12);
-		assert.equal(data.IO_buffer.length, 12);
-		assert.notEqual(data.IO_buffer, data.buffer);
 	});
 
 	test("buffer holds init values in big-endian order", () => {
@@ -121,8 +118,8 @@ describe("TData layout", () => {
 		assert.throws(() => new TData(make_struct(items), "bad"), /collides with a TData member/);
 	});
 
-	test("tag name colliding with a later-assigned member is rejected", () => {
-		const items = [{ name: "driver", type: "UInt", offset: 0, length: 16, init_value: 0 }];
+	test("tag name colliding with an instance field is rejected", () => {
+		const items = [{ name: "name", type: "UInt", offset: 0, length: 16, init_value: 0 }];
 		assert.throws(() => new TData(make_struct(items), "bad"), /collides with a TData member/);
 	});
 });
@@ -204,83 +201,4 @@ describe("TData combined word", () => {
 			}
 		});
 	}
-});
-
-describe("TData set_IO", () => {
-	const setup = () => {
-		const data = create_sample();
-		const driver = create_fake_driver();
-		// TData bytes [2, 10) map to remote bytes [100, 108)
-		data.set_IO(driver, { remote_start: 100, start: 2, length: 8, endian: "LE" }, "extra");
-		return { data, driver };
-	};
-
-	test("IO_read_all reads the whole exchange area into IO_buffer", async () => {
-		const { data, driver } = setup();
-		for (let i = 0; i < 8; i++) driver.remote[100 + i] = i + 1;
-		let emitted = null;
-		data.on("data", (buffer) => { emitted = buffer; });
-		assert.equal(await data.IO_read_all(), true);
-		assert.deepEqual(driver.reads, [{ start: 100, length: 8, extras: ["extra"] }]);
-		assert.deepEqual([...data.IO_buffer], [0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 0]);
-		assert.deepEqual([...emitted], [1, 2, 3, 4, 5, 6, 7, 8]);
-		// IO does not touch the internal buffer or the tag values
-		assert.equal(data.id, 7);
-		assert.equal(data.count, -1);
-	});
-
-	test("IO_read reads a sub-range at the mapped remote address", async () => {
-		const { data, driver } = setup();
-		driver.remote[102] = 0xab;
-		driver.remote[103] = 0xcd;
-		assert.equal(await data.IO_read({ start: 4, length: 2 }), true);
-		assert.deepEqual(driver.reads, [{ start: 102, length: 2, extras: ["extra"] }]);
-		assert.deepEqual([...data.IO_buffer.subarray(4, 6)], [0xab, 0xcd]);
-	});
-
-	test("IO_write writes at the mapped remote address", async () => {
-		const { data, driver } = setup();
-		assert.equal(await data.IO_write(Buffer.from([1, 2]), { start: 8, length: 2 }), true);
-		assert.deepEqual(driver.writes, [{ start: 106, length: 2, bytes: [1, 2], extras: ["extra"] }]);
-	});
-
-	test("range outside the exchange area is rejected", async () => {
-		const { data } = setup();
-		await assert.rejects(() => data.IO_read({ start: 0, length: 2 }), /invalid range/);
-		await assert.rejects(() => data.IO_read({ start: 8, length: 4 }), /invalid range/);
-		await assert.rejects(() => data.IO_write(Buffer.alloc(2), { start: 10, length: 2 }), /invalid range/);
-	});
-
-	test("returns false when the driver is not connected", async () => {
-		const { data, driver } = setup();
-		driver.is_connected = false;
-		assert.equal(await data.IO_read_all(), false);
-		assert.equal(await data.IO_read({ start: 2, length: 2 }), false);
-		assert.equal(await data.IO_write(Buffer.alloc(2), { start: 2, length: 2 }), false);
-		assert.equal(driver.reads.length + driver.writes.length, 0);
-	});
-
-	test("returns false when the driver read fails", async () => {
-		const { data, driver } = setup();
-		driver.read_result = null;
-		assert.equal(await data.IO_read_all(), false);
-		assert.equal(await data.IO_read({ start: 2, length: 2 }), false);
-	});
-
-	test("defaults: start 0, remote_start 0, length to the end, endian BE", async () => {
-		const data = create_sample();
-		const driver = create_fake_driver();
-		data.set_IO(driver, {});
-		await data.IO_read_all();
-		assert.deepEqual(driver.reads[0], { start: 0, length: 12, extras: [] });
-		assert.equal(data.create_tag_group("id").endian, "BE");
-	});
-
-	test("set_IO(null) clears the IO functions", () => {
-		const { data } = setup();
-		data.set_IO(null);
-		assert.equal(data.driver, null);
-		assert.equal(data.IO_read, null);
-		assert.equal(data.IO_write, null);
-	});
 });

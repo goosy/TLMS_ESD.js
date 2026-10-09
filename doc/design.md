@@ -16,8 +16,8 @@
 | `src/init.js` | `prepare_controller`: builds the runtime object graph for the selected controller. |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | Initialization (event binding) and periodic processing of actuators (nodes), sections and lines. |
 | `src/action_record.js` | Action records: CSV reading and writing, and browsing by index. |
-| `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, and `createMTServer` / `create_vector` / `Unit_Map` (upward server). |
-| `src/typed_data/` | Data layer: `TData` / `TTag` / `TGroup` (typed buffers and change events), `structure.js` (structure expansion and layout validation), `layout.js` (compilation of YAML layout files), `codecs.js` (codecs of the types), `types.js` (type declaration generation). |
+| `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, `createMTServer` (upward server, using the vector of the data layer), and the IO binding `binding.js` (the exchange area, byte order and group reads and writes between tdata and drivers, section 3.4; not part of the data layer). |
+| `src/typed_data/` | Data layer (the future component, see 1.1 of design-scan.md): `TData` / `TTag` (typed buffers and change events), `observer.js` (change detection), `structure.js` (structure expansion and layout validation), `layout.js` (compilation of YAML layout files), `codecs.js` (codecs of the types), `endian.js` (byte order conversion per item), `server.js` (`Unit_Map` and the vector of the upward server), `types.js` (type declaration generation). |
 | `src/layouts.yaml` | Layout descriptions of LINE, SECTION, NODE, COMMAND, RECORD. |
 | `src/layouts.js` | Compiles `layouts.yaml` and exports these layouts. |
 | `src/layout_types.d.ts` | Type declarations generated from the layouts (`pnpm gen:types`). |
@@ -71,11 +71,11 @@ The external requirements and terminology of TData (an instance written tdata) a
 
 #### Layout validation
 
-The layout rules of spec 3.6 are validated together at the layout stage, not scattered over the runtime of TData, TTag and TGroup:
+The layout rules of spec 3.6 are validated together at the layout stage, not scattered over the runtime of TData, TTag and Binding:
 
 - `structure.js` provides `validate_structure(data_struct)`, which validates the flat `items` expanded by `build_structure` and returns an array of violation descriptions (an empty array means valid), without exiting at the first error.
 - What is validated:
-  - Names: duplicate names in `items`; names conflicting with the members of TData (methods and getters on `TData.prototype`, and instance fields such as `name`, `driver`, `IO_read`).
+  - Names: duplicate names in `items`; names conflicting with the members of TData (methods and getters on `TData.prototype`, and instance fields such as `name`).
   - Type and length: `type` not among the supported types; `length` not matching the type (Bool 1, Byte / SInt / USInt 8, Int / UInt / Word 16, DInt / UDInt / DWord / Real 32).
   - Alignment: the `offset` of a non-Bool must be a multiple of 8; the byte offset of a multi-byte type must be even.
   - Overlap: the non-Bool items are sorted by byte range and adjacent ranges are checked for intersection; Bools are checked by `offset` for occupying the same bit twice; when a Bool falls inside a non-Bool range, the `coupling` of that non-Bool item must contain the name of the Bool.
@@ -87,7 +87,7 @@ The layout rules of spec 3.6 are validated together at the layout stage, not sca
 - Callers:
   - `compile_layout` runs the validation on all layouts of the file and on violations throws an error containing all of them; when the controller loads `src/layouts.js`, each is accordingly written to the error log and the program exits;
   - `tlms check` runs the validation on all structures and reports its errors together with those of the configuration validation (not implemented, see section 11).
-- After the validation passes, TData, TTag and TGroup do not repeat these checks; the `validate` of TTag keeps only defensive assertions.
+- After the validation passes, TData, TTag and Binding do not repeat these checks; `layout_of` keeps only defensive assertions.
 
 Main layouts (byte offsets):
 
@@ -101,10 +101,9 @@ Main layouts (byte offsets):
 
 ### 3.2 TData
 
-- `name` is writable; `layout`, `size`, `buffer`, `IO_buffer` are read-only (getters only, assignment throws a `TypeError`), and the content of `buffer` can be read and written.
-- Exposes two buffers:
-  - `buffer`: the internal value buffer, always big-endian (BE); the Modbus server reads and writes it directly as big-endian;
-  - `IO_buffer`: the buffer exchanged with drivers, in device byte order.
+- `name` is writable; `layout`, `size`, `buffer` are read-only (getters only, assignment throws a `TypeError`), and the content of `buffer` can be read and written.
+- `buffer`: the internal value buffer, always big-endian (BE). TData no longer holds the buffer exchanged with drivers, which belongs to the IO binding (3.4).
+- The raw write methods `write_register(offset, value)`, `write_bit(offset, mask, value)`, `write_bytes(offset, source)` are located by byte offset, and the processing after the write is the same as for writes by name (in immediate mode detection first, then `on_write`), for the upward server.
 - `new TData(struct, name)` returns an instance of the subclass `Data_Class` compiled from the structure; the accessor of each tag is defined only once on `Data_Class.prototype`, shared by the instances of the same structure:
   - the getter decodes directly from `buffer` with the codec table;
   - the setter writes `buffer` with the codec table, then calls `after_write`: in the immediate detection mode the Observer detects the changes immediately; then, in both modes, the `on_write(tdata)` passed at creation is called.
@@ -113,33 +112,32 @@ Main layouts (byte offsets):
 - Change detection is the job of the Observer (`observer.js`) of each TData: it holds a snapshot of `buffer`, on comparison decodes only the tags related to changed bytes (the reverse table `tags_at_byte`), decodes old values from the snapshot, and caches no values; after comparing it updates the snapshot, then reports the changes in layout order.
   - For each change, first the TData emits `change(tagname, old, new)`, then the handle of the tag emits `change(old, new)`; events are always emitted after the new value takes effect. Business logic subscribes with `data.get(name).on('change', ...)`.
   - When an event handler writes a tag again, the nested comparison only registers, and after the current round of changes has been reported another round of comparison follows; when there are still new changes after 16 consecutive rounds, an exception is thrown to prevent oscillation.
-  - `detect()` runs one comparison; it is called by the writer after `buffer` is written directly from outside (server writes, group loading), and by the user when needed in the deferred mode.
+  - `detect()` runs one comparison; it is called by the writer after `buffer` is written directly from outside (group loading, `copy_from`), and by the user when needed in the deferred mode.
   - `observer.previous(name)` / `take_scan_snapshot()` are reserved for the coming scan cycle (5.3 of design-scan.md).
-- On errors TData throws (layout conflicts, an IO area not aligned to the write unit, accesses outside the IO exchange area), without logging or exiting.
-- `set_IO(driver, {remote_start, start, length, endian}, ...extras)` binds a driver:
-  - the local `IO_buffer[start .. start+length)` corresponds to the remote area of the same length from `remote_start`;
-  - `extras` is passed to the driver as is: `unit_id` for Modbus, `area, db` for S7;
-  - creates `IO_read_all` (reads the whole area into `IO_buffer`), `IO_write` (writes by range) and `create_tag_group`.
+- On errors TData throws (layout conflicts, values out of range), without logging or exiting.
 
 ### 3.3 TTag and byte order conversion
 
 - `data.get(name)` returns the `TTag` of the tag, created and cached on first access, `undefined` when the name does not exist. A TTag holds no value: reading `value` decodes from the `buffer` of the TData, and writing `value` is exactly equivalent to `data[name] = v`; `change` events are emitted by the Observer.
-- The conversion between the device byte order and the internal big-endian is done per layout item in `endian.js` (`load_entry` / `store_entry` / `io_index` / `io_range`), changing only `buffer` or `IO_buffer`, without detecting changes:
+- `endian.js` implements the conversion between the device byte order and the internal big-endian per layout item (`load_entry` / `store_entry` / `io_index` / `io_range`), without detecting changes; the IO binding implements the same mapping per byte (3.4), and tests use `endian.js` as the reference to check that the two agree byte by byte:
   - 2 bytes: `BE` copies as is; `LE` / `little` / `BEBS` swap the two bytes;
   - 4 bytes: the four orders `BE`, `LE` / `little`, `BEBS`, `LEBS` are supported;
   - Bool and the single-byte types (Byte, SInt, USInt) read and write only one byte, without conversion within the byte; their index in the IO buffer is computed per 16-bit register: `byte ^ 1` for `LE` / `little` / `BEBS`, `byte` for `BE` / `LEBS`. A Bool changes only its own bit by its bit mask.
 
-### 3.4 TGroup
+### 3.4 IO binding (`src/drivers/binding.js`)
 
-- `create_tag_group(...names)` returns a group of tags to be synchronized with the device together.
-- The overlap rules of the layout are guaranteed by the layout validation (3.1), and TGroup no longer checks overlaps. When a tag is added:
-  - adding the same tag again is ignored;
-  - a tag whose byte range exceeds the IO exchange area is an error, and the program exits;
-  - the byte range the tag actually occupies in the IO buffer (`io_range`, with the indexes of Bool and single-byte types computed as in 3.3) is extended outward to a whole multiple of the driver write unit `driver.write_unit`, then merged into the write ranges (`#areas`); it is merged with existing ranges it intersects or adjoins, possibly several at once.
-- The `start`, `remote_start` and `length` of the IO exchange area must be whole multiples of the write unit; `set_IO` checks this and otherwise throws, so that the extended write ranges never leave the exchange area and the local write units align with the remote write units.
-- `read()`: first `IO_read_all`, then loads each tag of the group from `IO_buffer` into `buffer` (`load_entry`), and runs one comparison after all are loaded, so event handlers see the data after the whole group has been loaded.
-- `write()`: each tag of the group is first exported into `IO_buffer` (`store_entry`), then `IO_write` is called for each merged range, passing the length of the range to the driver as well. Bytes within a range that belong to no tag of the group take the values last read into `IO_buffer`; by the write ownership rule these bytes are also written by the controller, so the data of the actuator is not overwritten.
-- `copy_from(tdata)`: copies the values of the tags of the same name from another TData and runs one comparison after all are copied, used to synchronize the parameter block between data and command.
+- `new Binding(data, driver, { start, remote_start, length, endian, on_update }, ...extras)` maps the exchange area `[start, start + length)` of a tdata to the remote area of the same length from `remote_start`; `extras` is passed to the driver as is (`unit_id` for Modbus, `area, db` for S7). The three exchange area parameters must be whole multiples of the driver write unit `driver.write_unit`, otherwise an exception is thrown, so that the extended write ranges never leave the exchange area and the local write units align with the remote write units.
+- Binding holds the `IO_buffer` in device byte order (as long as the tdata, with the same indexes), and data read by the driver is written only into it.
+- Byte mapping `io_index`: at creation, the index in `IO_buffer` of each byte of the tdata is computed. 4-byte items are converted by the four orders `BE`, `LE` / `little`, `BEBS`, `LEBS`; other bytes are converted per 16-bit register: `byte ^ 1` for `LE` / `little` / `BEBS`, unchanged for `BE` / `LEBS`.
+- `create_group(...names)` returns a group of tags to be synchronized with the device together (`Binding_Group`):
+  - a missing name or a tag outside the exchange area throws; adding the same tag again is ignored;
+  - ownership mask `own`: the bits of each byte of the group that belong to the group, the whole byte for non-Bool items, only its own bit for a Bool;
+  - write ranges: the positions of the bytes of the group in `IO_buffer`, extended outward to write units, with adjacent write units merged.
+- Reading: `request_read()` reads the whole exchange area into `IO_buffer` and sets `fresh`; a read in progress is shared and not started again. `load(group)` loads only the bits of the group by the mask, and bits outside the group (such as `comm_OK`, maintained by the controller) stay unchanged.
+- Writing: `request_write(group)` registers a write request, and the same group registered several times is written only once; `flush_writes()` exports the bits of the group into `IO_buffer` by the mask, then calls the driver to write each write range, passing the length of the range to the driver as well. Bits within a range that do not belong to the group take the values last read; by the write ownership rule these bytes are also written by the controller, so the data of the actuator is not overwritten.
+- While the driver is not connected, nothing is read or written, and write requests are kept until the next `flush_writes()`.
+- States: `connected` (updated by the `connect` / `connfailed` events of the driver), `read_ok` (whether the last read succeeded), `write_done(group)` (the sequence number and result of the last write of each group); when new data arrives or a state changes, the `on_update(binding)` passed at creation is called. For now these states are only recorded and not yet used.
+- Convenience methods (used before the scan scheduler goes live): `group.read()` reads, loads and detects immediately; `group.write()` registers and writes out immediately; `group.copy_from(source)` copies the values of the tags of the same name and runs one detection after all are copied, used to synchronize the parameter block between data and command.
 
 ## 4. Drivers
 
@@ -177,12 +175,12 @@ Main layouts (byte offsets):
 
 ### 4.4 Upward server (createMTServer + Unit_Map)
 
-- `create_vector(unit_map)` creates the vector serving `Unit_Map`, and `createMTServer` uses it to create the es-modbus server; tests call the vector directly to simulate HMI requests.
+- `Unit_Map` and `create_vector(unit_map, { logger })` belong to the data layer (`src/typed_data/server.js`). The warnings of the vector about accesses to unmapped addresses are output through the injected `logger`, nothing by default; `createMTServer` (driver) passes the project logger and uses the vector to create the es-modbus server. Tests call the vector directly to simulate HMI requests.
 
 - `Unit_Map.attach_unit(unit_id, tdata, start)` mounts a TData on the byte range `[start, start + size)` of a unit; a unit can hold several TData.
   - Actuator unit: data at byte 0, command at byte 400 (i.e. from register 200).
-- Register `addr` corresponds to byte `addr * 2`, read and written big-endian in `tdata.buffer`; coil `addr` corresponds to bit `addr % 8` of byte `addr >> 3`.
-- After every write, `tdata.detect()` is called, and the Observer finds the changes caused by the HMI write and emits the events.
+- Register `addr` corresponds to byte `addr * 2`, read big-endian from `tdata.buffer`; coil `addr` corresponds to bit `addr % 8` of byte `addr >> 3`.
+- Writes go through `write_register` / `write_bit` of TData, which processes them by the detection mode (currently immediate detection); the vector does not change `buffer` directly.
 - The vector method names are the snake_case names required by es-modbus: `get_holding_register`, `get_input_register`, `set_register`, `get_coil` (used for both FC 1 and FC 2), `set_coil`.
 - Unmapped addresses (e.g. the gap between the node data area and the command block in an actuator unit) read as 0 / false and writes to them are ignored, so a block read of the HMI across the gap still succeeds. A warning is logged only once per (type, unit, address), to avoid flooding the log while polling.
 - Requests are validated by es-modbus first: an unregistered unit id is answered with exception 0x0B, an illegal function code, quantity or address out of range with 0x01 / 0x03 / 0x02; when the vector throws, 0x04 is answered and the `vector_error` event logs it.
@@ -190,6 +188,8 @@ Main layouts (byte offsets):
 ## 5. Actuator processing (`node_proc.js`)
 
 ### 5.1 IO binding
+
+The data and command of each actuator have a Binding each (3.4), kept in `actuator.data_binding` / `actuator.command_binding`.
 
 - data:
   - binds the whole structure, with the remote start `driver_info.data.start`;

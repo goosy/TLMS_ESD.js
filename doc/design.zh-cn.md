@@ -14,8 +14,8 @@
 | `src/init.js` | `prepare_controller`：为选定的控制器构建运行时对象图。 |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | 执行器（节点）、段、线的初始化（事件绑定）与周期处理。 |
 | `src/action_record.js` | 动作记录：CSV 读写，以及基于 index 的浏览。 |
-| `src/drivers/` | `Base_Driver`、`MTClient`（Modbus TCP 客户端）、`S7Client`，以及 `createMTServer` / `create_vector` / `Unit_Map`（对上服务端）。 |
-| `src/typed_data/` | 数据层：`TData` / `TTag` / `TGroup`（带类型的缓冲区与变化事件）、`structure.js`（结构展开与布局校验）、`layout.js`（YAML 布局文件的编译）、`codecs.js`（各类型的编解码）、`types.js`（类型声明生成）。 |
+| `src/drivers/` | `Base_Driver`、`MTClient`（Modbus TCP 客户端）、`S7Client`、`createMTServer`（对上服务端，使用数据层的 vector），以及 IO 绑定 `binding.js`（tdata 与驱动之间的交换区、字节序和分组读写，第 3.4 节；不属于数据层）。 |
+| `src/typed_data/` | 数据层（将来的组件，见 design-scan.md 1.1 节）：`TData` / `TTag`（带类型的缓冲区与变化事件）、`observer.js`（变化检测）、`structure.js`（结构展开与布局校验）、`layout.js`（YAML 布局文件的编译）、`codecs.js`（各类型的编解码）、`endian.js`（按条目的字节序转换）、`server.js`（`Unit_Map` 与对上服务端的 vector）、`types.js`（类型声明生成）。 |
 | `src/layouts.yaml` | LINE、SECTION、NODE、COMMAND、RECORD 的布局描述。 |
 | `src/layouts.js` | 编译 `layouts.yaml` 并导出这些布局。 |
 | `src/layout_types.d.ts` | 由布局生成的类型声明（`pnpm gen:types`）。 |
@@ -69,11 +69,11 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 
 #### 布局校验
 
-规范 3.6 的布局规则在布局阶段集中校验，不分散到 TData、TTag 和 TGroup 的运行时：
+规范 3.6 的布局规则在布局阶段集中校验，不分散到 TData、TTag 和 Binding 的运行时：
 
 - 由 `structure.js` 提供 `validate_structure(data_struct)`，对 `build_structure` 展开后的扁平 `items` 做校验，返回违规描述的数组（空数组表示合法），不在发现第一个错误时退出。
 - 校验内容：
-  - 名称：`items` 中名称重复；名称与 TData 的成员（`TData.prototype` 上的方法、getter，以及 `name`、`driver`、`IO_read` 等实例字段）冲突。
+  - 名称：`items` 中名称重复；名称与 TData 的成员（`TData.prototype` 上的方法、getter，以及 `name` 等实例字段）冲突。
   - 类型与长度：`type` 不在支持的类型中；`length` 与类型不符（Bool 1，Byte / SInt / USInt 8，Int / UInt / Word 16，DInt / UDInt / DWord / Real 32）。
   - 对齐：非 Bool 的 `offset` 必须是 8 的倍数；多字节类型的字节偏移必须是偶数。
   - 重叠：把非 Bool 条目按字节区间排序后检查相邻区间是否相交；Bool 按 `offset` 检查是否重复占用同一位；Bool 落在某个非 Bool 区间内时，要求该 Bool 的 `coupling` 包含这个非 Bool 条目的名称。
@@ -85,7 +85,7 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 - 调用方：
   - `compile_layout` 对文件中的全部布局调用校验，有违规时抛出包含全部违规项的错误；控制器加载 `src/layouts.js` 时据此逐条写入错误日志并退出；
   - `tlms check` 对全部结构调用校验，与配置校验的错误一起报告（未实现，见第 11 节）。
-- 校验通过后，TData、TTag、TGroup 不再重复做这些检查；TTag 的 `validate` 只保留防御性断言。
+- 校验通过后，TData、TTag、Binding 不再重复做这些检查；`layout_of` 只保留防御性断言。
 
 主要布局（字节偏移）：
 
@@ -99,10 +99,9 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 
 ### 3.2 TData
 
-- `name` 可写；`layout`、`size`、`buffer`、`IO_buffer` 只读（只有 getter，赋值抛出 `TypeError`），`buffer` 的内容可以读写。
-- 对外暴露两个缓冲区：
-  - `buffer`：内部值缓冲区，统一按大端（BE）存放，Modbus 服务端直接按大端读写它；
-  - `IO_buffer`：与驱动交换数据用的缓冲区，按设备字节序存放。
+- `name` 可写；`layout`、`size`、`buffer` 只读（只有 getter，赋值抛出 `TypeError`），`buffer` 的内容可以读写。
+- `buffer`：内部值缓冲区，统一按大端（BE）存放。TData 不再持有与驱动交换的缓冲区，那属于 IO 绑定（3.4 节）。
+- 原始写入方法 `write_register(offset, value)`、`write_bit(offset, mask, value)`、`write_bytes(offset, source)` 以字节偏移定位，写入后的处理与按名写入相同（立即模式下先检测，然后调用 `on_write`），供对上服务端使用。
 - `new TData(struct, name)` 返回该结构编译出的子类 `Data_Class` 的实例；每个 tag 的访问器只在 `Data_Class.prototype` 上定义一次，同一结构的实例共用：
   - getter 用编解码表直接从 `buffer` 解码；
   - setter 用编解码表写入 `buffer`，再调用 `after_write`：立即检测模式下由 Observer 立即检测变化；然后在两种模式下都调用创建时传入的 `on_write(tdata)`。
@@ -111,33 +110,32 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 - 变化检测由每个 TData 的 Observer（`observer.js`）负责：它持有 `buffer` 的快照，比对时只对变化的字节解码相关 tag（字节反查表 `tags_at_byte`），旧值从快照解码，不缓存任何值；比对后更新快照，再按布局顺序报告变化。
   - 每个变化先由 TData 发出 `change(tagname, old, new)`，再由该 tag 的句柄发出 `change(old, new)`；事件总在新值生效之后发出。业务逻辑通过 `data.get(name).on('change', ...)` 订阅。
   - 事件处理器中再写 tag 时，嵌套的比对只登记，等当前这一轮变化报告完再比对一轮；连续 16 轮仍有新变化时抛出异常，防止振荡。
-  - `detect()` 做一次比对；外部直接改写 `buffer`（服务端写入、分组装载）后由写入方调用，延迟模式下由使用方在需要时调用。
+  - `detect()` 做一次比对；外部直接改写 `buffer`（分组装载、`copy_from`）后由写入方调用，延迟模式下由使用方在需要时调用。
   - `observer.previous(name)` / `take_scan_snapshot()` 为后续的扫描周期预留（design-scan.md 5.3 节）。
-- TData 出错时抛出异常（布局冲突、IO 区未按写入单元对齐、访问 IO 交换区以外的范围），不写日志、不退出。
-- `set_IO(driver, {remote_start, start, length, endian}, ...extras)` 绑定驱动：
-  - 本地 `IO_buffer[start .. start+length)` 对应远端 `remote_start` 起的同长度区域；
-  - `extras` 原样传给驱动：Modbus 为 `unit_id`，S7 为 `area, db`；
-  - 生成 `IO_read_all`（整段读入 `IO_buffer`）、`IO_write`（按区间写出）以及 `create_tag_group`。
+- TData 出错时抛出异常（布局冲突、值越界），不写日志、不退出。
 
 ### 3.3 TTag 与字节序转换
 
 - `data.get(name)` 返回该 tag 的 `TTag`，首次访问时创建并缓存，名称不存在时返回 `undefined`。TTag 不持有值：读 `value` 从 TData 的 `buffer` 解码，写 `value` 与 `data[name] = v` 完全等价；`change` 事件由 Observer 发出。
-- 设备字节序与内部大端之间的转换在 `endian.js` 中按布局条目进行（`load_entry` / `store_entry` / `io_index` / `io_range`），只改 `buffer` 或 `IO_buffer`，不检测变化：
+- `endian.js` 按布局条目实现设备字节序与内部大端之间的转换（`load_entry` / `store_entry` / `io_index` / `io_range`），不检测变化；IO 绑定按字节实现同样的映射（3.4 节），测试用 `endian.js` 作为对照核对两者逐字节一致：
   - 2 字节：`BE` 原样复制；`LE` / `little` / `BEBS` 交换两个字节；
   - 4 字节：支持 `BE`、`LE` / `little`、`BEBS`、`LEBS` 四种排列；
   - Bool 和单字节类型（Byte、SInt、USInt）只读写一个字节，不做字节内转换；它在 IO 缓冲区中的下标按 16 位寄存器换算：`LE` / `little` / `BEBS` 时为 `byte ^ 1`，`BE` / `LEBS` 时为 `byte`。Bool 按位掩码只改自己的位。
 
-### 3.4 TGroup
+### 3.4 IO 绑定（`src/drivers/binding.js`）
 
-- `create_tag_group(...names)` 返回一组需要一起与设备同步的 tag。
-- 布局的重叠规则已由布局校验保证（3.1 节），TGroup 不再判断重叠。添加 tag 时：
-  - 同一 tag 重复添加时忽略；
-  - tag 的字节范围超出 IO 交换区时报错退出；
-  - tag 在 IO 缓冲区中实际占用的字节范围（`io_range`，Bool 和单字节类型按 3.3 节换算下标）向外扩展到驱动写入单元 `driver.write_unit` 的整数倍，再并入写区间（`#areas`）；与已有区间相交或相邻时合并，可能一次合并多个区间。
-- IO 交换区的 `start`、`remote_start` 和 `length` 必须是写入单元的整数倍，`set_IO` 时检查，否则抛出异常，保证扩展后的写区间不越出交换区，且本地写入单元与远端写入单元对齐。
-- `read()`：先 `IO_read_all`，再把组内每个 tag 从 `IO_buffer` 装载到 `buffer`（`load_entry`），全部装载完后做一次比对，所以事件处理器看到的是整组装载后的数据。
-- `write()`：组内每个 tag 先导出到 `IO_buffer`（`store_entry`），再按合并后的区间逐段调用 `IO_write`，并把区间长度一并传给驱动。区间内不属于组内 tag 的字节取 `IO_buffer` 中最近一次读入的值；按写入所有权规则，这些字节也由控制器写入，不会覆盖执行器的数据。
-- `copy_from(tdata)`：按同名 tag 从另一个 TData 复制值，全部复制完后做一次比对，用于在 data 与 command 之间同步参数块。
+- `new Binding(data, driver, { start, remote_start, length, endian, on_update }, ...extras)` 把 tdata 的交换区 `[start, start + length)` 对应到远端 `remote_start` 起的同长度区域；`extras` 原样传给驱动（Modbus 为 `unit_id`，S7 为 `area, db`）。交换区三项参数必须是驱动写入单元 `driver.write_unit` 的整数倍，否则抛出异常，保证扩展后的写区间不越出交换区，且本地写入单元与远端写入单元对齐。
+- Binding 持有按设备字节序存放的 `IO_buffer`（与 tdata 同长、同下标），驱动读入的数据只写入它。
+- 字节映射 `io_index`：创建时为 tdata 的每个字节算出它在 `IO_buffer` 中的下标。4 字节条目按 `BE`、`LE` / `little`、`BEBS`、`LEBS` 四种排列换算；其余字节按 16 位寄存器换算：`LE` / `little` / `BEBS` 时为 `byte ^ 1`，`BE` / `LEBS` 时不变。
+- `create_group(...names)` 返回一组需要一起与设备同步的 tag（`Binding_Group`）：
+  - 名称不存在、tag 落在交换区以外时抛出异常；同一 tag 重复添加时忽略；
+  - 所有权掩码 `own`：组内每个字节中属于本组的位，非 Bool 条目为整个字节，Bool 只是它自己那一位；
+  - 写区间：组内字节在 `IO_buffer` 中的位置向外扩展到写入单元，相邻的写入单元合并。
+- 读：`request_read()` 把整个交换区读入 `IO_buffer`，置 `fresh`；正在进行的读取被共享，不重复发起。`load(group)` 按掩码只装载本组的位，组外的位（如由控制器维护的 `comm_OK`）保持不变。
+- 写：`request_write(group)` 登记写请求，同一分组多次登记只写一次；`flush_writes()` 按掩码把本组的位导出到 `IO_buffer`，再按写区间逐段调用驱动写入，并把区间长度一并传给驱动。区间内不属于本组的位取自最近一次读入的值；按写入所有权规则，这些字节也由控制器写入，不会覆盖执行器的数据。
+- 驱动未连接时不读不写，写请求保留到下一次 `flush_writes()`。
+- 状态：`connected`（随驱动的 `connect` / `connfailed` 事件更新）、`read_ok`（最近一次读取是否成功）、`write_done(group)`（每个分组最近一次写入的序号和结果）；新数据到达或状态变化时调用创建时传入的 `on_update(binding)`。目前这些状态只记录，尚未使用。
+- 便捷方法（扫描调度器上线之前使用）：`group.read()` 读取、装载并立即检测；`group.write()` 登记并立即写出；`group.copy_from(source)` 按同名 tag 复制值，全部复制完后做一次检测，用于在 data 与 command 之间同步参数块。
 
 ## 4. 驱动
 
@@ -175,12 +173,12 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 
 ### 4.4 对上服务端（createMTServer + Unit_Map）
 
-- `create_vector(unit_map)` 生成服务 `Unit_Map` 的 vector，`createMTServer` 用它创建 es-modbus 服务端；测试直接调用 vector 模拟 HMI 请求。
+- `Unit_Map` 和 `create_vector(unit_map, { logger })` 属于数据层（`src/typed_data/server.js`）。vector 中访问未映射地址的警告经注入的 `logger` 输出，缺省不输出；`createMTServer`（驱动）传入项目的日志器，用 vector 创建 es-modbus 服务端。测试直接调用 vector 模拟 HMI 请求。
 
 - `Unit_Map.attach_unit(unit_id, tdata, start)` 把 TData 挂到某个单元的字节区间 `[start, start + size)`，一个单元可以挂多个 TData。
   - 执行器单元：data 挂在字节 0，command 挂在字节 400（即寄存器 200 起）。
-- 寄存器 `addr` 对应字节 `addr * 2`，按大端读写 `tdata.buffer`；线圈 `addr` 对应字节 `addr >> 3` 的第 `addr % 8` 位。
-- 每次写入后调用 `tdata.detect()`，由 Observer 比对出 HMI 写入引起的变化并发出事件。
+- 寄存器 `addr` 对应字节 `addr * 2`，按大端读 `tdata.buffer`；线圈 `addr` 对应字节 `addr >> 3` 的第 `addr % 8` 位。
+- 写入经 TData 的 `write_register` / `write_bit`，由 TData 按检测模式处理（目前为立即检测），vector 不直接改写 `buffer`。
 - vector 方法名为 es-modbus 要求的 snake_case：`get_holding_register`、`get_input_register`、`set_register`、`get_coil`（同时用于 FC 1 和 FC 2）、`set_coil`。
 - 未映射的地址（例如执行器单元中节点数据区与命令块之间的空档）读为 0 / false，写入被忽略，因此 HMI 跨越空档的整块读取仍能成功。每个（类型、单元、地址）只记录一次警告，避免轮询时刷屏。
 - 请求由 es-modbus 先行校验：未登记的单元号应答异常 0x0B，非法功能码、数量或地址越界应答 0x01 / 0x03 / 0x02；vector 抛出异常时应答 0x04，并通过 `vector_error` 事件记录日志。
@@ -188,6 +186,8 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 ## 5. 执行器处理（`node_proc.js`）
 
 ### 5.1 IO 绑定
+
+每个执行器的 data 和 command 各有一个 Binding（3.4 节），保存在 `actuator.data_binding` / `actuator.command_binding`。
 
 - data：
   - 绑定整块结构，远端起点为 `driver_info.data.start`；

@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
 import { TTag } from "./TTag.js";
-import { TGroup } from "./TGroup.js";
 import { Observer } from "./observer.js";
 import { layout_of } from "./layout.js";
 
@@ -11,7 +10,7 @@ export class TData extends EventEmitter {
 	 * @readonly
 	 * @description Internal buffer
 	 * all data items, including combined words, are stored in Big-Endian format.
-	 * Device endianness is converted only at the IO boundary (endian.js).
+	 * Device endianness is converted only at the IO boundary (the IO binding).
 	 */
 	#buffer;
 	/**
@@ -25,18 +24,6 @@ export class TData extends EventEmitter {
 	}
 
 	/**
-	 * @type {Buffer|null}
-	 * @description IO buffer for data exchange with the driver.
-	 * The endianness (BE, LE, BEBS, or LEBS) is determined by the driver.
-	 * BE: Big Endian
-	 * LE: Little Endian
-	 * BEBS: Big Endian Byte Swap
-	 * LEBS: Little Endian Byte Swap
-	 */
-	#IO_buffer = null;
-	get IO_buffer() { return this.#IO_buffer; }
-
-	/**
 	 * @type {string}
 	 */
 	name;
@@ -47,15 +34,6 @@ export class TData extends EventEmitter {
 	 * The tag accessors are defined once on the prototype of layout.Data_Class.
 	 */
 	get layout() { return this.#layout; }
-
-	// Members assigned by set_IO. They are declared here so that
-	// layout_of() rejects tag names that would collide with them.
-	driver = null;
-	buffer_info = null;
-	IO_read = null;
-	IO_write = null;
-	IO_read_all = null;
-	create_tag_group = null;
 
 	/** @type {Observer} */
 	#observer;
@@ -96,86 +74,34 @@ export class TData extends EventEmitter {
 	}
 
 	/**
-	 * Sets up the IO operations for the driver.
-	 *
-	 * @param {Object} driver - The driver object to start and listen for data.
-	 * @param {Object} options - The buffer information, unit: byte.
-	 * @param {number} [options.start=0] The starting address on the instance buffer, default is 0
-	 * @param {number} [options.remote_start=0] The starting address of the buffer on the remote device, default is 0
-	 * @param {number} [options.length] The effective length of the exchange data area, defaults to the remaining length of the buffer
-	 * @param {string} [options.endian] - Endianness for data interpretation
-	 * @return {void}
-	 * @throws {Error} When the IO area is not aligned to the write unit of the driver.
+	 * Writes a 16-bit register (big-endian) at a byte offset
+	 * (doc/spec-data-api.md 2.5).
 	 */
-	set_IO(driver, options, ...extras) {
-		if (driver == null) {
-			this.driver = null;
-			this.buffer_info = null;
-			this.IO_read = null;
-			this.IO_write = null;
-			return;
-		}
+	write_register(offset, value) {
+		this.#buffer.writeUInt16BE(value, offset);
+		this.#written();
+	}
 
-		// starting position of exchange data segment in the current TData buffer.
-		const IO_start = options.start ?? 0;
-		// starting position of exchange data segment in the driver.
-		const remote_start = options.remote_start ?? 0;
-		// length of the exchange data segment
-		const IO_length = options.length ?? this.#buffer.length - IO_start;
-		const endian = options.endian ?? "BE";
-		// smallest writable unit of the driver in bytes
-		const write_unit = driver.write_unit ?? 1;
-		if (IO_start % write_unit || remote_start % write_unit || IO_length % write_unit) {
-			throw new Error(`${this.name}: IO area ${JSON.stringify({ IO_start, remote_start, IO_length })} is not aligned to the write unit ${write_unit}`);
-		}
-		this.driver = driver;
+	/** Writes the bits selected by mask of the byte at offset. */
+	write_bit(offset, mask, value) {
+		const buffer = this.#buffer;
+		buffer[offset] = value ? buffer[offset] | mask : buffer[offset] & ~mask;
+		this.#written();
+	}
 
-		this.create_tag_group = (...tags) => {
-			const tgroup = new TGroup(
-				this,
-				{ IO_start, remote_start, IO_length, endian, write_unit },
-			);
-			tgroup.add(...tags);
-			return tgroup;
-		};
+	/** Writes the bytes of source from a byte offset. */
+	write_bytes(offset, source) {
+		source.copy(this.#buffer, offset);
+		this.#written();
+	}
 
-		this.buffer_info = options;
-
-		const offset = remote_start - IO_start;
-		const check_driver = (range) => {
-			if (range.start < IO_start || range.start + range.length > IO_start + IO_length) {
-				throw new Error(`${this.name}: invalid range ${JSON.stringify(range)}`);
-			}
-			return driver.is_connected;
-		};
-		this.IO_read = async (range) => {
-			if (!check_driver(range)) return false;
-			const start = offset + range.start;
-			const length = range.length;
-			const buffer = await driver.read({ start, length }, ...extras);
-			if (buffer) {
-				buffer.copy(this.#IO_buffer, range.start, /* start */0, /* end */length);
-				return true;
-			}
-			return false;
-		};
-		this.IO_write = async (buffer, range) => {
-			if (!check_driver(range)) return false;
-			const start = range.start + offset;
-			return await driver.write(buffer, { start, length: range.length }, ...extras);
-		};
-		this.IO_read_all = async () => {
-			const start = remote_start;
-			const length = IO_length;
-			if (!check_driver({ start: IO_start, length })) return false;
-			const buffer = await driver.read({ start, length }, ...extras);
-			if (buffer) {
-				buffer.copy(this.#IO_buffer, IO_start);
-				this.emit("data", buffer);
-				return true;
-			}
-			return false;
-		};
+	/**
+	 * After a write: detects the change at once in the immediate mode, then
+	 * notifies the user in both modes (doc/spec-data-api.md 4.2).
+	 */
+	#written() {
+		if (this.#detection === "immediate") this.#observer.diff();
+		this.#on_write?.(this);
 	}
 
 	/**
@@ -186,8 +112,7 @@ export class TData extends EventEmitter {
 	 * @param {{name: string}} _entry - The layout entry of the tag.
 	 */
 	after_write(_entry) {
-		if (this.#detection === "immediate") this.#observer.diff();
-		this.#on_write?.(this);
+		this.#written();
 	}
 
 	/**
@@ -222,7 +147,6 @@ export class TData extends EventEmitter {
 		this.setMaxListeners(100);
 		const size = this.layout.size;
 		this.#buffer = Buffer.alloc(size, 0);
-		this.#IO_buffer = Buffer.alloc(size, 0);
 		// init values in layout order: the bits of a combined word after the word
 		for (const { codec, byte, mask, init_value } of this.layout.entries.values()) {
 			codec.set(this.#buffer, byte, mask, init_value);
