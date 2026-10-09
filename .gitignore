@@ -26,6 +26,7 @@ yarn.lock
 
 /main.js
 /cli.js
+/layouts.yaml
 
 # local data
 /.local

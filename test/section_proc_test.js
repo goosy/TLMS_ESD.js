@@ -2,10 +2,7 @@ import "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import test, { describe } from "node:test";
-import { LINE } from "../src/structs/line.js";
-import { SECTION } from "../src/structs/section.js";
-import { NODE } from "../src/structs/node.js";
-import { COMMAND } from "../src/structs/command.js";
+import { LINE, SECTION, NODE, COMMAND } from "../src/layouts.js";
 import { TData } from "../src/typed_data/TData.js";
 import { line_init } from "../src/line_proc.js";
 import { section_init, section_loop } from "../src/section_proc.js";

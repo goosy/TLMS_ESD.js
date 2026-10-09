@@ -6,7 +6,7 @@ process.env.LOG_LEVEL = "off";
 const { Buffer } = await import("node:buffer");
 const { EventEmitter } = await import("node:events");
 const { TData } = await import("../src/typed_data/TData.js");
-const { NODE } = await import("../src/structs/node.js");
+const { NODE } = await import("../src/layouts.js");
 
 const ITER = 200_000;
 const payload_names = NODE.items.map((i) => i.name);

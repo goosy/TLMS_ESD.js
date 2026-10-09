@@ -3,10 +3,7 @@ import { line_init } from "./line_proc.js";
 import { section_loop, section_init } from "./section_proc.js";
 import { node_loop, node_init } from "./node_proc.js";
 import { TData } from "./typed_data/TData.js";
-import { LINE } from "./structs/line.js";
-import { SECTION } from "./structs/section.js";
-import { NODE } from "./structs/node.js";
-import { COMMAND } from "./structs/command.js";
+import { LINE, SECTION, NODE, COMMAND } from "./layouts.js";
 import { Unit_Map } from "./drivers/modbusTCP.js";
 
 /**
@@ -40,9 +37,11 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 		// for controller side, do not use `node.driver_info.unit_id;`
 		const name = node.name;
 		const s_unit_id = unit_id_map[name];
+		/** @type {import("./layout_types").Node_TData} */
 		const data = new TData(NODE, name);
 		node.data = data;
 		unit_map.attach_unit(s_unit_id, data, 0);
+		/** @type {import("./layout_types").Command_TData} */
 		const command = new TData(COMMAND, name);
 		node.command = command;
 		unit_map.attach_unit(s_unit_id, command, 400);
@@ -52,12 +51,14 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 	};
 
 	for (const line of controller.lines) {
+		/** @type {import("./layout_types").Line_TData} */
 		const data = new TData(LINE, line.name);
 		line.data = data;
 		unit_map.attach_unit(unit_id_map[line.name], data, 0);
 		line_init(line);
 		lines.push(line);
 		for (const section of line.sections) {
+			/** @type {import("./layout_types").Section_TData} */
 			const data = new TData(SECTION, section.name);
 			section.data = data;
 			unit_map.attach_unit(unit_id_map[section.name], data, 0);

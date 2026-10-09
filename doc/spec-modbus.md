@@ -1,7 +1,7 @@
 # TLMS_ESD Modbus 点表
 
 > 本文是 [spec.md](spec.md) 的子文档，描述 HMI/SCADA 通过 Modbus TCP 连接控制器时能看到的全部点量。
-> 点表由 `src/structs/` 的定义生成，与代码不一致时以代码为准；说明文字参考 `data_structure2025.xlsx`，术语按 [spec.md](spec.md) 第 3 节统一。
+> 点表由 `src/layouts.yaml` 的布局生成，与代码不一致时以代码为准；说明文字参考 `data_structure2025.xlsx`，术语按 [spec.md](spec.md) 第 3 节统一。
 
 ## 1. 访问约定
 

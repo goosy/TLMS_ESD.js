@@ -6,7 +6,7 @@ import { Buffer } from "node:buffer";
 
 process.env.LOG_LEVEL ??= "off";
 // imported after LOG_LEVEL is set: it loads src/util.js through TData
-const { build_structure } = await import("../src/structs/share.js");
+const { build_structure } = await import("../src/typed_data/structure.js");
 
 export class Exit_Called extends Error {
 	constructor(code) {

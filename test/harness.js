@@ -8,21 +8,17 @@
 import "./share.js"; // must be first: sets LOG_LEVEL
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { read_config, MAIN_PERIOD } from "../src/config.js";
 import { prepare_controller } from "../src/init.js";
 import { build_runtime } from "../src/runtime.js";
 import { create_vector } from "../src/drivers/modbusTCP.js";
 import { TData } from "../src/typed_data/TData.js";
-import { LINE } from "../src/structs/line.js";
-import { SECTION } from "../src/structs/section.js";
-import { NODE } from "../src/structs/node.js";
-import { COMMAND } from "../src/structs/command.js";
-import { RECORD } from "../src/structs/record.js";
+import { LINE, SECTION, NODE, COMMAND, RECORD } from "../src/layouts.js";
 
 export { MAIN_PERIOD };
 
-const FIXTURE_DIR = fileURLToPath(new URL("./fixtures/system/", import.meta.url));
+const FIXTURE_DIR = join(import.meta.dirname, "fixtures/system");
 // local byte where the command block is bound to the actuator (node_proc.js)
 const COMMAND_LOCAL_START = 16;
 // byte where the command block is attached in a node unit (runtime.js)

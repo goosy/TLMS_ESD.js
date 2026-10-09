@@ -9,14 +9,16 @@
 | `src/cli.js` | `tlms` 命令行，解析参数，调用 pm2 或直接 `import('./main.js')`。 |
 | `src/main.js` | 进程入口：校验布局，读取配置，构建控制器，提供按连接复用的真实驱动，启动 Modbus 服务端和主循环。 |
 | `src/runtime.js` | `build_runtime`：为控制器创建 TData、挂到 `Unit_Map`、调用各 `*_init`，并提供主循环的一次迭代 `cycle` 与 `start` / `stop`。驱动由调用方经 `get_drivers(driver_info)` 提供，测试据此注入假驱动。 |
-| `src/gcl.js` | YAML 加载器（`yaml` 库，YAML 1.1），保留源码行号信息。 |
+| `src/gcl.js` | YAML 加载器（`yaml` 库，YAML 1.2），保留源码行号信息。 |
 | `src/config.js` | 合并多份配置文档，填充默认值，建立名称与 ID 索引。 |
 | `src/init.js` | `prepare_controller`：为选定的控制器构建运行时对象图。 |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | 执行器（节点）、段、线的初始化（事件绑定）与周期处理。 |
 | `src/action_record.js` | 动作记录：CSV 读写，以及基于 index 的浏览。 |
 | `src/drivers/` | `Base_Driver`、`MTClient`（Modbus TCP 客户端）、`S7Client`，以及 `createMTServer` / `create_vector` / `Unit_Map`（对上服务端）。 |
-| `src/typed_data/` | `TData` / `TTag` / `TGroup`：带类型的缓冲区与变化事件。 |
-| `src/structs/` | LINE、SECTION、NODE、COMMAND、RECORD 的内存布局定义。 |
+| `src/typed_data/` | 数据层：`TData` / `TTag` / `TGroup`（带类型的缓冲区与变化事件）、`structure.js`（结构展开与布局校验）、`layout.js`（YAML 布局文件的编译）、`codecs.js`（各类型的编解码）、`types.js`（类型声明生成）。 |
+| `src/layouts.yaml` | LINE、SECTION、NODE、COMMAND、RECORD 的布局描述。 |
+| `src/layouts.js` | 编译 `layouts.yaml` 并导出这些布局。 |
+| `src/layout_types.d.ts` | 由布局生成的类型声明（`pnpm gen:types`）。 |
 | `src/util.js` | log4js 日志、`debouncify` / `debounce`、`Object.mixin`。 |
 
 ## 2. 启动流程
@@ -48,13 +50,17 @@
 
 TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节，本节说明实现。
 
-### 3.1 布局定义（`src/structs/`）
+### 3.1 布局定义（`src/layouts.yaml`）
 
-- 每个条目包含 `{ name, type, offset, length, init_value }`，`offset` 和 `length` 的单位都是位（bit）。
+- 布局描述是一个 YAML 1.2 文件：根键 `layouts` 映射布局名到条目列表；其余根键都是片段（如 `node_commands`、`node_parameters`、`node_status`），由条目按名称引用。
+- 每个条目包含 `{ name, type, offset, init_value }`，可选 `length`、`comment`；`offset` 和 `length` 的单位都是位（bit），`length` 省略时由类型决定。
+- 组合字与组成位只由一方给出 `init_value`（规范 3.6）：`build_structure` 展开时，组合字未给出则由组成位合成（未给出的位为 false），组合字给出则组成位的值从整字拆出；双方都给出时保留给出的值，由校验报告。现有布局都由组成位给出。
 - `type` 取值（大小写不敏感）：`Bool`、`Byte`、`SInt`、`USInt`、`Int`、`UInt`、`Word`、`DInt`、`UDInt`、`DWord`、`Real`。
-- `Word` 条目带 `coupling` 时，表示由若干 Bool 组成的状态字或命令字；`is_combined: true` 表示整字与各位双向联动。coupling 内各项的 `offset` 相对于该字的起点。
-- `{ includes: [...], offset }` 把一组公共条目（如 `node_parameters`）整体偏移后拼接进来。
-- `share.js#build_structure` 把条目展开成扁平的 `items`，计算结构总长 `length`，并把 coupling 规范为名称数组。
+- `Word` 条目带 `coupling`（片段名或内联列表）时，表示由若干 Bool 组成的状态字或命令字；`is_combined: true` 表示整字与各位双向联动。coupling 内各项的 `offset` 相对于该字的起点。
+- `{ includes: <片段名或内联列表>, offset }` 把一组公共条目（如 `node_parameters`）整体偏移后拼接进来，可加 `name_prefix`。
+- `src/typed_data/layout.js#compile_layout(yaml_path)` 同步读取文件，解析片段引用（不存在或循环引用时报错），补全省略的 `length`，再对每个布局调用 `structure.js#build_structure` 展开为扁平的 `items`（计算结构总长 `length`，把 coupling 规范为名称数组）并校验，返回 `{ layouts, fragments }`。
+- `src/layouts.js` 在加载时编译同目录的 `layouts.yaml`（路径按模块位置解析；构建时 rolldown 配置中的复制插件把它作为独立文件输出到 `main.js` 同目录，不打进 `main.js`），导出 `LINE`、`SECTION`、`NODE`、`COMMAND`、`RECORD` 和参数块条目 `node_parameters`；布局不合法时逐条写入错误日志并退出。
+- 每个布局编译为一个 Layout（`layout_of`）：除展开后的 `name`、`length`、`items` 外，还有按名称索引的条目表 `entries`（字节偏移、位掩码、编解码）、字节到 tag 的反查表 `tags_at_byte` 和该结构专用的 TData 子类 `Data_Class`。
 - Bool 的定位规则：`byte = offset >> 3`，`bit = offset % 8`。内部缓冲按大端存放，一个字的第一个字节是寄存器的高字节，所以 coupling 中偏移 8–15 对应寄存器的 bit0–7，偏移 0–7 对应 bit8–15。定义文件按 8–15、0–7 的顺序列出，就是按寄存器 bit0 到 bit15 的顺序排列；字值的第 k 位即寄存器 bit k，`0xB1` 掩码按这个位号计算。
 - [spec-modbus.md](spec-modbus.md) 中的点表就是按上述规则从这些定义计算出来的。
 - 组合字的位号完全由上述偏移编号保证，`buffer` 中组合字与其他多字节类型一样按大端存放；对上服务端和驱动都不为组合字单独交换字节（规范 3.6）。
@@ -65,7 +71,7 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 
 规范 3.6 的布局规则在布局阶段集中校验，不分散到 TData、TTag 和 TGroup 的运行时：
 
-- 由 `share.js` 提供 `validate_structure(data_struct)`，对 `build_structure` 展开后的扁平 `items` 做校验，返回违规描述的数组（空数组表示合法），不在发现第一个错误时退出。
+- 由 `structure.js` 提供 `validate_structure(data_struct)`，对 `build_structure` 展开后的扁平 `items` 做校验，返回违规描述的数组（空数组表示合法），不在发现第一个错误时退出。
 - 校验内容：
   - 名称：`items` 中名称重复；名称与 TData 的成员（`TData.prototype` 上的方法、getter，以及 `name`、`driver`、`IO_read` 等实例字段）冲突。
   - 类型与长度：`type` 不在支持的类型中；`length` 与类型不符（Bool 1，Byte / SInt / USInt 8，Int / UInt / Word 16，DInt / UDInt / DWord / Real 32）。
@@ -74,10 +80,11 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
   - 组合字：带 `coupling` 的条目，其每个组成位的 `offset` 都在 `[offset, offset + length)` 内。
   - 总长：`length % 16 === 0`。
   - `init_value` 的类型与取值范围与 `type` 相符（Bool 为布尔值，其余为该类型可表示的数）。
+  - 组合字与它的组成位都给出了 `init_value`。
 - `build_structure` 遇到重名时不再静默跳过，而是保留条目，交给校验报告。
 - 调用方：
-  - 控制器启动时（`main.js`，在创建任何 TData 之前）对全部结构调用校验，有违规时逐条写入错误日志并退出；
-  - `tlms check` 对全部结构调用校验，与配置校验的错误一起报告。
+  - `compile_layout` 对文件中的全部布局调用校验，有违规时抛出包含全部违规项的错误；控制器加载 `src/layouts.js` 时据此逐条写入错误日志并退出；
+  - `tlms check` 对全部结构调用校验，与配置校验的错误一起报告（未实现，见第 11 节）。
 - 校验通过后，TData、TTag、TGroup 不再重复做这些检查；TTag 的 `validate` 只保留防御性断言。
 
 主要布局（字节偏移）：
@@ -95,9 +102,10 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 - 对外暴露两个缓冲区：
   - `buffer`：内部值缓冲区，统一按大端（BE）存放，Modbus 服务端直接按大端读写它；
   - `IO_buffer`：与驱动交换数据用的缓冲区，按设备字节序存放。
-- 每个条目生成一个 `TTag`，同时在 TData 上定义同名属性：
-  - getter 返回 `tag.value`；
-  - setter 调用 `tag.set_value`，再执行 `check_coupling`，让组合字与它的各个位相互刷新。
+- `new TData(struct, name)` 返回该结构编译出的子类 `Data_Class` 的实例；每个 tag 的访问器只在 `Data_Class.prototype` 上定义一次，同一结构的实例共用：
+  - getter 用编解码表直接从 `buffer` 解码；
+  - setter 用编解码表写入 `buffer`，再调用 `after_write`：执行该 tag 的 `check_change` 和 `check_coupling`，让组合字与它的各个位相互刷新。
+- 每个条目另生成一个 `TTag`，缓存当前值，用于变化检测和事件。
 - 任一 tag 发生变化时，TData 发出 `change(tagname, old, new)`；tag 自身也发出 `change(old, new)`。业务逻辑通过 `data.get(name).on('change', ...)` 订阅。
 - 外部直接改写 `buffer`（服务端写入）后，调用 `check_all_tags()` 逐个比较缓存值与缓冲区内容，补发变化事件。
 - `set_IO(driver, {remote_start, start, length, endian}, ...extras)` 绑定驱动：
@@ -107,7 +115,7 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 
 ### 3.3 TTag
 
-- 每个 tag 持有 `buffer` 中自己那一段的 subarray，并缓存当前值 `value`。`check_change` 比较缓存值与缓冲区中的值，不同时更新缓存并发出事件，事件总在新值生效之后发出。
+- 每个 tag 按类型从编解码表（`codecs.js`）取得读写方法，直接读写 TData 的 `buffer`，并缓存当前值 `value`。`check_change` 比较缓存值与缓冲区中的值，不同时更新缓存并发出事件，事件总在新值生效之后发出。
 - `read_from(IO_buffer, endian)` / `write_to(IO_buffer, endian)` 负责在设备字节序与内部大端之间转换：
   - 2 字节：`BE` 原样复制；`LE` / `little` / `BEBS` 交换两个字节；
   - 4 字节：支持 `BE`、`LE` / `little`、`BEBS`、`LEBS` 四种排列；
@@ -317,7 +325,7 @@ v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级�
 | --- | --- |
 | `es-modbus` | Modbus TCP 客户端（连接执行器）和服务端（对 HMI） |
 | `@st-one-io/nodes7` | S7 客户端（连接执行器） |
-| `yaml` | 配置解析（YAML 1.1，支持合并键） |
+| `yaml` | 配置与布局解析（YAML 1.2） |
 | `csv-parser` | 读取动作记录 CSV |
 | `log4js` | 日志 |
 | `mri` | 命令行参数解析 |

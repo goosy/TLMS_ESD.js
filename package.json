@@ -33,6 +33,7 @@
 		"watch": "cd example && nodemon ../src/main.js TC --watch ../src --ext js",
 		"test": "node --test",
 		"lint": "eslint .",
+		"gen:types": "node scripts/gen_types.js",
 		"prepare": "pnpm build"
 	},
 	"bin": {
