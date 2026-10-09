@@ -1,49 +1,49 @@
 {
-  "name": "tlms_esd",
-  "version": "0.6.1",
-  "description": "Pipeline Leakage Emergency Shutdown System",
-  "type": "module",
-  "exports": {
-    "cli": "./cli.js",
-    "default": "./main.js"
-  },
-  "peerDependencies": {
-    "pm2": "^5.4.2"
-  },
-  "devDependencies": {
-    "@eslint/js": "10.0.1",
-    "@st-one-io/nodes7": "^1.1.2",
-    "@stylistic/eslint-plugin": "5.10.0",
-    "csv-parser": "^3.2.1",
-    "es-modbus": "^0.1.4",
-    "eslint": "10.12.0",
-    "globals": "17.13.0",
-    "log4js": "^6.9.1",
-    "mri": "^1.2.0",
-    "nodemon": "^3.1.14",
-    "rolldown": "^1.2.12",
-    "yaml": "^2.9.1"
-  },
-  "directories": {
-    "conf": "example"
-  },
-  "scripts": {
-    "build": "rolldown -c",
-    "dev": "cd example && node ../src/main.js TC",
-    "watch": "cd example && nodemon ../src/main.js TC --watch ../src --ext js",
-    "test": "node --test",
-    "lint": "eslint .",
-    "prepare": "pnpm build"
-  },
-  "bin": {
-    "tlms": "./cli.js"
-  },
-  "keywords": [
-    "modbusTCP",
-    "PLC",
-    "S7"
-  ],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@12.5.1"
+	"name": "tlms_esd",
+	"version": "0.6.1",
+	"description": "Pipeline Leakage Emergency Shutdown System",
+	"type": "module",
+	"exports": {
+		"cli": "./cli.js",
+		"default": "./main.js"
+	},
+	"peerDependencies": {
+		"pm2": "^5.4.2"
+	},
+	"devDependencies": {
+		"@eslint/js": "10.0.1",
+		"@st-one-io/nodes7": "^1.1.2",
+		"@stylistic/eslint-plugin": "5.10.0",
+		"csv-parser": "^3.2.1",
+		"es-modbus": "^0.1.4",
+		"eslint": "10.12.0",
+		"globals": "17.13.0",
+		"log4js": "^6.9.1",
+		"mri": "^1.2.0",
+		"nodemon": "^3.1.14",
+		"rolldown": "^1.2.12",
+		"yaml": "^2.9.1"
+	},
+	"directories": {
+		"conf": "example"
+	},
+	"scripts": {
+		"build": "rolldown -c",
+		"dev": "cd example && node ../src/main.js TC",
+		"watch": "cd example && nodemon ../src/main.js TC --watch ../src --ext js",
+		"test": "node --test",
+		"lint": "eslint .",
+		"prepare": "pnpm build"
+	},
+	"bin": {
+		"tlms": "./cli.js"
+	},
+	"keywords": [
+		"modbusTCP",
+		"PLC",
+		"S7"
+	],
+	"author": "",
+	"license": "ISC",
+	"packageManager": "pnpm@12.5.1"
 }
