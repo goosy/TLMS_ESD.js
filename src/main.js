@@ -48,11 +48,15 @@ function get_drivers(driver_info) {
 }
 
 async function run_controller(controller) {
-	const action_record = new Action_Record("action_records");
+	// every data block requests a scan after a write (doc/design-scan.md 3.3);
+	// the scheduler is created with the runtime, after the action record
+	let runtime;
+	const action_record = new Action_Record("action_records", {
+		on_write: () => runtime?.scheduler.request_scan(),
+	});
 	action_record.records_size = controller.records_size ?? 10;
 	action_record.init();
 
-	let runtime;
 	try {
 		runtime = build_runtime(controller, { get_drivers, action_record });
 	} catch (e) {

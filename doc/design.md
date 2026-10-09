@@ -47,7 +47,9 @@
    1. initializes the action record;
    2. calls `build_runtime` (`runtime.js`): mounts the action record on `unit_id.action_records`, creates the TData in the order line -> section -> actuator, calls `attach_unit`, then each `*_init`; the drivers of the actuators are provided by `get_drivers` of `main.js`, reused per connection;
    3. starts the Modbus TCP server and waits until it is ready; when it fails to start (e.g. the port is in use), logs an error and exits with exit code 1, to be restarted by pm2;
-   4. `runtime.start()` runs `section_loop` of all sections and `node_loop` of all actuators with `setInterval(MAIN_PERIOD = 500)` (`line_loop` is empty and not called).
+   4. `build_runtime` creates the scan scheduler (section 6 of design-scan.md), registers all tdata and the data Bindings of the actuators (with the input group `data_payload`), and wraps the old main loop as coarse rules: first `section_loop` of all sections, then `node_loop` of all actuators (`line_loop` is empty and not called). The coarse rules detect new periodic ticks with their own tickers and run only in the scans of periodic ticks, because they time by 500 ms on every call;
+   5. all tdata use the immediate detection mode, with `on_write` wired to `request_scan()` of the scheduler: any write (rules, event handlers, HMI, asynchronous callbacks) requests a scan after detection (3.3 of design-scan.md);
+   6. `runtime.start()` first runs an initial scan (starting the tickers of the coarse rules), then starts the periodic tick (`MAIN_PERIOD = 500`); rule errors are written to the log through the `on_error` of the scheduler.
 
 ## 3. Typed data layer
 
@@ -203,11 +205,12 @@ The data and command of each actuator have a Binding each (3.4), kept in `actuat
 
 ### 5.2 Periodic processing
 
-`node_loop` runs every 500 ms:
+Reading the actuator data is done by the scan: the scan of a periodic tick starts the read in its output phase; when the data arrives, the `on_update` of Binding requests a scan, which loads `data_payload` in the input phase and detects the changes in the publish phase.
 
-1. When the driver is connected, runs `data_payload.read()`.
-2. Command masking: `command.commands &= 0xB1`, keeping bits 0, 4, 5, 7 for all actuators alike (see sections 11 and 12).
-3. When `has_commands` has been true for more than 3 cycles, the commands are sent again (`debounce_send_commands`).
+`node_loop` runs once in the scan of every periodic tick:
+
+1. Command masking (when the driver is connected): `command.commands &= 0xB1`, keeping bits 0, 4, 5, 7 for all actuators alike (see sections 11 and 12).
+2. When `has_commands` has been true for more than 3 cycles, the commands are sent again (`debounce_send_commands`).
 
 ### 5.3 Events
 
@@ -262,7 +265,7 @@ The data and command of each actuator have a Binding each (3.4), kept in `actuat
 
 ### 6.3 Periodic part (`section_loop`)
 
-Runs every 500 ms:
+Runs once in the scan of every periodic tick (a coarse rule, before all `node_loop`s):
 
 1. Computes the protection state:
    - `protect_prereq = comm_OK && work_OK && !pump_change_F`;

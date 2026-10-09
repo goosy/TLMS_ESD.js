@@ -45,7 +45,9 @@
    1. 初始化动作记录；
    2. 调用 `build_runtime`（`runtime.js`）：把动作记录挂到 `unit_id.action_records`，按 线 → 段 → 执行器 的顺序创建 TData 并 `attach_unit`，再调用各自的 `*_init`；执行器的驱动由 `main.js` 的 `get_drivers` 按连接复用提供；
    3. 启动 Modbus TCP 服务端并等待其就绪；启动失败（如端口被占用）时记录错误并以退出码 1 退出，由 pm2 重启；
-   4. `runtime.start()` 用 `setInterval(MAIN_PERIOD = 500)` 执行全部段的 `section_loop` 和全部执行器的 `node_loop`（`line_loop` 为空，未调用）。
+   4. `build_runtime` 创建扫描调度器（design-scan.md 第 6 节），登记全部 tdata 和执行器的数据 Binding（输入分组为 `data_payload`），并把原来的主循环包装为粗粒度规则：先是全部段的 `section_loop`，然后是全部执行器的 `node_loop`（`line_loop` 为空，未调用）。粗粒度规则用自己的 ticker 判断新的周期 tick，只在周期 tick 的扫描中执行，因为它们每调用一次就按 500 ms 计时；
+   5. 全部 tdata 使用立即检测模式，`on_write` 接到调度器的 `request_scan()`：任何写入（规则、事件处理器、HMI、异步回调）在检测之后都请求一次扫描（design-scan.md 3.3 节）；
+   6. `runtime.start()` 先做一次初始扫描（启动粗粒度规则的 ticker），再启动周期 tick（`MAIN_PERIOD = 500`）；规则出错经调度器的 `on_error` 写入日志。
 
 ## 3. 带类型数据层
 
@@ -201,11 +203,12 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 
 ### 5.2 周期处理
 
-`node_loop` 每 500 ms 执行一次：
+执行器数据的读取由扫描完成：周期 tick 的扫描在输出阶段发起读取，数据到达后 Binding 的 `on_update` 请求扫描，在输入阶段装载 `data_payload`，在发布阶段检测变化。
 
-1. 驱动已连接时，执行 `data_payload.read()`。
-2. 命令屏蔽：`command.commands &= 0xB1`，对所有执行器统一保留位 0、4、5、7（见第 11、12 节）。
-3. `has_commands` 为真的周期数超过 3 时，重新发送命令（`debounce_send_commands`）。
+`node_loop` 在每次周期 tick 的扫描中执行一次：
+
+1. 命令屏蔽（驱动已连接时）：`command.commands &= 0xB1`，对所有执行器统一保留位 0、4、5、7（见第 11、12 节）。
+2. `has_commands` 为真的周期数超过 3 时，重新发送命令（`debounce_send_commands`）。
 
 ### 5.3 事件
 
@@ -260,7 +263,7 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 
 ### 6.3 周期部分（`section_loop`）
 
-每 500 ms 执行一次：
+在每次周期 tick 的扫描中执行一次（粗粒度规则，先于全部 `node_loop`）：
 
 1. 计算保护状态：
    - `protect_prereq = comm_OK && work_OK && !pump_change_F`；
