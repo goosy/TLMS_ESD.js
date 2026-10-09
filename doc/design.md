@@ -314,7 +314,7 @@ v0.7.0 调整段数据块时，计划把 `press_action` / `flow_action` 升级�
 
 - 包管理：pnpm。
 - 测试：`node --test`。
-- 代码检查：Biome。
+- 代码检查：ESLint 加 `@stylistic/eslint-plugin`（`eslint.config.js`，`pnpm lint`），JS 用 tab 缩进。ESLint 查找代码问题，@stylistic 只规范空白、引号、分号等，不重新折行，手工对齐的布局表得以保留。不使用会重新折行的格式化工具（Biome、Prettier）。另外禁止使用与 `Number` 命名空间等价的全局量（`isNaN`、`isFinite`、`parseInt`、`parseFloat`、`NaN`、`Infinity`），改用 `Number.isNaN` 等。
 
 ### 10.4 构建与发布
 

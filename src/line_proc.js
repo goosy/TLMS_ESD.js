@@ -60,5 +60,5 @@ export function line_init(line) {
     });
 }
 
-export function line_loop(line) {
+export function line_loop() {
 }

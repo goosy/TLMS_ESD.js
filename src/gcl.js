@@ -1,12 +1,12 @@
 import { readFile } from 'node:fs/promises';
-import { Document, parseDocument } from 'yaml';
+import { parseDocument } from 'yaml';
 
 export class GCL {
     #file;
     get file() {
         return this.#file;
     }
-    /** @type {Document[]} */
+    /** @type {import("yaml").Document[]} */
     #document;
     get document() {
         return this.#document;

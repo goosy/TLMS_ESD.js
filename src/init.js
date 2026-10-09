@@ -36,7 +36,7 @@ export async function prepare_controller(controller_name) {
     const controller = controller_name === 0 || !controller_name
         ? cfg_controllers[0]
         : cfg_controllers.find(c => c.name === controller_name);
-    // biome-ignore lint/suspicious/noDoubleEquals: the value may be null
+    // loose equality on purpose: the value may be null
     if (controller == undefined) {
         return null;
     }

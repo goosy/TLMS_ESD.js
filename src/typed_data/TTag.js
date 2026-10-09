@@ -1,17 +1,5 @@
-import { Buffer } from 'node:buffer';
 import { EventEmitter } from 'node:events';
 import { logger } from "../util.js";
-
-function nothing_to_do() { }
-
-const reverse_endians = {
-    big: 'LE',
-    BE: 'LE',
-    little: 'BE',
-    LE: 'BE',
-    BEBS: 'LEBS',
-    LEBS: 'BEBS',
-}
 
 // Endians that swap the two bytes of a 16-bit register.
 const BYTE_SWAP_ENDIANS = ['LE', 'little', 'BEBS'];
