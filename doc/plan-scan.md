@@ -4,7 +4,7 @@
 
 ## 1. 原则
 
-- **每一步独立可交付**：结束时 `pnpm test` 和 Biome 检查全部通过，可以单独提交、单独回退。
+- **每一步独立可交付**：结束时 `pnpm test` 和 `pnpm lint` 全部通过，可以单独提交、单独回退。
 - **行为变化集中在后段**：第 1～5 步对外行为不变（只换内部机制）；时序变化只出现在第 6～8 步，且每一步只引入 design-scan.md 第 9 节和 7.5 节末尾列出的变化。
 - **先有测试，再换实现**：每一步先补足能约束该步行为的测试，在旧实现上通过，再替换实现。
 - **规范随行为变化同步修改**：哪一步改变了规范所描述的行为，哪一步同时修改 `doc/spec.md` 的对应条目。
@@ -34,13 +34,16 @@
 
 改动：
 
-1. **抽出测试夹具**：把 `test/section_proc_test.js` 中的 `build_line()` 和 `settle()` 移到 `test/harness.js`，扩展为可以构建“线 + 段 + 执行器（data、command、假驱动）”的完整对象图，并用 `create_fake_driver` 模拟执行器。
-   - 测试只通过“设置输入 → `settle()` → 断言输出”的方式编写，不依赖事件触发的时刻；
-   - `settle()` 现在实现为等待超过防抖链的时间；第 5 步起改为驱动调度器扫描，测试用例本身不改。
+1. **系统测试夹具**：
+   - 把 `main.js` 中构建运行时对象图的部分抽到 `src/runtime.js#build_runtime`（驱动由调用方提供），把对上服务端的 vector 抽成 `create_vector(unit_map)`；`main.js` 只负责配置、真实驱动池、服务端和启动；
+   - `test/harness.js` 用 `test/fixtures/system/` 的配置调用 `build_runtime`，以假驱动模拟执行器（Modbus BE、S7、Modbus LEBS 各有覆盖），经 vector 模拟 HMI 写入，用 `node:test` 的模拟定时器推进时间；
+   - 测试只通过“设置输入 → 推进时间 → 断言输出”的方式编写，不依赖事件触发的时刻；第 5 步起只改夹具的推进方式，测试用例本身不改；
+   - `test/section_proc_test.js` 直接调用段的内部函数，暂时保留；它的场景已由系统测试覆盖（跨段不抹掉 `action_section_ID` 的场景除外），在第 6、7 步内部函数被替换时删除或改写。
 2. **补充行为测试**，覆盖 design-scan.md 7.5 节表中每一行现有处理，至少包括：
    - 执行器：`pump_run` 汇总、`response_code` 握手、`pressure_SD_F` 清命令位、`read_paras` / `write_paras`、`commands` 发送与 3 周期重发、命令屏蔽；
    - 段与线：各汇总量、输差延时、倒计时及人工挂起中断、压力 / 输差动作的置位与复位、`stop_pumps` / `cancel_stop` 下发、线 `flow_override` 总闸、`autoStopCmd` / `manStopCmd` 清除、动作记录；
-   - 对上服务端：经 `Unit_Map` 的 vector 写寄存器、写线圈后，对应 tag 事件发出、联动处理执行。
+   - 对上服务端：经 vector 写寄存器、写线圈后，联动处理执行；跨两个寄存器的 Real 一次写完整。
+   - 暴露现有缺陷的用例标记为 `todo`（运行但不计失败），缺陷记入 design.md 第 11 节。
 3. **确认项**（结果记入本文第 5 节）：
    - 0.1 es-modbus 处理功能码 15 / 16 时，是否在同一个同步调用中依次调用 vector（决定 design-scan.md 3.2 节的合并结论是否成立）；
    - 0.2 现有处理器中，有没有依赖“组合字与组成位事件先后顺序”的（design-scan.md 10.1 节）；
@@ -140,7 +143,7 @@
 
 一个提交，包括三部分：
 
-- 段与线的动作：压力动作、输差动作、`autoStopCmd`、`line_action_source`、`action_section_ID`、动作记录；`pump_run` 下降沿清除命令；`stop_pumps` / `cancel_stop` 下发。联锁动作每次扫描都执行。删除 `section_loop` 粗粒度规则。
+- 段与线的动作：压力动作、输差动作、`autoStopCmd`、`line_action_source`、`action_section_ID`、动作记录（生成记录，以及 HMI 写 `index` 时装载记录）；`pump_run` 下降沿清除命令；`stop_pumps` / `cancel_stop` 下发。联锁动作每次扫描都执行。删除 `section_loop` 粗粒度规则。
 - 执行器命令：应答握手、`pressure_SD_F` 清命令位、`read_paras` / `write_paras`（用 `write_done` 状态）、命令发送改为登记 `request_write(commands_payload)`、3 周期重发（用 Ticker，每个执行器单独计时）、按执行器配置的命令屏蔽（`supported_commands`，design.md 12.1 节，取代统一的 `& 0xB1`）。命令 Binding 以只写方式登记到调度器（design-scan.md 6.5 节）。删除 `debounce_send_commands` 和 `node_loop` 粗粒度规则。
 - 连接状态：驱动事件只更新 Binding 状态；`comm_OK`、`work_OK`、连接后 2 s 刷新参数改为 act 规则；删除对应的驱动事件回调和 `setTimeout`。测试夹具中的驱动改为先断开、启动后再连接，与真实驱动一致。
 
@@ -179,5 +182,5 @@
 | 编号 | 结论 | 影响 |
 | --- | --- | --- |
 | 0.1 | 已由源码确认：es-modbus v0.3.0-beta.2 的 `ModbusServer.js` 在处理功能码 15 / 16 时，在一个同步循环中对每个点调用 `set_coil` / `set_register`。步骤 0 补一个测试固定这一行为 | design-scan.md 3.2 节的合并结论成立 |
-| 0.2 | 待确认 | |
-| 0.3 | 待确认 | |
+| 0.2 | 无依赖。同时订阅组合字和其组成位的只有命令块（`commands` 与 `read_paras` / `write_paras`），三者的处理器之间没有同步读写对方结果的关系；段、线只订阅状态位，执行器 tdata只订阅 `response_code` 整字。`tags_at_byte` 按布局条目顺序（组合字在前、组成位在后）排列，HMI 写入路径的事件顺序与现在一致 | 无 |
+| 0.3 | 无依赖。同一 tag 在一次处理中多次变化的只有 `read_paras`（置位后 nextTick 复位）和动作记录的 `index`（越界时恢复原值），二者在第 7 步改为 act 规则；最终形态下事件处理器只写日志，合并只减少日志条数 | 动作记录 `index` 的处理补入 design-scan.md 7.5 节和第 7a 步 |

@@ -1,0 +1,86 @@
+# Fixture for test/system_test.js: one line with two sections.
+# S1: A (pumps, Modbus BE) -> B (Modbus BE)
+# S2: C (S7 BE) -> D (Modbus LEBS)
+
+controllers:
+- name: TC
+  IP: 127.0.0.1
+  records_size: 10
+  modbus_server:
+    port: 502
+    unit_id:
+      L1: 1
+      S1: 11
+      S2: 12
+      A: 21
+      B: 22
+      C: 23
+      D: 24
+      action_records: 9
+
+lines:
+- id: 1
+  name: L1
+  controller: TC
+  sections: [S1, S2]
+
+sections:
+- id: 11
+  name: S1
+  begin_nodes: [A]
+  end_nodes: [B]
+  flow_diff_WH: 10.0
+  flow_diff_WH_delay: 1000
+  flow_diff_AH: 20.0
+  flow_diff_AH_delay: 1000
+  action_time: 3000
+- id: 12
+  name: S2
+  begin_nodes: [C]
+  end_nodes: [D]
+  flow_diff_WH: 10.0
+  flow_diff_WH_delay: 1000
+  flow_diff_AH: 20.0
+  flow_diff_AH_delay: 1000
+  action_time: 3000
+
+actuators:
+- id: 101
+  name: A
+  IP: 10.0.0.1
+  pumps:
+  - I1.1, Q0.0
+  - I1.2, Q0.1
+  modbus_server:
+    port: 502
+    unit_id: 1
+    endian: BE
+    data: { start: 0 }
+    commands: { start: 200 }
+- id: 102
+  name: B
+  IP: 10.0.0.2
+  modbus_server:
+    port: 502
+    unit_id: 1
+    endian: BE
+    data: { start: 0 }
+    commands: { start: 200 }
+- id: 103
+  name: C
+  IP: 10.0.0.3
+  s7_server:
+    rack: 0
+    slot: 1
+    endian: BE
+    data: { db: 1, start: 0 }
+    commands: { db: 2, start: 0 }
+- id: 104
+  name: D
+  IP: 10.0.0.4
+  modbus_server:
+    port: 502
+    unit_id: 1
+    endian: LEBS
+    data: { start: 0 }
+    commands: { start: 200 }
