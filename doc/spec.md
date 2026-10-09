@@ -108,7 +108,7 @@ A tdata must meet the following requirements:
 - **Write unit**: the smallest unit written to an actuator is set by the protocol. Under Modbus TCP the controller uses only holding registers (function code 03 for reading, 06 / 16 for writing), and the write unit is one register; under S7 the write unit is one byte. A group write writes only the write units holding the TTags of the group.
 - **Write ownership**: TTags written by the controller and TTags written by the actuator must not share a write unit, so that a write of one side does not overwrite the data of the other. Adding or adjusting TTags must follow this rule.
 - **Upward publishing**: tdata are mounted on the Modbus TCP server of the controller, and the HMI reads and writes their content directly.
-- **Access by name**: the program reads and writes TTag values by name.
+- **Access by name**: the program reads and writes TTag values by name; tdata and TTags can be read and written at any time, not restricted by the scheduling of the controller. The programming interface of TData and TTag is in [spec-data-api.md](spec-data-api.md).
 - **Change events**: when the value of a TTag changes (whether read from the actuator, written by the HMI or assigned by the program), a change event is emitted after the new value takes effect; business logic implements its interplay by subscribing to events.
 - **Combined word linkage**: a status word / command word made of Bools is linked with its bits in both directions.
 - **Group synchronization**: several TTags can be grouped and synchronized with the actuator as a whole.
