@@ -8,6 +8,18 @@ import { build_structure, validate_structure, TYPE_BITS } from "./structure.js";
 const layout_cache = new WeakMap();
 const EMPTY_STRUCT = Object.freeze({ name: "EMPTY", length: 0, items: Object.freeze([]) });
 
+/** Called on every tag access while set (doc/design-scan.md 7.6). */
+let access_tracer = null;
+
+/**
+ * Sets a function called on every tag access through the accessors, as
+ * tracer(tdata, name, "read" | "write"), or clears it with null. For tests
+ * that check declared dependencies; the data layer knows nothing else of it.
+ */
+export function set_access_tracer(tracer) {
+	access_tracer = tracer;
+}
+
 let tdata_probe = null;
 // a tag name must not shadow a member of TData: its accessor would hide the member
 function is_reserved_name(name) {
@@ -63,9 +75,14 @@ export function layout_of(data_struct) {
 	Object.defineProperty(Data_Class, "name", { value: `TData_${data_struct.name}` });
 	for (const entry of entries.values()) {
 		const { codec, byte, mask } = entry;
-		Object.defineProperty(Data_Class.prototype, entry.name, {
-			get() { return codec.get(this.buffer, byte, mask); },
+		const { name } = entry;
+		Object.defineProperty(Data_Class.prototype, name, {
+			get() {
+				if (access_tracer) access_tracer(this, name, "read");
+				return codec.get(this.buffer, byte, mask);
+			},
 			set(value) {
+				if (access_tracer) access_tracer(this, name, "write");
 				codec.set(this.buffer, byte, mask, value);
 				this.after_write(entry);
 			},

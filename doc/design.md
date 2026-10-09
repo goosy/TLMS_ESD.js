@@ -22,6 +22,7 @@
 | `src/layouts.js` | Compiles `layouts.yaml` and exports these layouts. |
 | `src/layout_types.d.ts` | Type declarations generated from the layouts (`pnpm gen:types`). |
 | `src/util.js` | log4js logging, `debouncify` / `debounce`, `Object.mixin`. |
+| `src/scan.js` / `src/rules.js` | The scan scheduler (`Scheduler`) and rules (`derive` / `act`, ordering and startup checks, `Ticker`, `on_delay` / `off_delay`), see sections 6 and 7 of design-scan.md. Not yet wired into the running flow. |
 
 ## 2. Startup
 
@@ -113,7 +114,8 @@ Main layouts (byte offsets):
   - For each change, first the TData emits `change(tagname, old, new)`, then the handle of the tag emits `change(old, new)`; events are always emitted after the new value takes effect. Business logic subscribes with `data.get(name).on('change', ...)`.
   - When an event handler writes a tag again, the nested comparison only registers, and after the current round of changes has been reported another round of comparison follows; when there are still new changes after 16 consecutive rounds, an exception is thrown to prevent oscillation.
   - `detect()` runs one comparison; it is called by the writer after `buffer` is written directly from outside (group loading, `copy_from`), and by the user when needed in the deferred mode.
-  - `observer.previous(name)` / `take_scan_snapshot()` are reserved for the coming scan cycle (5.3 of design-scan.md).
+  - `observer.previous(name)` / `take_scan_snapshot()` are used by the scan scheduler (5.3 of design-scan.md).
+- `set_access_tracer(tracer | null)` (`layout.js`): once set, the accessors call `tracer(tdata, name, "read" | "write")` on every read and write of a tag, for the dependency tracing test mode of the scheduler; when not set, the accessors only add one check.
 - On errors TData throws (layout conflicts, values out of range), without logging or exiting.
 
 ### 3.3 TTag and byte order conversion
