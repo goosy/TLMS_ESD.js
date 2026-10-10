@@ -14,7 +14,7 @@
 | `src/gcl.js` | YAML loader (`yaml` library, YAML 1.2), keeping source line information. |
 | `src/config.js` | Merges several configuration documents, fills in defaults, builds the name and ID indexes. |
 | `src/init.js` | `prepare_controller`: builds the runtime object graph for the selected controller. |
-| `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | Initialization (event binding) and periodic processing of actuators (nodes), sections and lines. |
+| `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | Initialization (event binding), rule declarations and periodic processing of actuators (nodes), sections and lines. |
 | `src/action_record.js` | Action records: CSV reading and writing, and browsing by index. |
 | `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, `createMTServer` (upward server, using the vector of the data layer), and the IO binding `binding.js` (the exchange area, byte order and group reads and writes between tdata and drivers, section 3.4; not part of the data layer). |
 | `src/typed_data/` | Data layer (the future component, see 1.1 of design-scan.md): `TData` / `TTag` (typed buffers and change events), `observer.js` (change detection), `structure.js` (structure expansion and layout validation), `layout.js` (compilation of YAML layout files), `codecs.js` (codecs of the types), `endian.js` (byte order conversion per item), `server.js` (`Unit_Map` and the vector of the upward server), `types.js` (type declaration generation). |
@@ -22,7 +22,7 @@
 | `src/layouts.js` | Compiles `layouts.yaml` and exports these layouts. |
 | `src/layout_types.d.ts` | Type declarations generated from the layouts (`pnpm gen:types`). |
 | `src/util.js` | log4js logging, `debouncify` / `debounce`, `Object.mixin`. |
-| `src/scan.js` / `src/rules.js` | The scan scheduler (`Scheduler`) and rules (`derive` / `act`, ordering and startup checks, `Ticker`, `on_delay` / `off_delay`), see sections 6 and 7 of design-scan.md. Not yet wired into the running flow. |
+| `src/scan.js` / `src/rules.js` | The scan scheduler (`Scheduler`) and rules (`derive` / `act`, ordering and startup checks, `Ticker`, `on_delay` / `off_delay`, the transitional `tick_act`), see sections 6 and 7 of design-scan.md; wired into the running flow by `runtime.js` (section 2). |
 
 ## 2. Startup
 
@@ -47,9 +47,9 @@
    1. initializes the action record;
    2. calls `build_runtime` (`runtime.js`): mounts the action record on `unit_id.action_records`, creates the TData in the order line -> section -> actuator, calls `attach_unit`, then each `*_init`; the drivers of the actuators are provided by `get_drivers` of `main.js`, reused per connection;
    3. starts the Modbus TCP server and waits until it is ready; when it fails to start (e.g. the port is in use), logs an error and exits with exit code 1, to be restarted by pm2;
-   4. `build_runtime` creates the scan scheduler (section 6 of design-scan.md), registers all tdata and the data Bindings of the actuators (with the input group `data_payload`), and wraps the old main loop as coarse rules: first `section_loop` of all sections, then `node_loop` of all actuators (`line_loop` is empty and not called). The coarse rules detect new periodic ticks with their own tickers and run only in the scans of periodic ticks, because they time by 500 ms on every call;
+   4. `build_runtime` creates the scan scheduler (section 6 of design-scan.md), registers all tdata and the data Bindings of the actuators (with the input group `data_payload`); after the object graph is built, it calls `section_rules` / `line_rules` in the order sections -> lines to declare the rules (sections 6, 7), finally declares the `node_loop` coarse rule for each actuator, then `prepare()` orders and checks. The coarse rules (`tick_act`) detect new periodic ticks with their own tickers and run only in the scans of periodic ticks, because they time by 500 ms on every call;
    5. all tdata use the immediate detection mode, with `on_write` wired to `request_scan()` of the scheduler: any write (rules, event handlers, HMI, asynchronous callbacks) requests a scan after detection (3.3 of design-scan.md);
-   6. `runtime.start()` first runs an initial scan (starting the tickers of the coarse rules), then starts the periodic tick (`MAIN_PERIOD = 500`); rule errors are written to the log through the `on_error` of the scheduler.
+   6. `runtime.start()` first runs an initial scan (computing all derived values, starting the tickers of the coarse rules), then starts the periodic tick (`MAIN_PERIOD = 500`); rule errors are written to the log through the `on_error` of the scheduler.
 
 ## 3. Typed data layer
 
@@ -228,75 +228,71 @@ Reading the actuator data is done by the scan: the scan of a periodic tick start
   1. copies the parameters in command to `data_parameters`;
   2. writes the parameter block of the actuator data area;
   3. resets the bit after the write completes.
-- Change of `pressure_SD_F`: clears the corresponding enable or disable command bit and sends the commands; also calls `section.update_press_SD_trigger()`.
-- Aggregating state changes upward:
-  - on changes of `comm_OK`, `work_OK`, `pump_run`, `pump_change_F`, `pressure_WH_F`, `pressure_AH_F`, calls `section.update_*`; on changes of `pressure_AH_F` also calls `section.update_press_SD_trigger()`;
-  - on changes of `flowmeter`, calls `update_flow_begin` / `update_flow_end` by the begin / end role of the actuator in the section;
-  - on changes of `pump_run_1..4`, `pump_run` takes their OR; when `pump_run` becomes false, the actuator's `stop_pumps` command is cleared.
+- Change of `pressure_SD_F`: clears the corresponding enable or disable command bit and sends the commands.
+- When `pump_run` becomes false, the actuator's `stop_pumps` command is cleared. `pump_run` follows the value reported by the actuator (the actuator already ORs the states of its pumps), and the controller no longer computes it.
+- Other state changes are only logged; the aggregation to the section is done by the rules of the section (section 6).
 
 ## 6. Section processing (`section_proc.js`)
 
-### 6.1 Aggregation functions
+### 6.1 Event handling (`section_init`)
 
-`get_update_fn(op, ...)` creates a function that aggregates an actuator property by AND / OR / ADD, wrapped with `debouncify(key, fn, 50)`. The timers of `debouncify` are kept in a module-level table and distinguished by a string key, so the key must be globally unique (of the form `section<name>_<prop>_update`).
-
-### 6.2 Event-driven part (`section_init`)
-
-- Variables on the section object (not TTags, see spec 3.6):
-  - `press_SD_trigger`: the pressure interlock condition, computed by `update_press_SD_trigger()` as the OR of `pressure_AH_F && pressure_SD_F` over the actuators of the section, with a 50 ms debounce, logged on change;
-  - `press_action` / `flow_action`: the pressure action and the flow difference action, set and reset by `section_loop` (see 6.3).
-- On changes of `flow_begin` / `flow_end`, recomputes `flow_diff`.
-- On changes of `flow_diff`, computes the trigger bits:
-  - `flow_warning_trigger = flow_diff > flow_diff_WH`;
-  - `flow_alarm_trigger = flow_diff > flow_diff_AH`.
-- On changes of `flow_alarm_F`, `protect_F`, `pump_run`, updates `pre_stop_notice = flow_alarm_F && line.data.pump_run && protect_F`:
-  - the pump running condition takes the line's `pump_run` (spec 5.2), and changes of the line's `pump_run` also trigger this update (see section 7);
-  - when this section's `pump_run` changes, this computation may read the old value of the line, and the change event of the line then computes it once more; the line's `pre_stop_notice` only aggregates the results of the sections and does not take part in the computation of a section, so no loop forms;
-  - `stop_pumps` and the pressure action still take this section's `pump_run`.
-- On changes of `pre_stop_notice`, updates the line's `pre_stop_notice`.
-- On changes of `flow_alarm_F`, `press_alarm_F`, also updates the line's `alarm_F`.
+- Writes the section's ID, name and flow difference parameters (`flow_diff_WH` and the like, `action_time`).
 - Change of `stop_pumps`:
   - when true, sets `command.stop_pumps = node.data.pump_run` for each actuator with pumps;
   - when false, sets `stop_pumps = false` and `cancel_stop = true`.
-- Change of `action_F`: only logs.
-- Change of `pump_run`:
-  - falling edge: clears the section's `autoStopCmd` / `manStopCmd`;
-  - in both cases, updates this section's `pre_stop_notice` and the line's `pump_run`.
+- Falling edge of `pump_run`: clears the section's `autoStopCmd` / `manStopCmd`.
+- Other changes (`action_F`, alarms, hang-on, `pre_stop_notice` and the like) are only logged.
 
-### 6.3 Periodic part (`section_loop`)
+### 6.2 Rules (`section_rules`)
 
-Runs once in the scan of every periodic tick (a coarse rule, before all `node_loop`s):
+The variables and rules of a section are declared after the object graph is built (7.4 of design-scan.md). The variables on the section object (not TTags, see spec 3.6) are registered with `add_var`:
 
-1. Computes the protection state:
-   - `protect_prereq = comm_OK && work_OK && !pump_change_F`;
-   - `protect_F = protect_prereq && !flow_override && !line.flow_override`, i.e. no protection when either the `flow_override` of this section or that of its line is true;
-   - `hangon_AF = !protect_prereq`.
-2. Delay counting: while a trigger bit is true, its counter adds 500 ms per cycle, otherwise it is reset; when the count exceeds `*_delay`, `flow_warning_F` / `flow_alarm_F` is set.
-3. Countdown:
-   - while `pre_stop_notice` is true, `action_count` accumulates, and `countdown = (action_time - action_count) / 1000`;
-   - when the result is below 0, `countdown` is set to 0 and the countdown is recorded as expired (`countdown_expired`).
-4. Pressure action (variable `press_action`):
+- `press_SD_trigger`: the pressure interlock condition;
+- `countdown_expired`: the countdown has expired;
+- `press_action` / `flow_action`: the pressure action and the flow difference action.
+
+derive rules, run in every scan, ordered among themselves by the ordering:
+
+| Rule | Computation |
+| --- | --- |
+| `comm_OK`, `work_OK` | AND over all begin and end actuators |
+| `press_warning_F` / `press_alarm_F` | OR of `pressure_WH_F` / `pressure_AH_F` over the begin and end actuators |
+| `pump_run`, `pump_change_F` | OR of the properties of the same name over the actuators with pumps |
+| `flow_begin` / `flow_end` | Sum of `flowmeter` of the begin / end actuators |
+| `flow_diff` | `flow_begin - flow_end` |
+| Trigger bits | `flow_warning_trigger = flow_diff > flow_diff_WH`, `flow_alarm_trigger` likewise |
+| `press_SD_trigger` | OR of `pressure_AH_F && pressure_SD_F` over the begin and end actuators, logged on change |
+| Protection state | `protect_prereq = comm_OK && work_OK && !pump_change_F`; `protect_F = protect_prereq && !flow_override && !line.flow_override`, i.e. no protection when either the `flow_override` of this section or that of its line is true; `hangon_AF = !protect_prereq` |
+| `flow_warning_F` / `flow_alarm_F` | One rule each: `on_delay(ticker, trigger bit, *_delay)` |
+| `pre_stop_notice` | `flow_alarm_F && line.pump_run && protect_F`: the pump running condition takes the line's (spec 5.2), while `stop_pumps` and the pressure action still take this section's |
+| Countdown | Timing while `pre_stop_notice` is true, `countdown = (action_time - elapsed) / 1000`; when the result is below 0, `countdown` is set to 0 and `countdown_expired` is true |
+| `action_F` | `press_action \|\| flow_action` |
+| `stop_pumps` | `(section auto/man \|\| line auto/man) && pump_run` |
+
+`pre_stop_notice` reads the line's `pump_run`, which in turn aggregates the `pump_run` of the sections; after ordering, they are computed in turn within the same scan, and no recomputation through the change event of the line is needed any more.
+
+### 6.3 Interlock actions (coarse rule)
+
+`section ${name} actions` is the remaining coarse rule; it declares the keys it reads and writes and takes part in the ordering (after `flow_alarm_F` and the countdown, before `action_F` and `stop_pumps`), and runs only in the scans of periodic ticks:
+
+1. Pressure action (variable `press_action`):
    - set when `press_SD_trigger && pump_run`, together with the section's `autoStopCmd`. `protect_F` is not checked, so it is not restricted by hang-on;
    - otherwise reset when `pump_run && !autoStopCmd`: a pump of this section is running (necessarily restarted after the stop), and the interlock condition has disappeared.
-5. Flow difference action (variable `flow_action`):
-   - set when the countdown expires, together with the line's `autoStopCmd` and this section's `line_action_source`;
+2. Flow difference action (variable `flow_action`):
+   - set on `countdown_expired`, together with the line's `autoStopCmd` and this section's `line_action_source`;
    - otherwise first runs `line_action_source &&= line.autoStopCmd`, then resets when `line.pump_run && !flow_alarm_F && !line_action_source`. The pump running condition takes the line's, as for the stop pump notice; otherwise a section without pumps could never reset.
-6. The reset conditions are evaluated every cycle and not latched; during the stop neither pump running condition holds, so the action state is kept until pumps run again.
-7. Action aggregation:
-   - when either action variable changes from false to true, sets the line's `action_section_ID` to this section's ID and calls `add_action_record()` to create a record; when both happen in the same cycle, only one record is created;
-   - `action_F = press_action || flow_action`; when the result is false and the line's `action_section_ID` equals this section's ID, it is cleared, so as not to erase the action of another section.
-8. Computes the stop command: `stop_pumps = (section auto/man || line auto/man) && pump_run`.
+3. The reset conditions are evaluated every cycle and not latched; during the stop neither pump running condition holds, so the action state is kept until pumps run again.
+4. When either action variable changes from false to true, sets the line's `action_section_ID` to this section's ID and calls `add_action_record()` to create a record; when both happen in the same cycle, only one record is created. When both action variables are false and the line's `action_section_ID` equals this section's ID, it is cleared, so as not to erase the action of another section.
 
-The section layout is planned to change in a future transitional version dedicated to layout adjustments: `press_action` / `flow_action` then become TTags, and the action record will be triggered by their change events instead of comparing old and new values in `section_loop`.
+The section layout is planned to change in a future transitional version dedicated to layout adjustments: `press_action` / `flow_action` then become TTags, and the action record will be triggered by their change events instead of comparing old and new values in the action rule.
 
 ## 7. Line processing (`line_proc.js`)
 
-- Aggregation rules:
+- Rules (`line_rules`, derive):
   - `pump_run`, `pre_stop_notice`: the OR of the properties of the same name of the sections;
-  - `alarm_F`: the OR of `flow_alarm_F` and `press_alarm_F` of the sections;
-  - all with a 50 ms debounce.
-- The line's `flow_override` is only logged and does not overwrite any section; its effect shows as an AND in the computation of the sections' `protect_F` (see 6.3).
-- On changes of `pump_run`, calls `update_pre_stop_notice()` for each section of the line; on the falling edge, also clears the line's `autoStopCmd` / `manStopCmd`.
+  - `alarm_F`: the OR of `flow_alarm_F` and `press_alarm_F` of the sections.
+- The line's `flow_override` is only logged and does not overwrite any section; its effect shows as an AND in the `protect_F` rule of the sections (see 6.2).
+- On the falling edge of `pump_run`, clears the line's `autoStopCmd` / `manStopCmd`.
 
 ## 8. Action records (`action_record.js`)
 

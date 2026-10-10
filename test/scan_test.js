@@ -5,7 +5,7 @@ import test, { describe } from "node:test";
 import { TData } from "../src/typed_data/TData.js";
 import { Binding } from "../src/drivers/binding.js";
 import { Scheduler } from "../src/scan.js";
-import { derive, act, on_delay } from "../src/rules.js";
+import { derive, act, on_delay, tick_act } from "../src/rules.js";
 
 const PERIOD = 500;
 const ITEMS = ["a", "b", "c"].map((name, i) => ({ name, type: "UInt", offset: i * 16, length: 16, init_value: 0 }));
@@ -231,6 +231,21 @@ describe("timing with tickers (design-scan 7.3)", () => {
 		assert.equal(d.out, false);
 		scheduler.scan(true); // 3
 		assert.equal(d.out, true);
+	});
+
+	test("a tick_act rule runs once per periodic tick after the first scan", () => {
+		const { scheduler, data: [d] } = setup();
+		let runs = 0;
+		scheduler.add_rule(tick_act({ name: "coarse", writes: [[d, "a"]], run: () => { runs++; } }));
+		scheduler.prepare();
+		scheduler.scan(false); // starts its ticker
+		scheduler.scan(false);
+		assert.equal(runs, 0);
+		scheduler.scan(true);
+		scheduler.scan(false);
+		assert.equal(runs, 1);
+		scheduler.scan(true);
+		assert.equal(runs, 2);
 	});
 });
 

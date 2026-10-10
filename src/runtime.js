@@ -1,37 +1,18 @@
 import { MAIN_PERIOD } from "./config.js";
-import { line_init } from "./line_proc.js";
-import { section_loop, section_init } from "./section_proc.js";
+import { line_init, line_rules } from "./line_proc.js";
+import { section_init, section_rules } from "./section_proc.js";
 import { node_loop, node_init } from "./node_proc.js";
 import { TData } from "./typed_data/TData.js";
 import { LINE, SECTION, NODE, COMMAND } from "./layouts.js";
 import { Unit_Map } from "./typed_data/server.js";
 import { Scheduler } from "./scan.js";
-import { act } from "./rules.js";
+import { tick_act } from "./rules.js";
 import { logger } from "./util.js";
-
-/**
- * Wraps a main loop function as a rule run once per periodic tick
- * (doc/design-scan.md 10.2): the loop functions count one period per call,
- * so they must not run on triggered scans. The rule's ticker, started by
- * the first scan, tells a new tick by its count.
- */
-function tick_rule(name, loop) {
-	let last_count = 0;
-	return act({
-		name,
-		run: (ticker) => {
-			ticker.start();
-			if (ticker.count === last_count) return;
-			last_count = ticker.count;
-			loop();
-		},
-	});
-}
 
 /**
  * Builds the runtime object graph of a prepared controller: the data blocks
  * of its lines, sections and nodes, their attachment to the upward unit map,
- * the event wiring of the *_init functions and the scan scheduler.
+ * the event wiring of the *_init functions, the scan scheduler and its rules.
  *
  * @param {Object} controller - The controller returned by prepare_controller.
  * @param {Object} options
@@ -105,17 +86,23 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 		}
 	}
 
-	// the former main loop, sections before nodes, as coarse rules (doc/design-scan.md 10.2)
-	for (const section of sections) {
-		scheduler.add_rule(tick_rule(`section ${section.name} loop`, () => section_loop(section)));
-	}
+	// rules are declared once the whole graph is built (doc/design-scan.md 7.4)
+	for (const section of sections) section_rules(section, scheduler);
+	for (const line of lines) line_rules(line, scheduler);
+	// the former node loop, still a coarse rule run on periodic ticks (doc/design-scan.md 10.2);
+	// declared last, as the main loop ran it after the sections
 	for (const node of nodes) {
-		scheduler.add_rule(tick_rule(`node ${node.name} loop`, () => node_loop(node)));
+		scheduler.add_rule(tick_act({
+			name: `node ${node.name} loop`,
+			reads: [[node.command, "has_commands"]],
+			writes: [[node.command, "commands"]],
+			run: () => node_loop(node),
+		}));
 	}
 	scheduler.prepare();
 
 	const start = () => {
-		// a first scan starts the tickers of the coarse rules
+		// a first scan computes the derived values and starts the tickers of the coarse rules
 		scheduler.scan(false);
 		scheduler.start();
 	};

@@ -1,43 +1,14 @@
-import { debouncify, logger } from "./util.js";
-function get_update_fn(line, line_prop, sections, section_props = [line_prop]) {
-	const getters = sections.flatMap(
-		(section) => section_props.map(
-			(prop) => () => section.data[prop],
-		),
-	);
-	const debounce_key = `line${line.name}_${line_prop}_update`;
-	const update_fn = () => {
-		line.data[line_prop] = getters.reduce((acc, getter) => {
-			return acc || getter();
-		}, false);
-	};
-	return debouncify(debounce_key, update_fn, 50);
-}
+import { derive } from "./rules.js";
+import { logger } from "./util.js";
 
 export function line_init(line) {
 	const {
 		ID,
 		name,
 		data,
-		sections,
 	} = line;
 	data.ID = ID;
 	data.name = name;
-	line.update_pump_run = get_update_fn(
-		line, "pump_run",
-		sections,
-	);
-	line.update_alarm_F = get_update_fn(
-		line, "alarm_F",
-		sections, ["flow_alarm_F", "press_alarm_F"],
-	);
-	line.update_pre_stop_notice = get_update_fn(
-		line, "pre_stop_notice",
-		sections,
-	);
-	line.update_pump_run();
-	line.update_alarm_F();
-	line.update_pre_stop_notice();
 
 	data.on("change", (tagname, old_value, new_value) => {
 		logger.debug(`line_${name}: ${tagname} ${old_value} => ${new_value}`);
@@ -46,9 +17,6 @@ export function line_init(line) {
 		logger.info(`line ${name} changed flow_override status to ${new_value}`);
 	});
 	data.get("pump_run").on("change", (_, new_value) => {
-		for (const section of sections) {
-			section.update_pre_stop_notice();
-		}
 		if (!new_value) {
 			data.autoStopCmd = false;
 			data.manStopCmd = false;
@@ -57,5 +25,26 @@ export function line_init(line) {
 	});
 }
 
-export function line_loop() {
+/**
+ * Declares the rules of a line (doc/design-scan.md 7.5), once the whole
+ * object graph is built: they read the data blocks of the sections.
+ *
+ * @param {Object} line
+ * @param {import("./scan.js").Scheduler} scheduler
+ */
+export function line_rules(line, scheduler) {
+	const { name, data, sections } = line;
+	// a line tag is the "or" of the given tags of all its sections
+	const some = (tag, section_tags = [tag]) => {
+		const reads = sections.flatMap((section) => section_tags.map((section_tag) => [section.data, section_tag]));
+		scheduler.add_rule(derive({
+			name: `line ${name} ${tag}`,
+			reads,
+			writes: [[data, tag]],
+			run: () => { data[tag] = reads.some(([section_data, section_tag]) => section_data[section_tag]); },
+		}));
+	};
+	some("pump_run");
+	some("alarm_F", ["flow_alarm_F", "press_alarm_F"]);
+	some("pre_stop_notice");
 }

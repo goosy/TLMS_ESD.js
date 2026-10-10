@@ -303,7 +303,8 @@ TTags are the interface:
 - Main loop period 500 ms (`MAIN_PERIOD`); the flow difference delays and the countdown accumulate in this step.
 - Driver polling period 1 s. Reconnection starts 5 s after a disconnection; the reconnect interval of Modbus TCP doubles each time up to 20 s, and returns to 5 s once the connection is stable again; S7 reconnects every 5 s at a fixed interval.
 - When reads and writes with an actuator keep failing for 5 s, it is a communication failure (handled the same as a disconnection).
-- State aggregation is debounced by 50 ms, command sending by 100 ms.
+- Processing happens right after actuator data is read back and after HMI writes: state aggregation, trigger bits, the protection state and the stop command are computed completely in the same processing, without debounces; when the condition of a flow difference delay or of the countdown disappears, it is reset immediately.
+- Command sending is debounced by 100 ms.
 
 ## 7. Implementation constraints
 

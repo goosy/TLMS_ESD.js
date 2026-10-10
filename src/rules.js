@@ -97,6 +97,25 @@ export function act(spec) {
 	return rule_of("act", spec);
 }
 
+/**
+ * Declares an act rule run once per periodic tick, for the coarse rules
+ * of the migration (doc/design-scan.md 10.2): they count one period per
+ * call, so they must not run on triggered scans. The rule's ticker,
+ * started by the first scan, tells a new tick by its count.
+ */
+export function tick_act({ run, ...spec }) {
+	let last_count = 0;
+	return act({
+		...spec,
+		run: (ticker) => {
+			ticker.start();
+			if (ticker.count === last_count) return;
+			last_count = ticker.count;
+			run();
+		},
+	});
+}
+
 /** A readable name of a dependency key owner. */
 function owner_label(owner) {
 	if (owner instanceof TData) return owner.name;
