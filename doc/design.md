@@ -87,7 +87,7 @@ Main layouts (byte offsets):
 | --- | --- |
 | NODE | 0 ID; 2 status; 4 temperature; 8 pressure; 12 flowmeter; 16 response_code; parameter block from 18 |
 | COMMAND | 0 response_code (deprecated); 2 overtime (deprecated); 6 extra_commands (`has_commands`, `reset_paras`); 16 ID; 18 commands; parameter block from 20 |
-| SECTION | 0 ID; 2 bypass_word; 4 status; 6 flow_begin; 10 flow_end; 14 flow_diff; 18-34 limits and delays; 38 countdown; 40 inner_word (internal trigger bits) |
+| SECTION | 0 ID; 2 upward_input (reserved); 4 status; 6 flow_begin; 10 flow_end; 14 flow_diff; 18-34 limits and delays; 38 countdown; 40 inner_word (internal trigger bits) |
 | LINE | 0 status; 2 ID; 4 action_section_ID; 6 flow_diff (reserved) |
 | RECORD | 0-10 time; 12 section_ID; 14-36 flows and pressures; 42-48 actuator IDs; 50 status; 52 index |
 
@@ -225,8 +225,8 @@ Main layouts (byte offsets):
   - `press_action` / `flow_action`: the pressure action and the flow difference action, set and reset by `section_loop` (see 6.3).
 - On changes of `flow_begin` / `flow_end`, recomputes `flow_diff`.
 - On changes of `flow_diff`, computes the trigger bits:
-  - `flow_warning_trigger = flow_diff > flow_diff_WH && !bypass`;
-  - `flow_alarm_trigger = flow_diff > flow_diff_AH && !bypass`.
+  - `flow_warning_trigger = flow_diff > flow_diff_WH`;
+  - `flow_alarm_trigger = flow_diff > flow_diff_AH`.
 - On changes of `flow_alarm_F`, `protect_F`, `pump_run`, updates `pre_stop_notice = flow_alarm_F && line.data.pump_run && protect_F`:
   - the pump running condition takes the line's `pump_run` (spec 5.2), and changes of the line's `pump_run` also trigger this update (see section 7);
   - when this section's `pump_run` changes, this computation may read the old value of the line, and the change event of the line then computes it once more; the line's `pre_stop_notice` only aggregates the results of the sections and does not take part in the computation of a section, so no loop forms;
@@ -246,8 +246,8 @@ Main layouts (byte offsets):
 Runs every 500 ms:
 
 1. Computes the protection state:
-   - `protect_prereq = comm_OK && work_OK && !pump_change_F && !bypass`;
-   - `protect_F = protect_prereq && !hangon_MF`;
+   - `protect_prereq = comm_OK && work_OK && !pump_change_F`;
+   - `protect_F = protect_prereq && !flow_override && !line.flow_override`, i.e. no protection when either the `flow_override` of this section or that of its line is true;
    - `hangon_AF = !protect_prereq`.
 2. Delay counting: while a trigger bit is true, its counter adds 500 ms per cycle, otherwise it is reset; when the count exceeds `*_delay`, `flow_warning_F` / `flow_alarm_F` is set.
 3. Countdown:
@@ -273,7 +273,7 @@ When the section data block is next adjusted, `press_action` / `flow_action` are
   - `pump_run`, `pre_stop_notice`: the OR of the properties of the same name of the sections;
   - `alarm_F`: the OR of `flow_alarm_F` and `press_alarm_F` of the sections;
   - all with a 50 ms debounce.
-- On changes of `bypass`, writes `bypass` of all sections.
+- The line's `flow_override` is only logged and does not overwrite any section; its effect shows as an AND in the computation of the sections' `protect_F` (see 6.3).
 - On changes of `pump_run`, calls `update_pre_stop_notice()` for each section of the line; on the falling edge, also clears the line's `autoStopCmd` / `manStopCmd`.
 
 ## 8. Action records (`action_record.js`)

@@ -171,7 +171,7 @@ export function section_init(section) {
 	data.get("protect_F").on("change", (_o, _n) => {
 		section.update_pre_stop_notice();
 	});
-	data.get("hangon_MF").on("change", (_, new_value) => {
+	data.get("flow_override").on("change", (_, new_value) => {
 		if (new_value) {
 			logger.warn(`section ${name}: manually stop protection`);
 		} else {
@@ -200,8 +200,8 @@ export function section_init(section) {
 		line.update_alarm_F();
 	});
 	data.get("flow_diff").on("change", (_, new_value) => {
-		data.flow_warning_trigger = (new_value > data.flow_diff_WH) && !data.bypass;
-		data.flow_alarm_trigger = (new_value > data.flow_diff_AH) && !data.bypass;
+		data.flow_warning_trigger = new_value > data.flow_diff_WH;
+		data.flow_alarm_trigger = new_value > data.flow_diff_AH;
 	});
 	data.ID = ID;
 	data.name = name;
@@ -248,8 +248,9 @@ export function section_loop(section) {
 	} = section;
 
 	const pump_run = data.pump_run;
-	const protect_prereq = data.comm_OK && data.work_OK && !data.pump_change_F && !data.bypass;
-	data.protect_F = protect_prereq && !data.hangon_MF;
+	const protect_prereq = data.comm_OK && data.work_OK && !data.pump_change_F;
+	// the line flow_override is a master switch, it never rewrites the section one
+	data.protect_F = protect_prereq && !data.flow_override && !line.data.flow_override;
 	data.hangon_AF = !protect_prereq;
 
 	// flow_diff trigger action

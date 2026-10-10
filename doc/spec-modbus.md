@@ -24,7 +24,7 @@
 | Register | Coil | Name | Type | Initial | Description |
 | --- | --- | --- | --- | --- | --- |
 | 0 |  | status | Word | 0 | Line status word |
-| 0.0 | 8 | bypass | Bool | false | Whether bypassed |
+| 0.0 | 8 | flow_override | Bool | false | Manual hang-on of the whole line; a master switch that does not overwrite the flow_override of the sections |
 | 0.1 | 9 | pump_run | Bool | false | Whether this line has pumps running |
 | 0.2 | 10 | alarm_F | Bool | false | This line has an alarm |
 | 0.3 | 11 | autoStopCmd | Bool | false | Automatic shutdown command |
@@ -39,14 +39,13 @@
 | Register | Coil | Name | Type | Initial | Description |
 | --- | --- | --- | --- | --- | --- |
 | 0 |  | ID | UInt | 0 | Section number |
-| 1 |  | bypass_word | Word | 0 | Bypass word |
-| 1.0 | 24 | bypass | Bool | false | This section is overridden |
+| 1 |  | upward_input | Word | 0 | Upward input area (reserved) |
 | 2 |  | status | Word | 0 | Section status word |
 | 2.0 | 40 | comm_OK | Bool | false | Communication of all actuators of this section is OK |
 | 2.1 | 41 | work_OK | Bool | false | All actuators of this section work properly |
 | 2.2 | 42 | protect_F | Bool | false | This section is in the protection state |
 | 2.3 | 43 | hangon_AF | Bool | false | This section is hung on automatically |
-| 2.4 | 44 | hangon_MF | Bool | false | This section is hung on manually |
+| 2.4 | 44 | flow_override | Bool | false | This section is hung on manually |
 | 2.5 | 45 | action_F | Bool | false | Whether this section stopped pumps on leakage |
 | 2.6 | 46 | flow_warning_F | Bool | false | Flow warning of this section |
 | 2.7 | 47 | flow_alarm_F | Bool | false | Flow alarm of this section (pre-action) |

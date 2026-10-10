@@ -42,11 +42,8 @@ export function line_init(line) {
 	data.on("change", (tagname, old_value, new_value) => {
 		logger.debug(`line_${name}: ${tagname} ${old_value} => ${new_value}`);
 	});
-	data.get("bypass").on("change", (_, new_value) => {
-		for (const section of sections) {
-			section.data.bypass = new_value;
-		}
-		logger.info(`line ${name} changed bypass status to ${new_value}`);
+	data.get("flow_override").on("change", (_, new_value) => {
+		logger.info(`line ${name} changed flow_override status to ${new_value}`);
 	});
 	data.get("pump_run").on("change", (_, new_value) => {
 		for (const section of sections) {

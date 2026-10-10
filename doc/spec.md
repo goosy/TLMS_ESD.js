@@ -22,7 +22,7 @@ This project implements only the controller program; the programs on the measure
 - Reading the YAML configuration and running one of its controllers by name;
 - Communication with actuators over two protocols: Modbus TCP and Siemens S7;
 - Section-level flow difference alarm, pressure alarm aggregation, interlock pump stop and cancel stop;
-- Line-level bypass, alarm aggregation, automatic / manual stop pump commands;
+- Line-level manual hang-on (`flow_override`), alarm aggregation, automatic / manual stop pump commands;
 - Publishing actuator parameters and writing them back, sending actuator commands;
 - Interlock action records (persisted as CSV, the latest N records browsable over Modbus);
 - Logging;
@@ -72,7 +72,7 @@ Relations: controller 1-N lines, line 1-N sections, section N-N actuators (the s
 | --- | --- | --- |
 | Flow difference over limit | Controller | Computes the flow difference per section; above WH for the delay, warns; above AH for the delay, issues the stop pump notice and counts down; when the countdown ends, shuts down the whole line. |
 | Pressure over limit | Actuator | The actuator checks the pressure limits and reports `pressure_AH_F`, together with whether the pressure interlock shutdown is allowed (`pressure_SD_F`); only for actuators that allow the pressure interlock, the controller shuts down the section immediately when their pressure is in alarm and a pump in the section is running, without a countdown. |
-| Hang-on | Controller | The section's `hangon_AF` (automatic hang-on) and `hangon_MF` (manual hang-on). It applies only to the flow difference interlock: a hung-on section does not stop pumps because of the flow difference, and a manual hang-on during the countdown interrupts the shutdown. The pressure interlock is not restricted by hang-on. |
+| Hang-on | Controller | The section's `hangon_AF` (automatic hang-on) and `flow_override` (manual hang-on). It applies only to the flow difference interlock: a hung-on section does not stop pumps because of the flow difference, and a manual hang-on during the countdown interrupts the shutdown. The pressure interlock is not restricted by hang-on. |
 
 ### 3.5 Deployment
 
@@ -220,12 +220,12 @@ TTags are the interface:
 - Flow:
   - `flow_begin` is the sum of the flows of the begin actuators, `flow_end` the sum of the flows of the end actuators;
   - `flow_diff = flow_begin - flow_end`.
-- Flow difference evaluation (not evaluated while the section is bypassed, `bypass`):
+- Flow difference evaluation:
   - After the flow difference stays above `flow_diff_WH` for `flow_diff_WH_delay`, `flow_warning_F` is set;
   - After it stays above `flow_diff_AH` for `flow_diff_AH_delay`, `flow_alarm_F` is set.
 - Protection state:
-  - When communication is OK, work is OK, no pump is in a start-stop transition, the section is not bypassed and not hung on manually (`hangon_MF`), the section is in the protection state (`protect_F`);
-  - When any of the first four conditions fails, the section is hung on automatically (`hangon_AF`).
+  - When communication is OK, work is OK, no pump is in a start-stop transition, and the section is not hung on manually (`flow_override`), the section is in the protection state (`protect_F`);
+  - When any of the first three conditions fails, the section is hung on automatically (`hangon_AF`).
 - Stop pump notice:
   - When this section's `flow_alarm_F`, this section's `protect_F` and the `pump_run` of its line all hold, the stop pump notice (`pre_stop_notice`) is issued and the `action_time` countdown starts (`countdown`, in s);
   - The pump running condition takes the line's `pump_run`, not this section's: the flow difference interlock stops the whole line in order to avoid pressurizing the buffer tanks of intermediate stations; the leaking section itself may have no running pump (e.g. driven across stations by an upstream section), and as long as a pump runs on the line, the line must be stopped. The pressure interlock stops only this section and still takes this section's `pump_run`;
@@ -250,7 +250,7 @@ TTags are the interface:
 - `pump_run`: true when any section has a pump running;
 - `alarm_F`: true when any section has a flow alarm or a pressure alarm;
 - `pre_stop_notice`: true when any section is in the stop pump notice;
-- `bypass`: the bypass state of the line is passed to all sections of the line;
+- `flow_override` (manual hang-on of the whole line): a line-level master switch; while set, no section of the line is protected, and after it is reset protection resumes; it does not overwrite any section's own `flow_override`, so a hang-on set on a single section stays after the line master switch is reset; the HMI should show the `flow_override` of both the line and the sections;
 - After all pumps of the line stop, the line's `autoStopCmd` / `manStopCmd` are cleared;
 - `manStopCmd` is written by the HMI, for a manual pump stop.
 
