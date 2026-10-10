@@ -1,4 +1,4 @@
-import { create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_fake_driver, make_struct, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
@@ -40,7 +40,7 @@ describe("Binding exchange area", () => {
 	test("a write goes to the mapped remote address with the extras", async () => {
 		const { data, driver, binding } = setup();
 		data.z = 0x0102;
-		assert.equal(await binding.create_group("z").write(), true);
+		assert.equal(await write_group(binding.create_group("z")), true);
 		assert.deepEqual(driver.writes, [{ start: 106, length: 2, bytes: [1, 2], extras: ["extra"] }]);
 	});
 
@@ -59,7 +59,7 @@ describe("Binding exchange area", () => {
 		const group = binding.create_group("z");
 		data.z = 5;
 		assert.equal(await binding.request_read(), false);
-		assert.equal(await group.write(), false);
+		assert.equal(await write_group(group), false);
 		assert.equal(driver.reads.length + driver.writes.length, 0);
 		driver.is_connected = true;
 		assert.equal(await binding.flush_writes(), true);
@@ -69,7 +69,7 @@ describe("Binding exchange area", () => {
 	test("a failed read returns false, keeps the values and clears read_ok", async () => {
 		const { data, driver, binding } = setup();
 		driver.read_result = null;
-		assert.equal(await binding.create_group("x").read(), false);
+		assert.equal(await read_group(binding.create_group("x")), false);
 		assert.equal(binding.read_ok, false);
 		assert.equal(data.x, 0);
 		driver.read_result = undefined;
@@ -96,7 +96,7 @@ describe("Binding exchange area", () => {
 		assert.equal(driver.writes.length, 1);
 		assert.deepEqual(binding.write_done(group), { seq: 1, ok: true });
 		driver.write_results = [false];
-		await group.write();
+		await write_group(group);
 		assert.deepEqual(binding.write_done(group), { seq: 2, ok: false });
 	});
 
@@ -112,7 +112,7 @@ describe("Binding exchange area", () => {
 		driver.emit("connect");
 		assert.equal(binding.connected, true);
 		await binding.request_read();
-		await binding.write(binding.create_group("id"));
+		await write_group(binding.create_group("id"));
 		// connfailed, connect, read, write
 		assert.equal(updates.length, 4);
 		assert.ok(updates.every((b) => b === binding));

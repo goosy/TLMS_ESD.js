@@ -1,4 +1,4 @@
-import { create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_fake_driver, make_struct, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import test, { describe } from "node:test";
 import { TData } from "../src/typed_data/TData.js";
@@ -29,7 +29,7 @@ const setup = (endian = "BE", options = {}, write_unit = 1) => {
 const areas_of = async (setup_args, names) => {
 	const { driver, binding } = setup(...setup_args);
 	const group = binding.create_group(...names);
-	await group.write();
+	await write_group(group);
 	return driver.writes.map(({ start, length, bytes }) => {
 		assert.equal(length, bytes.length);
 		return [start, length];
@@ -86,7 +86,7 @@ describe("Binding group areas", () => {
 		const data = new TData(make_struct(items), "overlap");
 		const driver = create_fake_driver();
 		const binding = new Binding(data, driver, {});
-		await binding.create_group("x", "y").write();
+		await write_group(binding.create_group("x", "y"));
 		assert.deepEqual(driver.writes.map(({ start, length }) => [start, length]), [[0, 6]]);
 	});
 
@@ -118,7 +118,7 @@ describe("Binding group write units", () => {
 	test("expanded area uses the LE byte position of the Bool", async () => {
 		const { data, driver, binding } = setup("LE", {}, 2);
 		data.f0 = true;
-		await binding.create_group("f0").write();
+		await write_group(binding.create_group("f0"));
 		assert.deepEqual(driver.writes.map(({ start, bytes }) => [start, bytes]), [[2, [0x01, 0x00]]]);
 	});
 
@@ -141,7 +141,7 @@ describe("Binding group read/write", () => {
 		data.b = 0x1234;
 		data.c = 0x01020304;
 		const group = binding.create_group("b", "c");
-		assert.equal(await group.write(), true);
+		assert.equal(await write_group(group), true);
 		assert.deepEqual(driver.writes.map(({ start, bytes }) => [start, bytes]), [
 			[4, [0x34, 0x12]],
 			[8, [0x04, 0x03, 0x02, 0x01]],
@@ -151,14 +151,14 @@ describe("Binding group read/write", () => {
 	test("write uses the remote offset", async () => {
 		const { data, driver, binding } = setup("BE", { remote_start: 40, start: 2 });
 		data.b = 1;
-		await binding.create_group("b").write();
+		await write_group(binding.create_group("b"));
 		assert.equal(driver.writes[0].start, 42);
 	});
 
 	test("write returns false if any area fails but still writes all areas", async () => {
 		const { driver, binding } = setup();
 		driver.write_results = [false, true];
-		assert.equal(await binding.create_group("a", "b").write(), false);
+		assert.equal(await write_group(binding.create_group("a", "b")), false);
 		assert.equal(driver.writes.length, 2);
 	});
 
@@ -168,7 +168,7 @@ describe("Binding group read/write", () => {
 		driver.remote.set([0x34, 0x12], 4); // b
 		const events = [];
 		data.on("change", (name, old_value, new_value) => events.push([name, old_value, new_value]));
-		assert.equal(await binding.create_group("b").read(), true);
+		assert.equal(await read_group(binding.create_group("b")), true);
 		assert.equal(data.b, 0x1234);
 		assert.equal(data.a, 0);
 		assert.deepEqual(events, [["b", 0, 0x1234]]);
@@ -178,14 +178,14 @@ describe("Binding group read/write", () => {
 		const { data, driver, binding } = setup();
 		driver.remote.set([0x00, 0x05], 4);
 		driver.read_result = null;
-		assert.equal(await binding.create_group("b").read(), false);
+		assert.equal(await read_group(binding.create_group("b")), false);
 		assert.equal(data.b, 0);
 	});
 
 	test("read of a word updates its coupled bits", async () => {
 		const { data, driver, binding } = setup();
 		driver.remote.set([0x00, 0x01], 2);
-		await binding.create_group("flags").read();
+		await read_group(binding.create_group("flags"));
 		assert.equal(data.flags, 1);
 		assert.equal(data.f0, true);
 	});
@@ -194,42 +194,15 @@ describe("Binding group read/write", () => {
 		test(`Bool read follows the ${endian} byte order`, async () => {
 			const { data, driver, binding } = setup(endian);
 			driver.remote.set([0x01, 0x00], 2); // flags = 0x0001 in device byte order
-			await binding.create_group("f0").read();
+			await read_group(binding.create_group("f0"));
 			assert.equal(data.f0, true);
 		});
 
 		test(`Bool write follows the ${endian} byte order`, async () => {
 			const { data, driver, binding } = setup(endian);
 			data.f0 = true;
-			await binding.create_group("f0", "f8").write();
+			await write_group(binding.create_group("f0", "f8"));
 			assert.deepEqual([...driver.remote.subarray(2, 4)], [0x01, 0x00]);
 		});
 	}
-});
-
-describe("Binding group copy_from", () => {
-	test("copies tags by name and skips missing ones", () => {
-		const { data, binding } = setup();
-		const group = binding.create_group("a", "b");
-		group.copy_from({ a: 3 });
-		assert.equal(data.a, 3);
-		assert.equal(data.b, 0);
-	});
-
-	test("copies from another TData", () => {
-		const { data, binding } = setup();
-		const { data: source } = setup();
-		source.b = 9;
-		source.c = 10;
-		binding.create_group("b").copy_from(source);
-		assert.equal(data.b, 9);
-		assert.equal(data.c, 0);
-	});
-
-	test("copying a word updates its coupled bits", () => {
-		const { data, binding } = setup();
-		binding.create_group("flags").copy_from({ flags: 0x0100 });
-		assert.equal(data.flags, 0x0100);
-		assert.equal(data.f8, true);
-	});
 });

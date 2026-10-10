@@ -48,7 +48,7 @@ function get_drivers(driver_info) {
 }
 
 async function run_controller(controller) {
-	// every data block requests a scan after a write (doc/design-scan.md 3.3);
+	// every data block requests a scan after a write (doc/design.md 3.5);
 	// the scheduler is created with the runtime, after the action record
 	let runtime;
 	const action_record = new Action_Record("action_records", {

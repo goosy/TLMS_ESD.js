@@ -10,7 +10,7 @@ export const cfg_lines = [],
 	cfg_actuators = [],
 	cfg_controllers = [];
 
-// bit k of the command word of each command (doc/design.md 12.1): offsets
+// bit k of the command word of each command (doc/design.md 14.1): offsets
 // 8-15 of a coupling are the bits 0-7 of the register, offsets 0-7 the bits 8-15
 const command_bits = new Map(node_commands
 	.filter(({ name }) => name !== "reserve" && name !== "executing")

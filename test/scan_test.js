@@ -66,7 +66,7 @@ describe("Scheduler setup", () => {
 	});
 });
 
-describe("scan phases (design-scan 6.1)", () => {
+describe("scan phases (design 5.1)", () => {
 	test("input loads fresh data, rules see it, publish emits after the rules, output writes", async () => {
 		const { scheduler, data: [d] } = setup();
 		const driver = create_fake_driver(2);
@@ -121,7 +121,7 @@ describe("scan phases (design-scan 6.1)", () => {
 	});
 });
 
-describe("scan requests (design-scan 6.2)", () => {
+describe("scan requests (design 5.2)", () => {
 	test("requests in one turn of the event loop make one triggered scan", async () => {
 		const { scheduler, data: [d] } = setup();
 		let runs = 0;
@@ -201,7 +201,7 @@ describe("scan requests (design-scan 6.2)", () => {
 	});
 });
 
-describe("timing with tickers (design-scan 7.3)", () => {
+describe("timing with tickers (design 6.3)", () => {
 	function setup_delay() {
 		const { scheduler, data: [d] } = setup({ items: BOOLS });
 		scheduler.add_rule(derive({
@@ -262,7 +262,7 @@ describe("timing with tickers (design-scan 7.3)", () => {
 	});
 });
 
-describe("error isolation (design-scan 6.4)", () => {
+describe("error isolation (design 5.4)", () => {
 	test("a failing rule is reported and the following rules still run", () => {
 		const { scheduler, data: [d], errors } = setup();
 		let ran = false;
@@ -307,7 +307,7 @@ describe("error isolation (design-scan 6.4)", () => {
 	});
 });
 
-describe("previous values and edges (design-scan 5.3)", () => {
+describe("previous values and edges (design 5.1)", () => {
 	test("a tag: the value at the end of the last scan", () => {
 		const { scheduler, data: [d] } = setup({ items: BOOLS });
 		const seen = [];
@@ -354,7 +354,7 @@ describe("previous values and edges (design-scan 5.3)", () => {
 	});
 });
 
-describe("breaking a cycle by reads_previous (design-scan 7.4)", () => {
+describe("breaking a cycle by reads_previous (design 6.4)", () => {
 	test("the key read by reads_previous lags one scan behind", () => {
 		const { scheduler, data: [d] } = setup();
 		// a counts the scans; b follows a; a reads the previous b to close the loop
@@ -375,7 +375,7 @@ describe("breaking a cycle by reads_previous (design-scan 7.4)", () => {
 	});
 });
 
-describe("dependency tracing (design-scan 7.6)", () => {
+describe("dependency tracing (design 6.5)", () => {
 	test("a read of a combined word is declared by the word or all its bits", (t) => {
 		const { scheduler, data: [d] } = setup({ items: WORD });
 		scheduler.add_rule(act({ name: "by word", reads: [[d, "word"]], writes: [[d, "n"]], run: () => { d.n = d.word + d.b0; } }));

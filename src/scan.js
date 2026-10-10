@@ -1,4 +1,4 @@
-// The scan scheduler of the controller (doc/design-scan.md 6).
+// The scan scheduler of the controller (doc/design.md 5).
 import { TData } from "./typed_data/TData.js";
 import { set_access_tracer } from "./typed_data/layout.js";
 import { Binding } from "./drivers/binding.js";
@@ -20,7 +20,7 @@ export class Scheduler {
 	#interval = null;
 	#binding_previous = new Map();
 	#var_previous = new Map();
-	// dependency tracing (doc/design-scan.md 7.6)
+	// dependency tracing (doc/design.md 6.5)
 	#current_rule = null;
 
 	/**
@@ -51,7 +51,7 @@ export class Scheduler {
 	/**
 	 * A binding flushed in the output phase. With an input group, it is also
 	 * read on periodic ticks and loaded in the input phase; without one, it
-	 * is output only (doc/design-scan.md 6.5).
+	 * is output only (doc/design.md 5.5).
 	 */
 	add_binding(binding, input_group) {
 		this.#check_open();
@@ -73,7 +73,7 @@ export class Scheduler {
 	}
 
 	/**
-	 * Orders and checks the rules (doc/design-scan.md 7.4), gives each a
+	 * Orders and checks the rules (doc/design.md 6.4), gives each a
 	 * ticker and takes the first snapshot of the previous values.
 	 * @throws {Error} With `errors`, every violation found.
 	 */
@@ -195,7 +195,7 @@ export class Scheduler {
 	}
 
 	/**
-	 * The value of a key at the end of the last scan (doc/design-scan.md 5.3):
+	 * The value of a key at the end of the last scan (doc/design.md 5.1):
 	 * a tag of a data block, a binding state or a registered variable.
 	 * @throws {Error} For any other key.
 	 */
@@ -215,7 +215,7 @@ export class Scheduler {
 	changed(owner, name) { return !same_value(this.previous(owner, name), owner[name]); }
 
 	/**
-	 * Test mode (doc/design-scan.md 7.6): records every tag accessed by a
+	 * Test mode (doc/design.md 6.5): records every tag accessed by a
 	 * rule without being declared. Returns the list it fills, as
 	 * "rule: data.tag read|write" lines.
 	 */
@@ -234,7 +234,7 @@ export class Scheduler {
 			}
 			for (const [owner, name] of rule.reads) {
 				add(keys.read, owner, name);
-				// a combined word is read through its bits (doc/design-scan.md 7.1)
+				// a combined word is read through its bits (doc/design.md 6.1)
 				if (owner instanceof TData) for (const bit of component_bits(owner.layout, name)) add(keys.read, owner, bit);
 			}
 			declared.set(rule, keys);

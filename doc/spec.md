@@ -73,6 +73,7 @@ Relations: controller 1-N lines, line 1-N sections, section N-N actuators (the s
 | Flow difference over limit | Controller | Computes the flow difference per section; above WH for the delay, warns; above AH for the delay, issues the stop pump notice and counts down; when the countdown ends, shuts down the whole line. |
 | Pressure over limit | Actuator | The actuator checks the pressure limits and reports `pressure_AH_F`, together with whether the pressure interlock shutdown is allowed (`pressure_SD_F`); only for actuators that allow the pressure interlock, the controller shuts down the section immediately when their pressure is in alarm and a pump in the section is running, without a countdown. |
 | Hang-on | Controller | The section's `hangon_AF` (automatic hang-on) and `flow_override` (manual hang-on). It applies only to the flow difference interlock: a hung-on section does not stop pumps because of the flow difference, and a manual hang-on during the countdown interrupts the shutdown. The pressure interlock is not restricted by hang-on. |
+| Input signal debouncing | Actuator | Signals reported by an actuator are debounced by the actuator; the controller neither debounces nor filters the values reported by actuators and processes the values as received. |
 
 ### 3.5 Deployment
 
@@ -104,13 +105,13 @@ A tdata must meet the following requirements:
   - the total length of a tdata is a whole number of registers (a multiple of 16 bits).
 - **Layout validation**: at startup the controller validates all layouts; on violations it reports all of them and refuses to start; the configuration check command (see 5.6) runs the same validation.
 - **Combined word bit numbers**: in a 16-bit combined word, bit k of the word value is bit k of the register, guaranteed by the offset numbering of the bits in the layout; neither inside the controller nor at the upward server or the driver boundary are bytes swapped additionally for combined words.
-- **Exchange with drivers**: a tdata holds the buffer exchanged with the actuator, read and written as a whole or in groups through the Modbus TCP or S7 driver; the device byte order is converted only at this boundary, and inside the controller everything is big-endian.
+- **Exchange with drivers**: a tdata exchanges data with the actuator as a whole or in groups through the Modbus TCP or S7 driver; the device byte order is converted only at this boundary, and inside the controller everything is big-endian.
   - For Bool and single-byte TTags, the device byte order applies per 16-bit register containing them: under byte orders that swap the two bytes of a register, a Bool or single-byte TTag lies in the other byte of the same register on the device, with the same bit number.
 - **Write unit**: the smallest unit written to an actuator is set by the protocol. Under Modbus TCP the controller uses only holding registers (function code 03 for reading, 06 / 16 for writing), and the write unit is one register; under S7 the write unit is one byte. A group write writes only the write units holding the TTags of the group.
 - **Write ownership**: TTags written by the controller and TTags written by the actuator must not share a write unit, so that a write of one side does not overwrite the data of the other. Adding or adjusting TTags must follow this rule.
 - **Upward publishing**: tdata are mounted on the Modbus TCP server of the controller, and the HMI reads and writes their content directly.
 - **Access by name**: the program reads and writes TTag values by name; tdata and TTags can be read and written at any time, not restricted by the scheduling of the controller. The programming interface of TData and TTag is in [spec-data-api.md](spec-data-api.md).
-- **Change events**: when the value of a TTag changes (whether read from the actuator, written by the HMI or assigned by the program), a change event is emitted after the new value takes effect; business logic implements its interplay by subscribing to events.
+- **Change events**: when the value of a TTag changes (whether read from the actuator, written by the HMI or assigned by the program), a change event is emitted after the new value takes effect. The aggregations and interlocks of the controller are evaluated in each processing on one set of inputs, and the results do not depend on the order in which events arrive.
 - **Combined word linkage**: a status word / command word made of Bools is linked with its bits in both directions.
 - **Group synchronization**: several TTags can be grouped and synchronized with the actuator as a whole.
 
@@ -310,4 +311,4 @@ TTags are the interface:
 - Implemented in JavaScript.
 - Communication with actuators must support both Modbus TCP and Siemens S7; upward, only a Modbus TCP server is offered.
 - The configuration format is YAML, the action records are persisted as CSV.
-- The runtime environment, dependencies, process management and build are in section 10 of [design.md](design.md).
+- The runtime environment, dependencies, process management and build are in section 12 of [design.md](design.md).

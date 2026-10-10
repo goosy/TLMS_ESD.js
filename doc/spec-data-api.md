@@ -2,7 +2,7 @@
 
 > English version of [spec-data-api.zh-cn.md](spec-data-api.zh-cn.md), the primary Chinese version. When the two differ, update both.
 >
-> This document specifies the programming interface that TData and TTag promise to their users, and refines section 3.6 of [spec.md](spec.md). The implementation is in [design-scan.md](design-scan.md).
+> This document specifies the programming interface that TData and TTag promise to their users, and refines section 3.6 of [spec.md](spec.md). The implementation is in section 3 of [design.md](design.md).
 > TData and TTag are general data objects for programmers: values can be read and written at any time, and events are emitted when values change. They do not depend on the scheduling of the controller; the scan-based data flow of the controller is only one way of using them and does not restrict their capabilities.
 
 ## 1. Concepts

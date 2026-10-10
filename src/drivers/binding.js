@@ -1,4 +1,4 @@
-// IO binding of a data block to a device driver (doc/design-scan.md 4).
+// IO binding of a data block to a device driver (doc/design.md 4.5).
 // Not part of the data layer component: it uses TData through its
 // interface and writes its buffer only when loading device data.
 import { Buffer } from "node:buffer";
@@ -7,7 +7,7 @@ const SWAP_REGISTER = ["LE", "little", "BEBS"];
 
 /**
  * Index in the device-ordered IO buffer of each byte of a data block
- * (doc/design-scan.md 4.2). Device byte order acts per 16-bit register,
+ * (doc/design.md 4.5). Device byte order acts per 16-bit register,
  * and per 32-bit value for 4-byte tags.
  */
 function io_indexes(layout, endian) {
@@ -50,31 +50,6 @@ class Binding_Group {
 		this.bytes = bytes;
 		this.own = own;
 		this.areas = areas;
-	}
-
-	/** Reads the device, loads the group and detects the changes. */
-	read() {
-		return this.binding.read(this);
-	}
-
-	/** Writes the group to the device. */
-	write() {
-		return this.binding.write(this);
-	}
-
-	/**
-	 * Copies the values of the group tags from another data block (or any
-	 * object), by name, then detects their changes at once.
-	 */
-	copy_from(source) {
-		const data = this.binding.data;
-		const buffer = data.buffer;
-		for (const { name, codec, byte, mask } of this.entries) {
-			const value = source[name];
-			if (value === undefined) continue;
-			codec.set(buffer, byte, mask, value);
-		}
-		data.detect();
 	}
 }
 
@@ -262,23 +237,5 @@ export class Binding {
 	/** The last completed write of a group: its sequence number and result. */
 	write_done(group) {
 		return this.#write_done.get(group);
-	}
-
-	/**
-	 * Until the scan scheduler exists: reads the device, loads the group
-	 * and detects the changes at once.
-	 */
-	async read(group) {
-		const ok = await this.request_read();
-		if (!ok) return false;
-		this.load(group);
-		this.data.detect();
-		return true;
-	}
-
-	/** Until the scan scheduler exists: writes the group at once. */
-	write(group) {
-		this.request_write(group);
-		return this.flush_writes();
 	}
 }

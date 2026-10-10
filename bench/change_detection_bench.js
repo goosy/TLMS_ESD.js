@@ -1,4 +1,4 @@
-// Benchmark of reading a NODE data block (doc/plan-scan.md step 2): loading
+// Benchmark of reading a NODE data block (doc/design.md 3.5): loading
 // every tag from a device-ordered IO buffer, then detecting and reporting the
 // changes. Not part of `pnpm test`.
 // Run: node bench/change_detection_bench.js
