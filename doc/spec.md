@@ -242,7 +242,7 @@ TTags are the interface:
   - The action state is kept during the stop, so the HMI can see the reason of the shutdown;
   - Pressure action: reset when a pump of this section runs, the pressure interlock condition has disappeared, and the section's `autoStopCmd` has been cleared;
   - Flow difference action: reset when a pump of its line runs, this section's `flow_alarm_F` has disappeared, and this section is no longer the line action source;
-  - The reset conditions are evaluated in every main loop cycle and not latched: if the alarm is still present when the pumps restart and disappears later, the action is reset all the same;
+  - The reset conditions are evaluated in each processing and not latched: if the alarm is still present when the pumps restart and disappears later, the action is reset all the same;
   - After both kinds of action are reset, `action_F` is cleared; the line's `action_section_ID` is cleared if it is still this section's ID, and left alone if another section has overwritten it.
 - Every time a pressure action or a flow difference action occurs (from absent to present), an action record is created (see 5.4).
 
@@ -300,11 +300,10 @@ TTags are the interface:
 
 ## 6. Performance and timing
 
-- Main loop period 500 ms (`MAIN_PERIOD`); the flow difference delays and the countdown accumulate in this step.
+- Main loop period 500 ms (`MAIN_PERIOD`); the flow difference delays, the countdown, the communication failure delay and the parameter refresh delay accumulate in this step.
 - Driver polling period 1 s. Reconnection starts 5 s after a disconnection; the reconnect interval of Modbus TCP doubles each time up to 20 s, and returns to 5 s once the connection is stable again; S7 reconnects every 5 s at a fixed interval.
 - When reads and writes with an actuator keep failing for 5 s, it is a communication failure (handled the same as a disconnection).
-- Processing happens right after actuator data is read back and after HMI writes: state aggregation, trigger bits, the protection state and the stop command are computed completely in the same processing, without debounces; when the condition of a flow difference delay or of the countdown disappears, it is reset immediately.
-- Command sending is debounced by 100 ms.
+- Processing happens right after actuator data is read back, after HMI writes and after communication state changes: state aggregation, trigger bits, the protection state, the interlock actions and the stop command are computed completely in the same processing, and the resulting commands are sent immediately, without debounces; when the condition of a flow difference delay or of the countdown disappears, it is reset immediately.
 
 ## 7. Implementation constraints
 

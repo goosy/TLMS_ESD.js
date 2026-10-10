@@ -10,7 +10,7 @@
 | --- | --- |
 | `src/cli.js` | The `tlms` command line: parses arguments, calls pm2 or directly `import('./main.js')`. |
 | `src/main.js` | Process entry: validates the layouts, reads the configuration, builds the controller, provides the real drivers reused per connection, starts the Modbus server and the main loop. |
-| `src/runtime.js` | `build_runtime`: creates the TData of the controller, mounts them on `Unit_Map`, calls each `*_init`, and provides one iteration of the main loop `cycle` and `start` / `stop`. The drivers are provided by the caller through `get_drivers(driver_info)`, which lets tests inject fake drivers. |
+| `src/runtime.js` | `build_runtime`: creates the TData of the controller, mounts them on `Unit_Map`, calls each `*_init`, creates the scan scheduler and declares all rules, and provides `start` / `stop`. The drivers are provided by the caller through `get_drivers`. |
 | `src/gcl.js` | YAML loader (`yaml` library, YAML 1.2), keeping source line information. |
 | `src/config.js` | Merges several configuration documents, fills in defaults, builds the name and ID indexes. |
 | `src/init.js` | `prepare_controller`: builds the runtime object graph for the selected controller. |
@@ -22,7 +22,7 @@
 | `src/layouts.js` | Compiles `layouts.yaml` and exports these layouts. |
 | `src/layout_types.d.ts` | Type declarations generated from the layouts (`pnpm gen:types`). |
 | `src/util.js` | log4js logging, `debouncify` / `debounce`, `Object.mixin`. |
-| `src/scan.js` / `src/rules.js` | The scan scheduler (`Scheduler`) and rules (`derive` / `act`, ordering and startup checks, `Ticker`, `on_delay` / `off_delay`, the transitional `tick_act`), see sections 6 and 7 of design-scan.md; wired into the running flow by `runtime.js` (section 2). |
+| `src/scan.js` / `src/rules.js` | The scan scheduler (`Scheduler`) and rules (`derive` / `act`, ordering and startup checks, `Ticker`, `on_delay` / `off_delay`), see sections 6 and 7 of design-scan.md; wired into the running flow by `runtime.js` (section 2). |
 
 ## 2. Startup
 
@@ -47,9 +47,9 @@
    1. initializes the action record;
    2. calls `build_runtime` (`runtime.js`): mounts the action record on `unit_id.action_records`, creates the TData in the order line -> section -> actuator, calls `attach_unit`, then each `*_init`; the drivers of the actuators are provided by `get_drivers` of `main.js`, reused per connection;
    3. starts the Modbus TCP server and waits until it is ready; when it fails to start (e.g. the port is in use), logs an error and exits with exit code 1, to be restarted by pm2;
-   4. `build_runtime` creates the scan scheduler (section 6 of design-scan.md), registers all tdata and the data Bindings of the actuators (with the input group `data_payload`); after the object graph is built, it calls `section_rules` / `line_rules` in the order sections -> lines to declare the rules (sections 6, 7), finally declares the `node_loop` coarse rule for each actuator, then `prepare()` orders and checks. The coarse rules (`tick_act`) detect new periodic ticks with their own tickers and run only in the scans of periodic ticks, because they time by 500 ms on every call;
+   4. `build_runtime` creates the scan scheduler (section 6 of design-scan.md), registers all tdata, the data Bindings of the actuators (with the input group `data_payload`) and the write-only command Bindings; after the object graph is built, it calls `node_rules` / `section_rules` / `line_rules` in the order actuators -> sections -> lines to declare the rules (sections 5, 6, 7), then declares the rule of the action record (section 8) and the command masking rule of each actuator (12.1), then `prepare()` orders and checks;
    5. all tdata use the immediate detection mode, with `on_write` wired to `request_scan()` of the scheduler: any write (rules, event handlers, HMI, asynchronous callbacks) requests a scan after detection (3.3 of design-scan.md);
-   6. `runtime.start()` first runs an initial scan (computing all derived values, starting the tickers of the coarse rules), then starts the periodic tick (`MAIN_PERIOD = 500`); rule errors are written to the log through the `on_error` of the scheduler.
+   6. `runtime.start()` first runs an initial scan (computing all derived values), then starts the periodic tick (`MAIN_PERIOD = 500`); rule errors are written to the log through the `on_error` of the scheduler.
 
 ## 3. Typed data layer
 
@@ -141,7 +141,7 @@ Main layouts (byte offsets):
 - Writing: `request_write(group)` registers a write request, and the same group registered several times is written only once; `flush_writes()` exports the bits of the group into `IO_buffer` by the mask, then calls the driver to write each write range, passing the length of the range to the driver as well. Bits within a range that do not belong to the group take the values last read; by the write ownership rule these bytes are also written by the controller, so the data of the actuator is not overwritten.
 - While the driver is not connected, nothing is read or written, and write requests are kept until the next `flush_writes()`.
 - States: `connected` (updated by the `connect` / `connfailed` events of the driver), `read_ok` (whether the last read succeeded), `write_done(group)` (the sequence number and result of the last write of each group); when new data arrives or a state changes, the `on_update(binding)` passed at creation is called. For now these states are only recorded and not yet used.
-- Convenience methods (used before the scan scheduler goes live): `group.read()` reads, loads and detects immediately; `group.write()` registers and writes out immediately; `group.copy_from(source)` copies the values of the tags of the same name and runs one detection after all are copied, used to synchronize the parameter block between data and command.
+- Convenience methods (currently used only by tests): `group.read()` reads, loads and detects immediately; `group.write()` registers and writes out immediately; `group.copy_from(source)` copies the values of the tags of the same name and runs one detection after all are copied, used to synchronize the parameter block between data and command.
 
 ## 4. Drivers
 
@@ -203,45 +203,39 @@ The data and command of each actuator have a Binding each (3.4), kept in `actuat
   - binds from local byte 16 (skipping the local area 0-15), with the remote start `driver_info.commands.start`;
   - `commands_payload` contains the ID, commands and the parameter block.
 
-### 5.2 Periodic processing
+### 5.2 Reads and writes
 
-Reading the actuator data is done by the scan: the scan of a periodic tick starts the read in its output phase; when the data arrives, the `on_update` of Binding requests a scan, which loads `data_payload` in the input phase and detects the changes in the publish phase.
+- Reading the actuator data is done by the scan: the scan of a periodic tick starts the read in its output phase; when the data arrives, the `on_update` of Binding requests a scan, which loads `data_payload` in the input phase and detects the changes in the publish phase.
+- The command Binding is write-only (6.5 of design-scan.md): rules register writes, which are written out in the output phase of the scan; after a write completes, `on_update` requests a scan. While the driver is not connected, write requests are kept and written out once the connection recovers.
+- Driver events are only logged; the connection and read results are recorded by Binding as `connected` / `read_ok`, for rules to read.
 
-`node_loop` runs once in the scan of every periodic tick:
+### 5.3 Rules (`node_rules`)
 
-1. Command masking (when the driver is connected): `command.commands &= 0xB1`, keeping bits 0, 4, 5, 7 for all actuators alike (see sections 11 and 12).
-2. When `has_commands` has been true for more than 3 cycles, the commands are sent again (`debounce_send_commands`).
+| Rule | Processing |
+| --- | --- |
+| `comm_OK` (derive) | `off_delay(connected, delay_protect_time)`: true while connected, and kept for `delay_protect_time` after a disconnection before becoming false; when never connected, kept for the same time after startup |
+| `work_OK` | Set to false when `off_delay(read_ok, delay_protect_time)` is false, i.e. when reads keep failing for longer than `delay_protect_time`; after a successful read, the loading restores the value reported by the actuator |
+| Parameter refresh | The rising edge of `connected` starts timing, and after 2 s the parameters of the node tdata are copied to the command block; a disconnection in between stops it |
+| Withdrawing `stop_pumps` (actuators with pumps) | On the falling edge of `pump_run`, clears `stop_pumps` of the command block |
+| Acknowledgement handshake | When `response_code` changes and is not 0, for the bits set to 1 in `response_code`, the command bits of the same name in the command block are cleared bit by bit, and `executing` is cleared |
+| `pressure_SD_F` | On change, clears the corresponding enable or disable command bit |
+| `read_paras` | On the rising edge, copies the parameters of the node tdata to the command block and resets the bit |
+| `write_paras` | On the rising edge, copies the parameters of the command block to the node tdata and registers a write of `data_parameters`; after the write completes (the sequence number of `write_done` is reached), resets the bit |
+| `has_commands` (derive) | `commands` is not 0 |
+| Sending | When `commands` changes, or when `response_code` changes and is not 0 (so the actuator sees the acknowledged bits cleared), registers a write of `commands_payload` |
+| Resending | After `has_commands` has held for more than 3 ticks, registers a write again on every tick; timed per actuator |
 
-### 5.3 Events
-
-- Driver events:
-  - `connfailed`: sets `comm_OK = false` after the delay `delay_protect_time`;
-  - `connect`: sets `comm_OK = true` and runs `reset_parameters` 2 s later (command parameter block <- data);
-  - `io_error`: sets `work_OK = false` after the delay.
-- Change of `response_code` (acknowledgement handshake):
-  1. `commands &= ~response_code` clears the acknowledged command bits;
-  2. `executing = false`;
-  3. if `response_code` is still not 0, the commands are sent once more (so the actuator sees that the command bits are cleared).
-- Change of `commands`: updates `has_commands` and calls `commands_payload.write()` with a 100 ms debounce.
-- `read_paras`: copies the parameters in data to command, then resets the bit in nextTick.
-- `write_paras`:
-  1. copies the parameters in command to `data_parameters`;
-  2. writes the parameter block of the actuator data area;
-  3. resets the bit after the write completes.
-- Change of `pressure_SD_F`: clears the corresponding enable or disable command bit and sends the commands.
-- When `pump_run` becomes false, the actuator's `stop_pumps` command is cleared. `pump_run` follows the value reported by the actuator (the actuator already ORs the states of its pumps), and the controller no longer computes it.
-- Other state changes are only logged; the aggregation to the section is done by the rules of the section (section 6).
+- `write_paras` writes the parameters of the command block into the node tdata, while the parameter refresh and `read_paras` copy the parameters of the node tdata to the command block, and `comm_OK` / `work_OK` read `delay_protect_time` of the node tdata, which forms a cycle. The latter break this cycle by reading the node parameters at the end of the previous scan (`reads_previous`): the node parameters come from the actuator, and being one scan late does no harm; `write_paras`, on the other hand, must read the command parameters of this scan, since the HMI often writes the parameters and then `write_paras` in the same request.
+- Rules write only command bits, never the whole word `commands` (7.1 of design-scan.md).
+- `pump_run` follows the value reported by the actuator (the actuator already ORs the states of its pumps), and the controller no longer computes it.
+- State changes are only logged; the aggregation to the section is done by the rules of the section (section 6).
 
 ## 6. Section processing (`section_proc.js`)
 
 ### 6.1 Event handling (`section_init`)
 
 - Writes the section's ID, name and flow difference parameters (`flow_diff_WH` and the like, `action_time`).
-- Change of `stop_pumps`:
-  - when true, sets `command.stop_pumps = node.data.pump_run` for each actuator with pumps;
-  - when false, sets `stop_pumps = false` and `cancel_stop = true`.
-- Falling edge of `pump_run`: clears the section's `autoStopCmd` / `manStopCmd`.
-- Other changes (`action_F`, alarms, hang-on, `pre_stop_notice` and the like) are only logged.
+- State changes (`action_F`, alarms, hang-on, `pre_stop_notice` and the like) are only logged.
 
 ### 6.2 Rules (`section_rules`)
 
@@ -271,20 +265,22 @@ derive rules, run in every scan, ordered among themselves by the ordering:
 
 `pre_stop_notice` reads the line's `pump_run`, which in turn aggregates the `pump_run` of the sections; after ordering, they are computed in turn within the same scan, and no recomputation through the change event of the line is needed any more.
 
-### 6.3 Interlock actions (coarse rule)
+### 6.3 Interlock actions
 
-`section ${name} actions` is the remaining coarse rule; it declares the keys it reads and writes and takes part in the ordering (after `flow_alarm_F` and the countdown, before `action_F` and `stop_pumps`), and runs only in the scans of periodic ticks:
+act rules, run in every scan:
 
-1. Pressure action (variable `press_action`):
+1. Stop command reset: on the falling edge of `pump_run`, clears the section's `autoStopCmd` / `manStopCmd`. It is declared before the pressure action; both write `autoStopCmd` and are ordered by declaration order.
+2. Pressure action (variable `press_action`):
    - set when `press_SD_trigger && pump_run`, together with the section's `autoStopCmd`. `protect_F` is not checked, so it is not restricted by hang-on;
    - otherwise reset when `pump_run && !autoStopCmd`: a pump of this section is running (necessarily restarted after the stop), and the interlock condition has disappeared.
-2. Flow difference action (variable `flow_action`):
+3. Flow difference action (variable `flow_action`):
    - set on `countdown_expired`, together with the line's `autoStopCmd` and this section's `line_action_source`;
    - otherwise first runs `line_action_source &&= line.autoStopCmd`, then resets when `line.pump_run && !flow_alarm_F && !line_action_source`. The pump running condition takes the line's, as for the stop pump notice; otherwise a section without pumps could never reset.
-3. The reset conditions are evaluated every cycle and not latched; during the stop neither pump running condition holds, so the action state is kept until pumps run again.
-4. When either action variable changes from false to true, sets the line's `action_section_ID` to this section's ID and calls `add_action_record()` to create a record; when both happen in the same cycle, only one record is created. When both action variables are false and the line's `action_section_ID` equals this section's ID, it is cleared, so as not to erase the action of another section.
+4. The reset conditions are evaluated in every scan and not latched; during the stop neither pump running condition holds, so the action state is kept until pumps run again.
+5. Action record: on a rising edge of either action variable, sets the line's `action_section_ID` to this section's ID and calls `add_action_record()` to create a record; when both happen in the same scan, only one record is created. When both action variables are false and the line's `action_section_ID` equals this section's ID, it is cleared, so as not to erase the action of another section.
+6. Pump commands: on changes of the section's `stop_pumps`, when true sets `command.stop_pumps = node.data.pump_run` for each actuator with pumps; when false sets `stop_pumps = false` and `cancel_stop = true`.
 
-The section layout is planned to change in a future transitional version dedicated to layout adjustments: `press_action` / `flow_action` then become TTags, and the action record will be triggered by their change events instead of comparing old and new values in the action rule.
+The section layout is planned to change in a future transitional version dedicated to layout adjustments: `press_action` / `flow_action` then become TTags, and the action record will be triggered by their change events instead of checking rising edges in the action record rule.
 
 ## 7. Line processing (`line_proc.js`)
 
@@ -292,7 +288,7 @@ The section layout is planned to change in a future transitional version dedicat
   - `pump_run`, `pre_stop_notice`: the OR of the properties of the same name of the sections;
   - `alarm_F`: the OR of `flow_alarm_F` and `press_alarm_F` of the sections.
 - The line's `flow_override` is only logged and does not overwrite any section; its effect shows as an AND in the `protect_F` rule of the sections (see 6.2).
-- On the falling edge of `pump_run`, clears the line's `autoStopCmd` / `manStopCmd`.
+- act rule: on the falling edge of `pump_run`, clears the line's `autoStopCmd` / `manStopCmd`.
 
 ## 8. Action records (`action_record.js`)
 
@@ -306,9 +302,8 @@ The section layout is planned to change in a future transitional version dedicat
   2. puts the record at the head of the in-memory list;
   3. sets `index = 0`;
   4. appends a row with `appendFile`.
-- Change of `index`:
-  - when -1, clears the time TTags;
-  - otherwise loads the corresponding record into data; when out of range, restores the previous value.
+- `index` is handled by an act rule (`action_record_rule`), declared after the rules of all sections; the rule remembers the record currently shown in a closure:
+  - when `index` differs from the one shown: when -1, clears the time TTags; otherwise loads the corresponding record into data, and when out of range restores the previous value.
 - The record content is filled in by the section's `add_action_record()` when a pressure action or a flow difference action occurs (see 6.3); `press_action` / `flow_action` take the action variables of the section; the rule for actuator positions is in section 11.
 
 ## 9. Logging
@@ -358,11 +353,9 @@ Requirements of the spec that the current code does not implement yet:
 
 | Item | Spec requirement | Current code | Locations |
 | --- | --- | --- | --- |
-| Command masking by actuator configuration | Each actuator lists its supported commands with `supported_commands` in the configuration; the controller sends only supported commands and resets the other command bits directly (spec 5.1); for the implementation see 12.1 | The configuration has no such field; `node_loop` runs `command.commands &= 0xB1` for all actuators alike, keeping only bits 0, 4, 5, 7 (`stop_pumps`, `enable_pressure_SD`, `disable_pressure_SD`, `write_paras`), so `cancel_stop` is reset too | Actuator parsing in `config.js`; `node_loop` in `node_proc.js` |
 | ID uniqueness check | The IDs of lines, sections and actuators are all distinct (across types); several tdata of the same object share its ID (spec 4.1) | `config.js` only checks that an actuator `id` is a non-zero number; lines, sections and actuators are each indexed by `ID<id>`, and neither duplicates nor equal IDs across types are reported; a duplicate of the same type silently overwrites the earlier one | `add_conf` in `config.js` |
 | ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec 4.1, 5.5) | `build_runtime` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `build_runtime` in `runtime.js` |
 | Configuration check command | `tlms check` reads and validates the configuration and all layouts (`validate_structure` of 3.1), reports all errors, and does not start the controller (spec 3.6, 5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly; the layout validation already runs at startup (`main.js`) but is not yet wired into the command line | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
-| Resending without acknowledgement (defect in the existing code) | Without an acknowledgement for 3 consecutive cycles, the command is sent again (spec 5.1) | The counter `no_response_count` is a module-level variable of `node_proc.js` shared by all actuators: the `node_loop` of every actuator increments or resets it, so as long as some other actuator has no pending commands the count is reset, and the resend never actually happens. The corresponding case in `test/system_test.js` is marked `todo` | `node_loop` in `node_proc.js` |
 | Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec 5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | `add_action_record` in `section_proc.js` |
 
 
@@ -384,11 +377,11 @@ All commands go through the common handshake of 5.3 (send the command word, clea
 
 ### 12.1 Command masking
 
-Per the spec, commands are masked by the `supported_commands` configured for each actuator:
+Commands are masked by the `supported_commands` configured for each actuator (spec 5.1):
 
 - Parsing: when `config.js` parses an actuator, it converts the `supported_commands` array into a 16-bit mask word `command_mask`. For each command name of the array, the command word bit k is looked up in the command enumeration (`node_commands`), and bit k of the mask is set to 1; the bit numbers are the register bits (see 3.1).
 - Validation: a name outside the command enumeration in the array is a configuration error; the program reports it at startup and exits, in the same way as the validation of the actuator `id`.
 - When the field is omitted, all commands are supported, and `command_mask` takes all bits 0-13 of the command enumeration, i.e. `0x3FFF`.
-- Bit 14 (`reserve`) and bit 15 (`executing`) are not commands and are not affected by the mask: the actual filter is `commands & (command_mask | 0xC000)`, so that `executing` is not cleared by mistake.
-- Use: `command_mask` is carried into the runtime with the actuator object. Before sending, `commands & command_mask` is applied, so unsupported command bits are reset directly and not sent; this replaces the common `& 0xB1` in `node_loop` today.
-- Note: today's common mask runs in `node_loop` every 500 ms, while command sending has a 100 ms debounce, so a masked command bit may still be sent before it is reset; masking per actuator must filter on the send path, not rely on the periodic reset alone.
+- Use: `command_mask` is carried into the runtime with the actuator object. Each actuator has a masking rule, which in every scan resets by name, bit by bit, the command bits that are 0 in `command_mask`; bit 14 (`reserve`) and bit 15 (`executing`) are not commands and are not affected.
+- The masking rule is declared after all other rules: several writers of the same command bit are ordered by declaration order, so it comes after the other rules writing command bits; since it writes command bits, it comes before the sending rule that reads `commands`, so unsupported command bits are never sent.
+

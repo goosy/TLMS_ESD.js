@@ -5,13 +5,24 @@ import test, { describe } from "node:test";
 import { TData } from "../src/typed_data/TData.js";
 import { Binding } from "../src/drivers/binding.js";
 import { Scheduler } from "../src/scan.js";
-import { derive, act, on_delay, tick_act } from "../src/rules.js";
+import { derive, act, on_delay } from "../src/rules.js";
 
 const PERIOD = 500;
 const ITEMS = ["a", "b", "c"].map((name, i) => ({ name, type: "UInt", offset: i * 16, length: 16, init_value: 0 }));
 const BOOLS = [
 	...["flag", "out", "seen"].map((name, i) => ({ name, type: "Bool", offset: i, length: 1, init_value: false })),
 	{ name: "pad", type: "Byte", offset: 8, length: 8, init_value: 0 },
+];
+
+const WORD = [
+	{
+		name: "word", type: "Word", offset: 0, length: 16, is_combined: true,
+		coupling: [
+			{ name: "b0", type: "Bool", offset: 8, length: 1, init_value: false },
+			{ name: "b1", type: "Bool", offset: 9, length: 1, init_value: false },
+		],
+	},
+	{ name: "n", type: "UInt", offset: 16, length: 16, init_value: 0 },
 ];
 
 /** Lets pending setImmediate callbacks run. */
@@ -90,6 +101,23 @@ describe("scan phases (design-scan 6.1)", () => {
 		scheduler.scan(true);
 		await flush();
 		assert.equal(driver.reads.length, 2);
+	});
+
+	test("a binding without an input group is only written: never read nor loaded", async () => {
+		const { scheduler, data: [d] } = setup();
+		const driver = create_fake_driver(2);
+		const binding = new Binding(d, driver);
+		const output = binding.create_group("b");
+		scheduler.add_binding(binding);
+		scheduler.add_rule(act({ name: "send", run: () => binding.request_write(output) }));
+		scheduler.prepare();
+		d.b = 7;
+		scheduler.scan(true);
+		await flush();
+		assert.equal(driver.reads.length, 0);
+		// the write of d.b also requests a scan, which writes again
+		assert.ok(driver.writes.length > 0);
+		for (const { start, bytes } of driver.writes) assert.deepEqual([start, bytes], [2, [0, 7]]);
 	});
 });
 
@@ -232,21 +260,6 @@ describe("timing with tickers (design-scan 7.3)", () => {
 		scheduler.scan(true); // 3
 		assert.equal(d.out, true);
 	});
-
-	test("a tick_act rule runs once per periodic tick after the first scan", () => {
-		const { scheduler, data: [d] } = setup();
-		let runs = 0;
-		scheduler.add_rule(tick_act({ name: "coarse", writes: [[d, "a"]], run: () => { runs++; } }));
-		scheduler.prepare();
-		scheduler.scan(false); // starts its ticker
-		scheduler.scan(false);
-		assert.equal(runs, 0);
-		scheduler.scan(true);
-		scheduler.scan(false);
-		assert.equal(runs, 1);
-		scheduler.scan(true);
-		assert.equal(runs, 2);
-	});
 });
 
 describe("error isolation (design-scan 6.4)", () => {
@@ -363,6 +376,18 @@ describe("breaking a cycle by reads_previous (design-scan 7.4)", () => {
 });
 
 describe("dependency tracing (design-scan 7.6)", () => {
+	test("a read of a combined word is declared by the word or all its bits", (t) => {
+		const { scheduler, data: [d] } = setup({ items: WORD });
+		scheduler.add_rule(act({ name: "by word", reads: [[d, "word"]], writes: [[d, "n"]], run: () => { d.n = d.word + d.b0; } }));
+		scheduler.add_rule(act({ name: "by bits", reads: [[d, "b0"], [d, "b1"]], run: () => d.word }));
+		scheduler.add_rule(act({ name: "one bit", reads: [[d, "b0"]], run: () => d.word }));
+		scheduler.prepare();
+		const undeclared = scheduler.trace_dependencies();
+		t.after(() => scheduler.untrace_dependencies());
+		scheduler.scan(false);
+		assert.deepEqual(undeclared, ["one bit: D.word read"]);
+	});
+
 	test("a direct read of a tag declared only in reads_previous is reported", (t) => {
 		const { scheduler, data: [d] } = setup();
 		scheduler.add_rule(derive({

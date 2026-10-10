@@ -1,4 +1,4 @@
-import { derive, on_delay, tick_act } from "./rules.js";
+import { act, component_bits, derive, on_delay } from "./rules.js";
 import { logger } from "./util.js";
 
 export function section_init(section) {
@@ -6,7 +6,6 @@ export function section_init(section) {
 		ID,
 		name,
 		data,
-		pump_nodes,
 		flow_diff_WH,
 		flow_diff_WH_delay,
 		flow_diff_AH,
@@ -17,31 +16,11 @@ export function section_init(section) {
 	data.on("change", (tagname, old_value, new_value) => {
 		logger.debug(`section_${name}: ${tagname} ${old_value} => ${new_value}`);
 	});
-	data.get("stop_pumps").on("change", (_, new_value) => { // set command
-		if (new_value) {
-			for (const node of pump_nodes) {
-				node.command.stop_pumps = node.data.pump_run;
-				logger.info(`send stop_pumps command to ${node.name} actuator`);
-			}
-		} else {
-			for (const node of pump_nodes) {
-				node.command.stop_pumps = false;
-				node.command.cancel_stop = true;
-				logger.info(`send cancel_stop command to ${node.name} actuator`);
-			};
-		}
-	});
 	data.get("action_F").on("change", (_, new_value) => {
 		if (new_value) {
 			logger.info(`section ${name}: interlock action`);
 		} else {
 			logger.info(`section ${name}: reset action flag`);
-		}
-	});
-	data.get("pump_run").on("change", (_, new_value) => {
-		if (!new_value) {
-			data.autoStopCmd = false;
-			data.manStopCmd = false;
 		}
 	});
 	data.get("flow_warning_F").on("change", (_, new_value) => {
@@ -108,6 +87,7 @@ export function section_rules(section, scheduler) {
 	const record_data = line.controller.action_record.data;
 	const node_keys = (nodes, ...tags) => nodes.flatMap((node) => tags.map((tag) => [node.data, tag]));
 	const add = (spec) => scheduler.add_rule(derive({ ...spec, name: `section ${name} ${spec.name}` }));
+	const add_act = (spec) => scheduler.add_rule(act({ ...spec, name: `section ${name} ${spec.name}` }));
 
 	// variables passed between the rules (doc/design-scan.md 7.5)
 	for (const var_name of ["press_SD_trigger", "countdown_expired", "press_action", "flow_action"]) {
@@ -223,25 +203,85 @@ export function section_rules(section, scheduler) {
 		},
 	});
 
-	// the interlock actions, still a coarse rule run on periodic ticks (doc/design-scan.md 10.2)
-	scheduler.add_rule(tick_act({
-		name: `section ${name} actions`,
+	// the interlock actions (doc/spec.md 5.2)
+	add_act({
+		name: "stop commands reset",
+		reads: [[data, "pump_run"]],
+		writes: [[data, "autoStopCmd"], [data, "manStopCmd"]],
+		run: () => {
+			if (!scheduler.fell(data, "pump_run")) return;
+			data.autoStopCmd = false;
+			data.manStopCmd = false;
+		},
+	});
+	// pressure action: stops this section only, not gated by protect_F
+	add_act({
+		name: "pressure action",
+		reads: [[section, "press_SD_trigger"], [data, "pump_run"], [data, "autoStopCmd"]],
+		writes: [[section, "press_action"], [data, "autoStopCmd"]],
+		run: () => {
+			if (section.press_SD_trigger && data.pump_run) {
+				section.press_action = true;
+				data.autoStopCmd = true;
+			} else if (data.pump_run && !data.autoStopCmd) {
+				// the section runs again without the trigger
+				section.press_action = false;
+			}
+		},
+	});
+	// flow action: stops the whole line
+	add_act({
+		name: "flow action",
 		reads: [
-			[section, "press_SD_trigger"], [section, "countdown_expired"],
-			[data, "pump_run"], [data, "flow_alarm_F"], [line_data, "pump_run"],
-			// the action record
+			[section, "countdown_expired"], [data, "flow_alarm_F"], [data, "line_action_source"],
+			[line_data, "pump_run"], [line_data, "autoStopCmd"],
+		],
+		writes: [[section, "flow_action"], [data, "line_action_source"], [line_data, "autoStopCmd"]],
+		run: () => {
+			if (section.countdown_expired) {
+				section.flow_action = true;
+				line_data.autoStopCmd = true;
+				data.line_action_source = true;
+			} else {
+				data.line_action_source &&= line_data.autoStopCmd;
+				if (line_data.pump_run && !data.flow_alarm_F && !data.line_action_source) {
+					// the line runs again without the alarm
+					section.flow_action = false;
+				}
+			}
+		},
+	});
+	add_act({
+		name: "action record",
+		reads: [
+			[section, "press_action"], [section, "flow_action"], [line_data, "action_section_ID"],
 			[data, "ID"], [data, "flow_begin"], [data, "flow_end"], [data, "flow_diff"],
 			...node_keys(all_nodes, "pressure", "ID"),
 			...node_keys(pump_nodes, "pump_run"),
 		],
 		writes: [
-			[section, "press_action"], [section, "flow_action"],
-			[data, "autoStopCmd"], [data, "line_action_source"],
-			[line_data, "autoStopCmd"], [line_data, "action_section_ID"],
-			...[...record_data.layout.entries.keys()].map((tag) => [record_data, tag]),
+			[line_data, "action_section_ID"],
+			// the record tags, the status word through its bits
+			...[...record_data.layout.entries.keys()]
+				.filter((tag) => component_bits(record_data.layout, tag).length === 0)
+				.map((tag) => [record_data, tag]),
 		],
-		run: () => section_loop(section),
-	}));
+		run: () => {
+			const press_raised = scheduler.rose(section, "press_action");
+			const flow_raised = scheduler.rose(section, "flow_action");
+			if (press_raised) logger.error(`section ${name}: pressure interlock action`);
+			if (flow_raised) logger.error(`section ${name}: flow interlock action`);
+			if (press_raised || flow_raised) {
+				line_data.action_section_ID = data.ID;
+				add_action_record(section);
+			}
+			const action_F = section.press_action || section.flow_action;
+			if (!action_F && line_data.action_section_ID === data.ID) {
+				// do not erase the action of another section
+				line_data.action_section_ID = 0;
+			}
+		},
+	});
 
 	add({
 		name: "action_F",
@@ -260,6 +300,25 @@ export function section_rules(section, scheduler) {
 		run: () => {
 			const stop_pumps = data.autoStopCmd || data.manStopCmd || line_data.autoStopCmd || line_data.manStopCmd;
 			data.stop_pumps = stop_pumps && data.pump_run;
+		},
+	});
+	// the stop command is sent to the pump nodes, and withdrawn with cancel_stop
+	add_act({
+		name: "pump commands",
+		reads: [[data, "stop_pumps"], ...node_keys(pump_nodes, "pump_run")],
+		writes: pump_nodes.flatMap((node) => [[node.command, "stop_pumps"], [node.command, "cancel_stop"]]),
+		run: () => {
+			if (!scheduler.changed(data, "stop_pumps")) return;
+			for (const node of pump_nodes) {
+				if (data.stop_pumps) {
+					node.command.stop_pumps = node.data.pump_run;
+					logger.info(`send stop_pumps command to ${node.name} actuator`);
+				} else {
+					node.command.stop_pumps = false;
+					node.command.cancel_stop = true;
+					logger.info(`send cancel_stop command to ${node.name} actuator`);
+				}
+			}
 		},
 	});
 }
@@ -287,56 +346,4 @@ function add_action_record(section) {
 	AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
 	AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
 	action_record.add_record();
-}
-
-/**
- * The interlock actions of a section, once per periodic tick: the pressure
- * and flow actions, the stop commands they set and the action record.
- */
-function section_loop(section) {
-	const {
-		ID,
-		data,
-		line,
-	} = section;
-
-	const pump_run = data.pump_run;
-	const press_action_old = section.press_action;
-	const flow_action_old = section.flow_action;
-
-	// pressure action: stops this section only, not gated by protect_F
-	if (section.press_SD_trigger && pump_run) {
-		section.press_action = true;
-		data.autoStopCmd = true;
-	} else if (pump_run && !data.autoStopCmd) {
-		// the section runs again without the trigger
-		section.press_action = false;
-	}
-
-	// flow action: stops the whole line
-	if (section.countdown_expired) {
-		section.flow_action = true;
-		line.data.autoStopCmd = true;
-		data.line_action_source = true;
-	} else {
-		data.line_action_source &&= line.data.autoStopCmd;
-		if (line.data.pump_run && !data.flow_alarm_F && !data.line_action_source) {
-			// the line runs again without the alarm
-			section.flow_action = false;
-		}
-	}
-
-	const press_raised = section.press_action && !press_action_old;
-	const flow_raised = section.flow_action && !flow_action_old;
-	if (press_raised) logger.error(`section ${section.name}: pressure interlock action`);
-	if (flow_raised) logger.error(`section ${section.name}: flow interlock action`);
-	if (press_raised || flow_raised) {
-		line.data.action_section_ID = ID;
-		add_action_record(section);
-	}
-	const action_F = section.press_action || section.flow_action;
-	if (!action_F && line.data.action_section_ID === ID) {
-		// do not erase the action of another section
-		line.data.action_section_ID = 0;
-	}
 }

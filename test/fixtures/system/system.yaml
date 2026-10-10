@@ -1,6 +1,7 @@
 # Fixture for test/system_test.js: one line with two sections.
 # S1: A (pumps, Modbus BE) -> B (Modbus BE)
 # S2: C (S7 BE) -> D (Modbus LEBS)
+# A supports a subset of the commands, the other actuators all of them.
 
 controllers:
 - name: TC
@@ -51,6 +52,13 @@ actuators:
   pumps:
   - I1.1, Q0.0
   - I1.2, Q0.1
+  supported_commands:
+  - stop_pumps
+  - cancel_stop
+  - enable_pressure_SD
+  - disable_pressure_SD
+  - read_paras
+  - write_paras
   modbus_server:
     port: 502
     unit_id: 1

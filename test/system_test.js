@@ -89,9 +89,7 @@ describe("actuator", () => {
 		assert.equal(sys.device("A").command("enable_pressure_SD"), false);
 	});
 
-	test("an unanswered command is sent again", {
-		todo: "no_response_count in node_proc.js is shared by all actuators and reset by the ones without commands",
-	}, async (t) => {
+	test("an unanswered command is sent again", async (t) => {
 		const sys = await create_system(t);
 		sys.hmi.set("A", "enable_pressure_SD", true, "command");
 		await sys.settle();
@@ -101,11 +99,38 @@ describe("actuator", () => {
 		assert.ok(sys.device("A").command_writes().length > sent);
 	});
 
-	test("an unsupported command bit is cleared", async (t) => {
+	test("an unsupported command bit is cleared and never sent", async (t) => {
 		const sys = await create_system(t);
+		const sent = sys.device("A").command_writes().length;
 		sys.hmi.set("A", "horn", true, "command");
-		await sys.advance(2 * MAIN_PERIOD);
+		await sys.flush();
 		assert.equal(sys.node("A").command.horn, false);
+		await sys.settle();
+		assert.equal(sys.device("A").command_writes().length, sent);
+		assert.equal(sys.device("A").command("horn"), false);
+	});
+
+	test("an HMI command is written out in the scan of the HMI write", async (t) => {
+		const sys = await create_system(t);
+		// B supports all commands
+		sys.hmi.set("B", "horn", true, "command");
+		await sys.flush();
+		assert.equal(sys.device("B").command("horn"), true);
+		assert.equal(sys.node("B").command.has_commands, true);
+	});
+
+	test("each actuator counts its own unanswered ticks", async (t) => {
+		const sys = await create_system(t);
+		sys.hmi.set("B", "horn", true, "command");
+		await sys.flush();
+		const sent = sys.device("B").command_writes().length;
+		// another actuator answering its commands does not reset the count of B
+		sys.hmi.set("D", "horn", true, "command");
+		await sys.flush();
+		sys.device("D").set("response_code", command_bit(sys, "D", "horn"));
+		await sys.advance(5 * MAIN_PERIOD);
+		assert.equal(sys.node("D").command.has_commands, false);
+		assert.ok(sys.device("B").command_writes().length > sent);
 	});
 
 	test("read_paras copies the actuator parameters into the command block", async (t) => {
@@ -166,7 +191,8 @@ describe("actuator", () => {
 	test("work_OK is cleared while reads keep failing", async (t) => {
 		const sys = await create_system(t);
 		sys.driver("B").fail_reads();
-		await sys.advance(DELAY_PROTECT_TIME + 500);
+		// counted from the first failed read, on the next tick, in steps of MAIN_PERIOD
+		await sys.advance(DELAY_PROTECT_TIME + 2 * MAIN_PERIOD);
 		assert.equal(sys.node("B").data.work_OK, false);
 		await sys.settle();
 		assert.equal(sys.section("S1").data.work_OK, false);
@@ -175,6 +201,30 @@ describe("actuator", () => {
 		await sys.settle();
 		assert.equal(sys.node("B").data.work_OK, true);
 		assert.equal(sys.section("S1").data.work_OK, true);
+	});
+});
+
+describe("connection states", () => {
+	test("comm_OK is cleared on the first tick after delay_protect_time", async (t) => {
+		const sys = await create_system(t);
+		// right after a tick: the count starts on the next one
+		sys.driver("A").lose_connection();
+		await sys.advance(DELAY_PROTECT_TIME);
+		assert.equal(sys.node("A").data.comm_OK, true);
+		await sys.advance(MAIN_PERIOD);
+		assert.equal(sys.node("A").data.comm_OK, false);
+	});
+
+	test("reads recovering within delay_protect_time keep work_OK", async (t) => {
+		const sys = await create_system(t);
+		const values = [];
+		sys.node("B").data.get("work_OK").on("change", (_, value) => values.push(value));
+		sys.driver("B").fail_reads();
+		await sys.advance(2 * MAIN_PERIOD);
+		sys.driver("B").restore_reads();
+		await sys.advance(DELAY_PROTECT_TIME + 2 * MAIN_PERIOD);
+		assert.deepEqual(values, []);
+		assert.equal(sys.node("B").data.work_OK, true);
 	});
 });
 
@@ -373,6 +423,8 @@ describe("section and line", () => {
 		assert.equal(sys.section("S1").data.stop_pumps, false);
 		assert.equal(sys.node("A").command.stop_pumps, false);
 		assert.equal(sys.device("A").command("stop_pumps"), false);
+		// the actuator is told to release its stop output (spec 5.1)
+		assert.equal(sys.device("A").command("cancel_stop"), true);
 	});
 
 	test("manual stop commands are cleared when the pumps stop", async (t) => {
@@ -389,6 +441,57 @@ describe("section and line", () => {
 		assert.equal(sys.section("S1").data.manStopCmd, false);
 		assert.equal(sys.line("L1").data.manStopCmd, false);
 		assert.equal(sys.section("S1").data.stop_pumps, false);
+	});
+
+	test("a section resetting its action keeps the action of another section", async (t) => {
+		const sys = await create_system(t);
+		const L1 = sys.line("L1");
+		// S1: a pressure action, while its pump keeps running
+		run_pump(sys, true);
+		sys.device("A").set("pressure_SD_F", true);
+		sys.device("A").set("pressure_AH_F", true);
+		await sys.settle();
+		assert.equal(L1.data.action_section_ID, 11);
+
+		// S2: a flow action afterwards takes over the line
+		set_flows(sys, { C: 100, D: 70 });
+		await sys.advance(FLOW_ALARM_TIME + ACTION_TIME + 3 * MAIN_PERIOD);
+		assert.equal(sys.section("S2").data.action_F, true);
+		assert.equal(L1.data.action_section_ID, 12);
+
+		// the pumps stop and start again without the pressure trigger: S1 resets
+		sys.device("A").set("pressure_AH_F", false);
+		run_pump(sys, false);
+		await sys.settle();
+		run_pump(sys, true);
+		await sys.settle();
+		assert.equal(sys.section("S1").data.action_F, false);
+		assert.equal(sys.section("S2").data.action_F, true);
+		assert.equal(L1.data.action_section_ID, 12);
+	});
+
+	test("the record index selects a record, -1 clears the time, others are refused", async (t) => {
+		const sys = await create_system(t);
+		run_pump(sys, true);
+		sys.device("A").set("pressure_SD_F", true);
+		sys.device("A").set("pressure_AH_F", true);
+		await sys.settle();
+		assert.equal(sys.records.length, 1);
+		assert.equal(sys.hmi.get("action_records", "index"), 0);
+		assert.equal(sys.hmi.get("action_records", "section_ID"), 11);
+
+		sys.hmi.set("action_records", "index", -1);
+		await sys.flush();
+		assert.equal(sys.hmi.get("action_records", "index"), -1);
+		assert.equal(sys.hmi.get("action_records", "year"), 0);
+
+		sys.hmi.set("action_records", "index", 0);
+		await sys.flush();
+		assert.equal(sys.hmi.get("action_records", "section_ID"), 11);
+
+		sys.hmi.set("action_records", "index", 5);
+		await sys.flush();
+		assert.equal(sys.hmi.get("action_records", "index"), 0);
 	});
 
 	test("the line flow_override overrides the protection of all sections", async (t) => {

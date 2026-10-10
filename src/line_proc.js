@@ -1,4 +1,4 @@
-import { derive } from "./rules.js";
+import { act, derive } from "./rules.js";
 import { logger } from "./util.js";
 
 export function line_init(line) {
@@ -15,13 +15,6 @@ export function line_init(line) {
 	});
 	data.get("flow_override").on("change", (_, new_value) => {
 		logger.info(`line ${name} changed flow_override status to ${new_value}`);
-	});
-	data.get("pump_run").on("change", (_, new_value) => {
-		if (!new_value) {
-			data.autoStopCmd = false;
-			data.manStopCmd = false;
-			logger.info(`line ${name}: reset autoStopCmd and manStopCmd`);
-		}
 	});
 }
 
@@ -47,4 +40,16 @@ export function line_rules(line, scheduler) {
 	some("pump_run");
 	some("alarm_F", ["flow_alarm_F", "press_alarm_F"]);
 	some("pre_stop_notice");
+	// the stop commands are reset when all pumps of the line stop
+	scheduler.add_rule(act({
+		name: `line ${name} stop commands reset`,
+		reads: [[data, "pump_run"]],
+		writes: [[data, "autoStopCmd"], [data, "manStopCmd"]],
+		run: () => {
+			if (!scheduler.fell(data, "pump_run")) return;
+			data.autoStopCmd = false;
+			data.manStopCmd = false;
+			logger.info(`line ${name}: reset autoStopCmd and manStopCmd`);
+		},
+	}));
 }

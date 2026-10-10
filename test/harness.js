@@ -29,21 +29,6 @@ const TIME_STEP = 10;
 const STARTUP_MS = 3000;
 const REMOTE_SIZE = 2048;
 
-/**
- * Accesses of the event handlers not yet turned into rules, made inside the
- * rule whose write emits their event (doc/design-scan.md 10.2). Remove an
- * entry when its handler becomes a rule.
- */
-const HANDLER_ACCESSES = [
-	// pump_run falls: the stop commands of the section or line are reset
-	/^(line|section) \S+ pump_run: \S+\.(autoStopCmd|manStopCmd) write$/,
-	// stop_pumps changes: the command is sent to the pump nodes
-	/^section \S+ stop_pumps: \S+\.pump_run read$/,
-	/^section \S+ stop_pumps: \S+_CMD\.(stop_pumps|cancel_stop) write$/,
-	// commands change: has_commands follows them
-	/: \S+_CMD\.has_commands write$/,
-];
-
 let config_loaded = null;
 // the configuration modules keep global tables: load the fixture once per process
 const load_config = () => config_loaded ??= read_config(FIXTURE_DIR);
@@ -133,7 +118,8 @@ function read_item(area, base, local_start, endian, item) {
  * S7 area and db), emitting the same events as the real drivers.
  */
 export class Fake_Driver extends EventEmitter {
-	is_connected = true;
+	// like a real driver, not connected until started and connected
+	is_connected = false;
 	read_failing = false;
 	writes = [];
 
@@ -269,22 +255,35 @@ export async function create_system(t) {
 
 	const records = [];
 	const record_names = RECORD.items.map((item) => item.name);
+	// like Action_Record: the fields of a record, without the words and the index
+	const field_names = RECORD.items
+		.filter((item) => item.type.toLowerCase() !== "word" && item.name !== "index")
+		.map((item) => item.name);
+	// like main.js: its writes request a scan of the runtime built below
+	let runtime;
 	const action_record = {
-		data: new TData(RECORD, "action_records"),
+		data: new TData(RECORD, "action_records", { on_write: () => runtime?.scheduler.request_scan() }),
 		add_record() {
 			const record = {};
 			for (const name of record_names) record[name] = this.data[name];
 			records.push(record);
+			this.data.index = 0;
+		},
+		// index 0 is the latest record
+		get(index) {
+			const record = records.at(-1 - index);
+			if (index < 0 || !record) return false;
+			for (const name of field_names) this.data[name] = record[name];
+			return true;
 		},
 	};
 
-	const runtime = build_runtime(controller, { get_drivers, action_record });
+	runtime = build_runtime(controller, { get_drivers, action_record });
 	// every system test checks the declared dependencies of the rules (doc/design-scan.md 7.6)
 	const undeclared = runtime.scheduler.trace_dependencies();
 	t.after(() => {
 		runtime.scheduler.untrace_dependencies();
-		const unexpected = undeclared.filter((line) => !HANDLER_ACCESSES.some((pattern) => pattern.test(line)));
-		assert.deepEqual(unexpected, [], "rules access tags they do not declare");
+		assert.deepEqual(undeclared, [], "rules access tags they do not declare");
 	});
 	// actuators report their initial values before the controller starts
 	const devices = new Map();
@@ -297,15 +296,9 @@ export async function create_system(t) {
 		device.set("ID", node.ID);
 		devices.set(node.name, device);
 	}
-	for (const driver of drivers.values()) driver.emit("connect");
+	for (const driver of drivers.values()) driver.restore_connection();
 	runtime.start();
-	t.after(() => {
-		runtime.stop();
-		// let pending debounced calls fire: src/util.js keeps their timers in a
-		// module-level table, and a timer id left there would clear a timer of
-		// the next test, whose mocked ids start over
-		t.mock.timers.tick(1000);
-	});
+	t.after(() => runtime.stop());
 
 	const vector = create_vector(runtime.unit_map);
 	const unit_ids = controller.modbus_server.unit_id;

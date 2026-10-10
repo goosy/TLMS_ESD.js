@@ -2,6 +2,7 @@ import { access, writeFile, appendFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import csv_parser from "csv-parser";
 import { TData } from "./typed_data/TData.js";
+import { act, component_bits } from "./rules.js";
 import { RECORD } from "./layouts.js";
 import { logger } from "./util.js";
 
@@ -67,20 +68,6 @@ export class Action_Record {
 		await this.read_records_from_csv();
 		this.data.on("change", (tagname, old_value, new_value) => {
 			logger.debug(`${this.name}: ${tagname} ${old_value} => ${new_value}`);
-			if (tagname === "index") {
-				if (new_value === -1) {
-					const data = this.data;
-					data.year = 0;
-					data.month = 0;
-					data.day = 0;
-					data.hour = 0;
-					data.minute = 0;
-					data.second = 0;
-				} else {
-					const OK = this.get(new_value);
-					if (!OK) this.data.index = old_value;
-				}
-			}
 		});
 		// Initial index value
 		if (this.records.length) {
@@ -121,4 +108,36 @@ export class Action_Record {
 		const row = HEADERS.map((key) => this.data[key]).join(",");
 		await appendFile(this.file, `${row}\n`, { flags: "a" });
 	}
+}
+
+const TIME_TAGS = ["year", "month", "day", "hour", "minute", "second"];
+
+/**
+ * The rule showing the record selected by `index` (doc/design-scan.md 7.5):
+ * -1 clears the time, an index out of the records restores the previous one.
+ *
+ * @param {{data: TData, get: (index: number) => boolean}} action_record
+ * @return {Object} An act rule.
+ */
+export function action_record_rule(action_record) {
+	const { data } = action_record;
+	const tags = [...data.layout.entries.keys()];
+	let shown;
+	return act({
+		name: `${data.name} index`,
+		reads: [[data, "index"]],
+		// the record tags, the status word through its bits
+		writes: tags.filter((tag) => component_bits(data.layout, tag).length === 0).map((tag) => [data, tag]),
+		run: () => {
+			const index = data.index;
+			if (index === shown) return;
+			if (index === -1) {
+				for (const tag of TIME_TAGS) data[tag] = 0;
+			} else if (!action_record.get(index)) {
+				data.index = shown ?? -1;
+				return;
+			}
+			shown = index;
+		},
+	});
 }
