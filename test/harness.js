@@ -6,6 +6,7 @@
 // HMI writes, driver events), advance time and check outputs, so that they
 // stay valid while the internal scheduling of the controller changes.
 import "./share.js"; // must be first: sets LOG_LEVEL
+import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
 import { join } from "node:path";
@@ -27,6 +28,21 @@ const TIME_STEP = 10;
 // longer than the parameter refresh 2 s after connecting (node_proc.js)
 const STARTUP_MS = 3000;
 const REMOTE_SIZE = 2048;
+
+/**
+ * Accesses of the event handlers not yet turned into rules, made inside the
+ * rule whose write emits their event (doc/design-scan.md 10.2). Remove an
+ * entry when its handler becomes a rule.
+ */
+const HANDLER_ACCESSES = [
+	// pump_run falls: the stop commands of the section or line are reset
+	/^(line|section) \S+ pump_run: \S+\.(autoStopCmd|manStopCmd) write$/,
+	// stop_pumps changes: the command is sent to the pump nodes
+	/^section \S+ stop_pumps: \S+\.pump_run read$/,
+	/^section \S+ stop_pumps: \S+_CMD\.(stop_pumps|cancel_stop) write$/,
+	// commands change: has_commands follows them
+	/: \S+_CMD\.has_commands write$/,
+];
 
 let config_loaded = null;
 // the configuration modules keep global tables: load the fixture once per process
@@ -263,6 +279,13 @@ export async function create_system(t) {
 	};
 
 	const runtime = build_runtime(controller, { get_drivers, action_record });
+	// every system test checks the declared dependencies of the rules (doc/design-scan.md 7.6)
+	const undeclared = runtime.scheduler.trace_dependencies();
+	t.after(() => {
+		runtime.scheduler.untrace_dependencies();
+		const unexpected = undeclared.filter((line) => !HANDLER_ACCESSES.some((pattern) => pattern.test(line)));
+		assert.deepEqual(unexpected, [], "rules access tags they do not declare");
+	});
 	// actuators report their initial values before the controller starts
 	const devices = new Map();
 	for (const node of runtime.nodes) {
@@ -276,7 +299,13 @@ export async function create_system(t) {
 	}
 	for (const driver of drivers.values()) driver.emit("connect");
 	runtime.start();
-	t.after(() => runtime.stop());
+	t.after(() => {
+		runtime.stop();
+		// let pending debounced calls fire: src/util.js keeps their timers in a
+		// module-level table, and a timer id left there would clear a timer of
+		// the next test, whose mocked ids start over
+		t.mock.timers.tick(1000);
+	});
 
 	const vector = create_vector(runtime.unit_map);
 	const unit_ids = controller.modbus_server.unit_id;
@@ -352,6 +381,8 @@ export async function create_system(t) {
 		node: (name) => find(runtime.nodes, name),
 		device: (name) => devices.get(name),
 		driver: (name) => find(runtime.nodes, name).data_driver,
+		/** Lets pending IO and triggered scans complete, without advancing time. */
+		flush,
 		/** Advances mocked time by `ms`, letting pending IO settle in between. */
 		async advance(ms) {
 			for (let elapsed = 0; elapsed < ms; elapsed += TIME_STEP) {

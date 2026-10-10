@@ -12,7 +12,7 @@
 | `src/gcl.js` | YAML 加载器（`yaml` 库，YAML 1.2），保留源码行号信息。 |
 | `src/config.js` | 合并多份配置文档，填充默认值，建立名称与 ID 索引。 |
 | `src/init.js` | `prepare_controller`：为选定的控制器构建运行时对象图。 |
-| `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | 执行器（节点）、段、线的初始化（事件绑定）与周期处理。 |
+| `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | 执行器（节点）、段、线的初始化（事件绑定）、规则声明与周期处理。 |
 | `src/action_record.js` | 动作记录：CSV 读写，以及基于 index 的浏览。 |
 | `src/drivers/` | `Base_Driver`、`MTClient`（Modbus TCP 客户端）、`S7Client`、`createMTServer`（对上服务端，使用数据层的 vector），以及 IO 绑定 `binding.js`（tdata 与驱动之间的交换区、字节序和分组读写，第 3.4 节；不属于数据层）。 |
 | `src/typed_data/` | 数据层（将来的组件，见 design-scan.md 1.1 节）：`TData` / `TTag`（带类型的缓冲区与变化事件）、`observer.js`（变化检测）、`structure.js`（结构展开与布局校验）、`layout.js`（YAML 布局文件的编译）、`codecs.js`（各类型的编解码）、`endian.js`（按条目的字节序转换）、`server.js`（`Unit_Map` 与对上服务端的 vector）、`types.js`（类型声明生成）。 |
@@ -20,7 +20,7 @@
 | `src/layouts.js` | 编译 `layouts.yaml` 并导出这些布局。 |
 | `src/layout_types.d.ts` | 由布局生成的类型声明（`pnpm gen:types`）。 |
 | `src/util.js` | log4js 日志、`debouncify` / `debounce`、`Object.mixin`。 |
-| `src/scan.js` / `src/rules.js` | 扫描调度器（`Scheduler`）与规则（`derive` / `act`、排序与启动检查、`Ticker`、`on_delay` / `off_delay`），见 design-scan.md 第 6、7 节。尚未接入运行流程。 |
+| `src/scan.js` / `src/rules.js` | 扫描调度器（`Scheduler`）与规则（`derive` / `act`、排序与启动检查、`Ticker`、`on_delay` / `off_delay`、过渡用的 `tick_act`），见 design-scan.md 第 6、7 节；由 `runtime.js` 接入运行流程（第 2 节）。 |
 
 ## 2. 启动流程
 
@@ -45,9 +45,9 @@
    1. 初始化动作记录；
    2. 调用 `build_runtime`（`runtime.js`）：把动作记录挂到 `unit_id.action_records`，按 线 → 段 → 执行器 的顺序创建 TData 并 `attach_unit`，再调用各自的 `*_init`；执行器的驱动由 `main.js` 的 `get_drivers` 按连接复用提供；
    3. 启动 Modbus TCP 服务端并等待其就绪；启动失败（如端口被占用）时记录错误并以退出码 1 退出，由 pm2 重启；
-   4. `build_runtime` 创建扫描调度器（design-scan.md 第 6 节），登记全部 tdata 和执行器的数据 Binding（输入分组为 `data_payload`），并把原来的主循环包装为粗粒度规则：先是全部段的 `section_loop`，然后是全部执行器的 `node_loop`（`line_loop` 为空，未调用）。粗粒度规则用自己的 ticker 判断新的周期 tick，只在周期 tick 的扫描中执行，因为它们每调用一次就按 500 ms 计时；
-   5. 全部 tdata 使用立即检测模式，`on_write` 接到调度器的 `request_scan()`：任何写入（规则、事件处理器、HMI、异步回调）在检测之后都请求一次扫描（design-scan.md 3.3 节）；
-   6. `runtime.start()` 先做一次初始扫描（启动粗粒度规则的 ticker），再启动周期 tick（`MAIN_PERIOD = 500`）；规则出错经调度器的 `on_error` 写入日志。
+   4. `build_runtime` 创建扫描调度器（design-scan.md 第 6 节），登记全部 tdata和执行器的数据 Binding（输入分组为 `data_payload`）；对象图建好后，按段 → 线的顺序调用 `section_rules` / `line_rules` 声明规则（第 6、7 节），最后为每个执行器声明 `node_loop` 粗粒度规则，然后 `prepare()` 排序检查。粗粒度规则（`tick_act`）用自己的 ticker 判断新的周期 tick，只在周期 tick 的扫描中执行，因为它们每调用一次就按 500 ms 计时；
+   5. 全部 tdata使用立即检测模式，`on_write` 接到调度器的 `request_scan()`：任何写入（规则、事件处理器、HMI、异步回调）在检测之后都请求一次扫描（design-scan.md 3.3 节）；
+   6. `runtime.start()` 先做一次初始扫描（算出全部派生量，启动粗粒度规则的 ticker），再启动周期 tick（`MAIN_PERIOD = 500`）；规则出错经调度器的 `on_error` 写入日志。
 
 ## 3. 带类型数据层
 
@@ -226,75 +226,71 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
   1. 把 command 中的参数复制到 `data_parameters`；
   2. 写入执行器 data 区的参数块；
   3. 写入完成后复位该位。
-- `pressure_SD_F` 变化：清除对应的允许或禁止命令位，并发送命令；同时调用 `section.update_press_SD_trigger()`。
-- 状态变化向上汇总：
-  - `comm_OK`、`work_OK`、`pump_run`、`pump_change_F`、`pressure_WH_F`、`pressure_AH_F` 变化时，调用 `section.update_*`；`pressure_AH_F` 变化时还调用 `section.update_press_SD_trigger()`；
-  - `flowmeter` 变化时，按执行器在段中的首 / 末端角色调用 `update_flow_begin` / `update_flow_end`；
-  - `pump_run_1..4` 变化时，`pump_run` 取它们的“或”；`pump_run` 变为 false 时，清除该执行器的 `stop_pumps` 命令。
+- `pressure_SD_F` 变化：清除对应的允许或禁止命令位，并发送命令。
+- `pump_run` 变为 false 时，清除该执行器的 `stop_pumps` 命令。`pump_run` 以执行器上报的值为准（执行器已对各泵的状态做“或”运算），控制器不再计算。
+- 其余状态变化只记日志；向段的汇总由段的规则完成（第 6 节）。
 
 ## 6. 段处理（`section_proc.js`）
 
-### 6.1 汇总函数
+### 6.1 事件处理（`section_init`）
 
-`get_update_fn(op, ...)` 生成按 AND / OR / ADD 汇总执行器属性的函数，并用 `debouncify(key, fn, 50)` 包装。`debouncify` 的定时器保存在模块级表中，以字符串 key 区分，所以 key 必须全局唯一（形如 `section<name>_<prop>_update`）。
-
-### 6.2 事件驱动部分（`section_init`）
-
-- 段对象上的变量（不是 TTag，见规范 3.6）：
-  - `press_SD_trigger`：压力联锁条件，由 `update_press_SD_trigger()` 计算，即段内各执行器 `pressure_AH_F && pressure_SD_F` 的“或”，带 50 ms 防抖，变化时记日志；
-  - `press_action` / `flow_action`：压力动作和输差动作，由 `section_loop` 置位和复位（见 6.3 节）。
-- `flow_begin` / `flow_end` 变化时，重新计算 `flow_diff`。
-- `flow_diff` 变化时，计算触发位：
-  - `flow_warning_trigger = flow_diff > flow_diff_WH`；
-  - `flow_alarm_trigger = flow_diff > flow_diff_AH`。
-- `flow_alarm_F`、`protect_F`、`pump_run` 变化时，更新 `pre_stop_notice = flow_alarm_F && line.data.pump_run && protect_F`：
-  - 泵运行条件取线的 `pump_run`（规范 5.2），线的 `pump_run` 变化时也会触发这次更新（见第 7 节）；
-  - 本段 `pump_run` 变化时，这次计算可能读到线的旧值，随后线的变化事件会再算一次；线的 `pre_stop_notice` 只汇总各段的结果，不参与段的计算，所以不会形成循环；
-  - `stop_pumps` 和压力动作仍取本段的 `pump_run`。
-- `pre_stop_notice` 变化时，更新线的 `pre_stop_notice`。
-- `flow_alarm_F`、`press_alarm_F` 变化时，同时更新线的 `alarm_F`。
+- 写入段的 ID、名称和输差参数（`flow_diff_WH` 等、`action_time`）。
 - `stop_pumps` 变化：
   - 为真时，对每个带泵执行器设置 `command.stop_pumps = node.data.pump_run`；
   - 为假时，设置 `stop_pumps = false` 和 `cancel_stop = true`。
-- `action_F` 变化：只记日志。
-- `pump_run` 变化：
-  - 下降沿：清除段的 `autoStopCmd` / `manStopCmd`；
-  - 两种情况都会更新本段的 `pre_stop_notice` 和线的 `pump_run`。
+- `pump_run` 下降沿：清除段的 `autoStopCmd` / `manStopCmd`。
+- 其余变化（`action_F`、报警、挂起、`pre_stop_notice` 等）只记日志。
 
-### 6.3 周期部分（`section_loop`）
+### 6.2 规则（`section_rules`）
 
-在每次周期 tick 的扫描中执行一次（粗粒度规则，先于全部 `node_loop`）：
+段的变量和规则在对象图建好之后声明（design-scan.md 7.4 节）。段对象上的变量（不是 TTag，见规范 3.6）用 `add_var` 登记：
 
-1. 计算保护状态：
-   - `protect_prereq = comm_OK && work_OK && !pump_change_F`；
-   - `protect_F = protect_prereq && !flow_override && !line.flow_override`，即本段与所属线的 `flow_override` 任一为真则不保护；
-   - `hangon_AF = !protect_prereq`。
-2. 延时计数：触发位为真时，对应计数器每周期加 500 ms，否则清零；计数超过 `*_delay` 时置位 `flow_warning_F` / `flow_alarm_F`。
-3. 倒计时：
-   - `pre_stop_notice` 为真时 `action_count` 累加，`countdown = (action_time - action_count) / 1000`；
-   - 计算结果小于 0 时，`countdown` 置 0，记为倒计时结束（`countdown_expired`）。
-4. 压力动作（变量 `press_action`）：
+- `press_SD_trigger`：压力联锁条件；
+- `countdown_expired`：倒计时结束；
+- `press_action` / `flow_action`：压力动作和输差动作。
+
+derive 规则，每次扫描都执行，规则之间的顺序由排序决定：
+
+| 规则 | 计算 |
+| --- | --- |
+| `comm_OK`、`work_OK` | 首末端全部执行器的“与” |
+| `press_warning_F` / `press_alarm_F` | 首末端执行器 `pressure_WH_F` / `pressure_AH_F` 的“或” |
+| `pump_run`、`pump_change_F` | 带泵执行器同名属性的“或” |
+| `flow_begin` / `flow_end` | 首端 / 末端执行器 `flowmeter` 之和 |
+| `flow_diff` | `flow_begin - flow_end` |
+| 触发位 | `flow_warning_trigger = flow_diff > flow_diff_WH`，`flow_alarm_trigger` 同理 |
+| `press_SD_trigger` | 首末端执行器 `pressure_AH_F && pressure_SD_F` 的“或”，变化时记日志 |
+| 保护状态 | `protect_prereq = comm_OK && work_OK && !pump_change_F`；`protect_F = protect_prereq && !flow_override && !line.flow_override`，即本段与所属线的 `flow_override` 任一为真则不保护；`hangon_AF = !protect_prereq` |
+| `flow_warning_F` / `flow_alarm_F` | 各一条规则：`on_delay(ticker, 触发位, *_delay)` |
+| `pre_stop_notice` | `flow_alarm_F && line.pump_run && protect_F`：泵运行条件取线的（规范 5.2），`stop_pumps` 和压力动作仍取本段的 |
+| 倒计时 | `pre_stop_notice` 为真时计时，`countdown = (action_time - elapsed) / 1000`；结果小于 0 时 `countdown` 置 0，`countdown_expired` 为真 |
+| `action_F` | `press_action \|\| flow_action` |
+| `stop_pumps` | `(段 auto/man \|\| 线 auto/man) && pump_run` |
+
+`pre_stop_notice` 读线的 `pump_run`，线的 `pump_run` 又汇总各段的 `pump_run`；排序后它们在同一次扫描中依次算出，不再需要线的变化事件补算。
+
+### 6.3 联锁动作（粗粒度规则）
+
+`section ${name} actions` 是剩下的粗粒度规则，声明读写的键参与排序（排在 `flow_alarm_F`、倒计时之后，`action_F`、`stop_pumps` 之前），只在周期 tick 的扫描中执行：
+
+1. 压力动作（变量 `press_action`）：
    - `press_SD_trigger && pump_run` 时置位，同时置位段的 `autoStopCmd`。不检查 `protect_F`，所以不受挂起约束；
    - 否则在 `pump_run && !autoStopCmd` 时复位：本段泵在运行（必然是停泵后重新启动的），联锁条件已消失。
-5. 输差动作（变量 `flow_action`）：
-   - 倒计时结束时置位，同时置位线的 `autoStopCmd` 和本段的 `line_action_source`；
+2. 输差动作（变量 `flow_action`）：
+   - `countdown_expired` 时置位，同时置位线的 `autoStopCmd` 和本段的 `line_action_source`；
    - 否则先执行 `line_action_source &&= line.autoStopCmd`，再在 `line.pump_run && !flow_alarm_F && !line_action_source` 时复位。泵运行条件取线的，与停泵预告一致，否则没有泵的段永远无法复位。
-6. 复位条件每周期判断，不锁存；停泵期间两个泵运行条件都不成立，所以动作状态保留到泵重新运行。
-7. 动作汇总：
-   - 任一动作变量由 false 变为 true 时，把线的 `action_section_ID` 设为本段 ID，并调用 `add_action_record()` 生成一条记录；同一周期两者同时发生只生成一条；
-   - `action_F = press_action || flow_action`；结果为 false 且线的 `action_section_ID` 等于本段 ID 时，把它清零，避免抹掉其他段的动作。
-8. 计算停泵命令：`stop_pumps = (段 auto/man || 线 auto/man) && pump_run`。
+3. 复位条件每周期判断，不锁存；停泵期间两个泵运行条件都不成立，所以动作状态保留到泵重新运行。
+4. 任一动作变量由 false 变为 true 时，把线的 `action_section_ID` 设为本段 ID，并调用 `add_action_record()` 生成一条记录；同一周期两者同时发生只生成一条。两个动作变量都为 false 且线的 `action_section_ID` 等于本段 ID 时，把它清零，避免抹掉其他段的动作。
 
-v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级为 TTag，届时动作记录改由它们的变化事件触发，不再在 `section_loop` 中比较新旧值。
+v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级为 TTag，届时动作记录改由它们的变化事件触发，不再在动作规则中比较新旧值。
 
 ## 7. 线处理（`line_proc.js`）
 
-- 汇总规则：
+- 规则（`line_rules`，derive）：
   - `pump_run`、`pre_stop_notice`：取各段同名属性的“或”；
-  - `alarm_F`：取各段 `flow_alarm_F` 与 `press_alarm_F` 的“或”；
-  - 均带 50 ms 防抖。
-- 线的 `flow_override` 只记日志，不改写任何段；其作用在段的 `protect_F` 计算中以与运算体现（见 6.3）。
-- `pump_run` 变化时，对线内每个段调用 `update_pre_stop_notice()`；下降沿时，还要清除线的 `autoStopCmd` / `manStopCmd`。
+  - `alarm_F`：取各段 `flow_alarm_F` 与 `press_alarm_F` 的“或”。
+- 线的 `flow_override` 只记日志，不改写任何段；其作用在段的 `protect_F` 规则中以与运算体现（见 6.2 节）。
+- `pump_run` 下降沿时，清除线的 `autoStopCmd` / `manStopCmd`。
 
 ## 8. 动作记录（`action_record.js`）
 

@@ -8,7 +8,7 @@ const parameters_tags = node_parameters.map((item) => item.name);
 export function node_init(actuator) {
 	const {
 		ID, name, data, command,
-		section, is_begin, is_end, has_pumps,
+		has_pumps,
 		data_driver, command_driver, driver_info,
 	} = actuator;
 	command.name = `${name}_CMD`;
@@ -23,10 +23,6 @@ export function node_init(actuator) {
 	actuator.write_parameters = async () => {
 		actuator.data_parameters.copy_from(command);
 		return actuator.data_parameters.write();
-	};
-
-	if (has_pumps) actuator.update_pump_run = () => {
-		data.pump_run = data.pump_run_1 || data.pump_run_2 || data.pump_run_3 || data.pump_run_4;
 	};
 
 	const endian = driver_info.endian;
@@ -103,54 +99,36 @@ export function node_init(actuator) {
 			command.disable_pressure_SD = false;
 			logger.info(`actuator ${name} prohibits pressure interlock`);
 		}
-		section.update_press_SD_trigger();
 		actuator.debounce_send_commands();
 	});
 	data.get("comm_OK").on("change", (_, new_value) => {
-		section.update_comm_OK();
 		logger.info(`actuator ${name} communication is ${new_value ? "normal" : "lost"}`);
 	});
 	data.get("work_OK").on("change", (_, new_value) => {
-		section.update_work_OK();
 		logger.info(`actuator ${name} ${new_value ? "resumes normal operation" : "is not working properly"}`);
 	});
 	if (has_pumps) {
 		data.get("pump_run").on("change", (_, new_value) => {
-			section.update_pump_run();
 			if (!new_value) command.stop_pumps = false;
 		});
 		data.get("pump_run_1").on("change", (old_value, new_value) => {
 			logger.info(`actuator ${name} pump 1 status changed: ${old_value} -> ${new_value}`);
-			actuator.update_pump_run();
 		});
 		data.get("pump_run_2").on("change", (old_value, new_value) => {
 			logger.info(`actuator ${name} pump 2 status changed: ${old_value} -> ${new_value}`);
-			actuator.update_pump_run();
 		});
 		data.get("pump_run_3").on("change", (old_value, new_value) => {
 			logger.info(`actuator ${name} pump 3 status changed: ${old_value} -> ${new_value}`);
-			actuator.update_pump_run();
 		});
 		data.get("pump_run_4").on("change", (old_value, new_value) => {
 			logger.info(`actuator ${name} pump 4 status changed: ${old_value} -> ${new_value}`);
-			actuator.update_pump_run();
-		});
-		data.get("pump_change_F").on("change", (_o, _n) => {
-			section.update_pump_change_F();
 		});
 	}
 	data.get("pressure_WH_F").on("change", (old_value, new_value) => {
 		logger.info(`actuator ${name} pressure warning status changed: ${old_value} -> ${new_value}`);
-		section.update_press_warning_F();
 	});
 	data.get("pressure_AH_F").on("change", (old_value, new_value) => {
 		logger.info(`actuator ${name} pressure alarm status changed: ${old_value} -> ${new_value}`);
-		section.update_press_alarm_F();
-		section.update_press_SD_trigger();
-	});
-	data.get("flowmeter").on("change", (_o, _n) => {
-		if (is_begin) section.update_flow_begin();
-		if (is_end) section.update_flow_end();
 	});
 
 	command.ID = ID;

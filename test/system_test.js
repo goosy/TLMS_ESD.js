@@ -255,6 +255,64 @@ describe("section and line", () => {
 		assert.equal(sys.records.length, 0);
 	});
 
+	test("a manual hang-up interrupts the countdown in the scan of the HMI write", async (t) => {
+		const sys = await create_system(t);
+		run_pump(sys, true);
+		set_flows(sys, { A: 100, B: 70 });
+		await sys.advance(FLOW_ALARM_TIME + MAIN_PERIOD);
+		const S1 = sys.section("S1");
+		assert.equal(S1.data.pre_stop_notice, true);
+		assert.ok(S1.data.countdown > 0);
+
+		sys.hmi.set("S1", "flow_override", true);
+		await sys.flush();
+		assert.equal(S1.data.protect_F, false);
+		assert.equal(S1.data.pre_stop_notice, false);
+		assert.equal(S1.data.countdown, 0);
+		assert.equal(sys.line("L1").data.pre_stop_notice, false);
+	});
+
+	test("summaries follow the device data in the scan that loads them", async (t) => {
+		const sys = await create_system(t);
+		set_flows(sys, { A: 100, B: 70 });
+		sys.device("B").set("pressure_AH_F", true);
+		// the data are read on the next tick and summed up as soon as they arrive
+		await sys.advance(MAIN_PERIOD);
+		const S1 = sys.section("S1");
+		assert.equal(S1.data.flow_begin, 100);
+		assert.equal(S1.data.flow_end, 70);
+		assert.equal(S1.data.flow_diff, 30);
+		assert.equal(S1.data.flow_alarm_trigger, true);
+		assert.equal(S1.data.press_alarm_F, true);
+		assert.equal(sys.line("L1").data.alarm_F, true);
+	});
+
+	test("a manual stop command takes effect in the scan of the HMI write", async (t) => {
+		const sys = await create_system(t);
+		run_pump(sys, true);
+		await sys.settle();
+		sys.hmi.set("S1", "manStopCmd", true);
+		await sys.flush();
+		assert.equal(sys.section("S1").data.stop_pumps, true);
+		assert.equal(sys.node("A").command.stop_pumps, true);
+	});
+
+	test("the line flow_override interrupts the countdown in the scan of the HMI write", async (t) => {
+		const sys = await create_system(t);
+		run_pump(sys, true);
+		set_flows(sys, { A: 100, B: 70 });
+		await sys.advance(FLOW_ALARM_TIME + MAIN_PERIOD);
+		const S1 = sys.section("S1");
+		assert.equal(S1.data.pre_stop_notice, true);
+
+		sys.hmi.set("L1", "flow_override", true);
+		await sys.flush();
+		assert.equal(S1.data.flow_override, false);
+		assert.equal(S1.data.protect_F, false);
+		assert.equal(S1.data.pre_stop_notice, false);
+		assert.equal(S1.data.countdown, 0);
+	});
+
 	test("a pressure interlock stops the section until it runs again", async (t) => {
 		const sys = await create_system(t);
 		const S1 = sys.section("S1");
