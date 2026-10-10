@@ -45,7 +45,7 @@
 
 ## 3. 带类型数据层
 
-数据块（TData）与 TTag 的对外要求和术语见规范 3.6 节，本节说明实现。
+TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节，本节说明实现。
 
 ### 3.1 布局定义（`src/structs/`）
 
@@ -58,7 +58,7 @@
 - [spec-modbus.md](spec-modbus.md) 中的点表就是按上述规则从这些定义计算出来的。
 - 组合字的位号完全由上述偏移编号保证，`buffer` 中组合字与其他多字节类型一样按大端存放；对上服务端和驱动都不为组合字单独交换字节（规范 3.6）。
 - 这些布局就是 Modbus 寄存器表和执行器数据区的内存映像，修改任何偏移都属于协议变更。
-- 写入所有权（规范 3.6）目前靠人工审查保证：布局中没有标注 TTag 由谁写入，校验不检查这一规则。现有写入路径都符合：命令块的 ID、命令字、参数块和数据块的参数块由控制器写入，均按字对齐且连续；数据块的其余部分由执行器写入，控制器只读。
+- 写入所有权（规范 3.6）目前靠人工审查保证：布局中没有标注 TTag 由谁写入，校验不检查这一规则。现有写入路径都符合：命令块的 ID、命令字、参数块和节点 tdata 的参数块由控制器写入，均按字对齐且连续；节点 tdata 的其余部分由执行器写入，控制器只读。
 
 #### 布局校验
 
@@ -165,7 +165,7 @@
 - 寄存器 `addr` 对应字节 `addr * 2`，按大端读写 `tdata.buffer`；线圈 `addr` 对应字节 `addr >> 3` 的第 `addr % 8` 位。
 - 每次写入后调用 `tdata.check_all_tags()`，把 HMI 的写操作转换为 tag 变化事件。
 - vector 方法名为 es-modbus 要求的 snake_case：`get_holding_register`、`get_input_register`、`set_register`、`get_coil`（同时用于 FC 1 和 FC 2）、`set_coil`。
-- 未映射的地址（例如执行器单元中节点数据块与命令块之间的空档）读为 0 / false，写入被忽略，因此 HMI 跨越空档的整块读取仍能成功。每个（类型、单元、地址）只记录一次警告，避免轮询时刷屏。
+- 未映射的地址（例如执行器单元中节点数据区与命令块之间的空档）读为 0 / false，写入被忽略，因此 HMI 跨越空档的整块读取仍能成功。每个（类型、单元、地址）只记录一次警告，避免轮询时刷屏。
 - 请求由 es-modbus 先行校验：未登记的单元号应答异常 0x0B，非法功能码、数量或地址越界应答 0x01 / 0x03 / 0x02；vector 抛出异常时应答 0x04，并通过 `vector_error` 事件记录日志。
 
 ## 5. 执行器处理（`node_proc.js`）
@@ -263,7 +263,7 @@
    - `action_F = press_action || flow_action`；结果为 false 且线的 `action_section_ID` 等于本段 ID 时，把它清零，避免抹掉其他段的动作。
 8. 计算停泵命令：`stop_pumps = (段 auto/man || 线 auto/man) && pump_run`。
 
-v0.7.0 调整段数据块时，计划把 `press_action` / `flow_action` 升级为 TTag，届时动作记录改由它们的变化事件触发，不再在 `section_loop` 中比较新旧值。
+v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级为 TTag，届时动作记录改由它们的变化事件触发，不再在 `section_loop` 中比较新旧值。
 
 ## 7. 线处理（`line_proc.js`）
 
@@ -339,9 +339,9 @@ v0.7.0 调整段数据块时，计划把 `press_action` / `flow_action` 升级�
 | 项 | 规范要求 | 代码现状 | 涉及位置 |
 | --- | --- | --- | --- |
 | 按执行器配置屏蔽命令 | 每个执行器在配置中用 `supported_commands` 列出支持的命令，控制器只发送支持的命令，其余命令位直接复位（规范 5.1）；实现方式见 12.1 节 | 配置中没有该字段；`node_loop` 对所有执行器统一执行 `command.commands &= 0xB1`，只保留位 0、4、5、7（`stop_pumps`、`enable_pressure_SD`、`disable_pressure_SD`、`write_paras`），`cancel_stop` 也因此被复位 | `config.js` 的执行器解析；`node_proc.js` 的 `node_loop` |
-| ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个数据块共用 ID（规范 4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
+| ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个 tdata 共用 ID（规范 4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
 | ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 4.1、5.5） | `run_controller` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `main.js` 的 `run_controller` |
-| 配置检查命令 | `tlms check` 读取并校验配置和全部数据块布局（3.1 节 `validate_structure`）、报告全部错误，不启动控制器（规范 3.6、5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃；布局校验已在启动时执行（`main.js`），尚未接入命令行 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
+| 配置检查命令 | `tlms check` 读取并校验配置和全部布局（3.1 节 `validate_structure`）、报告全部错误，不启动控制器（规范 3.6、5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃；布局校验已在启动时执行（`main.js`），尚未接入命令行 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
 | 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 的 `add_action_record` |
 
 ## 12. 命令处理
