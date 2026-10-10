@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import test, { describe } from "node:test";
 import { TData } from "../src/typed_data/TData.js";
 import { Binding } from "../src/drivers/binding.js";
-import { Ticker, on_delay, off_delay, derive, act, order_rules } from "../src/rules.js";
+import { Ticker, on_delay, off_delay, derive, act, order_rules, component_bits } from "../src/rules.js";
 
 const block = (name, ...tags) => new TData(make_struct(
 	tags.map((tag, i) => ({ name: tag, type: "UInt", offset: i * 16, length: 16, init_value: 0 })),
@@ -156,6 +156,58 @@ describe("rule order", () => {
 		assert.deepEqual(names_of(order_rules(rules, no_vars)), [
 			"section pump_run", "line pump_run", "section pre_stop_notice", "line pre_stop_notice",
 		]);
+	});
+});
+
+/** A block with a combined word "word" of the bits b0, b1, and a UInt "n". */
+const word_block = (name) => new TData(make_struct([
+	{
+		name: "word", type: "Word", offset: 0, length: 16, is_combined: true,
+		coupling: [
+			{ name: "b0", type: "Bool", offset: 8, length: 1, init_value: false },
+			{ name: "b1", type: "Bool", offset: 9, length: 1, init_value: false },
+		],
+	},
+	{ name: "n", type: "UInt", offset: 16, length: 16, init_value: 0 },
+], name), name);
+
+describe("combined words (design-scan 7.1)", () => {
+	test("the component bits of a combined word; none for other tags", () => {
+		const d = word_block("W");
+		assert.deepEqual(component_bits(d.layout, "word"), ["b0", "b1"]);
+		assert.deepEqual(component_bits(d.layout, "b0"), []);
+		assert.deepEqual(component_bits(d.layout, "n"), []);
+	});
+
+	test("a read of a combined word runs after the writers of each bit", () => {
+		const d = word_block("W");
+		const rules = [
+			act({ name: "reader", reads: [[d, "word"]], writes: [[d, "n"]], run: noop }),
+			act({ name: "writer b0", writes: [[d, "b0"]], run: noop }),
+			act({ name: "writer b1", writes: [[d, "b1"]], run: noop }),
+		];
+		assert.deepEqual(names_of(order_rules(rules, no_vars)), ["writer b0", "writer b1", "reader"]);
+	});
+
+	test("writers of different bits have no dependency on each other", () => {
+		const d = word_block("W");
+		const rules = [
+			act({ name: "writer b1", reads: [[d, "b0"]], writes: [[d, "b1"]], run: noop }),
+			act({ name: "writer b0", reads: [[d, "b1"]], writes: [[d, "b0"]], run: noop }),
+		];
+		// each reads the other bit: a cycle by bits, not through the word
+		assert_errors(rules, no_vars, "dependency cycle");
+		const independent = [
+			act({ name: "writer b1", writes: [[d, "b1"]], run: noop }),
+			act({ name: "writer b0", writes: [[d, "b0"]], run: noop }),
+		];
+		assert.deepEqual(names_of(order_rules(independent, no_vars)), ["writer b1", "writer b0"]);
+	});
+
+	test("a combined word is not written", () => {
+		const d = word_block("W");
+		assert_errors([act({ name: "r", writes: [[d, "word"]], run: noop })], no_vars,
+			"rule r: W.word: a combined word is not written, write its bits");
 	});
 });
 

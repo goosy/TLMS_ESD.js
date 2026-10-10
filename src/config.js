@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { posix } from "node:path";
 import { GCL } from "./gcl.js";
+import { node_commands } from "./layouts.js";
 import { logger } from "./util.js";
 
 export const MAIN_PERIOD = 500;
@@ -8,6 +9,30 @@ export const cfg_lines = [],
 	cfg_sections = [],
 	cfg_actuators = [],
 	cfg_controllers = [];
+
+// bit k of the command word of each command (doc/design.md 12.1): offsets
+// 8-15 of a coupling are the bits 0-7 of the register, offsets 0-7 the bits 8-15
+const command_bits = new Map(node_commands
+	.filter(({ name }) => name !== "reserve" && name !== "executing")
+	.map(({ name, offset }) => [name, offset >= 8 ? offset - 8 : offset + 8]));
+
+/**
+ * The command mask of an actuator from its supported_commands (doc/spec.md
+ * 5.1): bit k is set when the command at bit k is supported. All commands
+ * are supported when the list is omitted.
+ */
+function command_mask_of(actuator) {
+	const names = actuator.supported_commands ?? [...command_bits.keys()];
+	let mask = 0;
+	for (const name of names) {
+		if (!command_bits.has(name)) {
+			logger.error(`node:${actuator.name} unknown command ${name} in supported_commands`);
+			process.exit(1);
+		}
+		mask |= 1 << command_bits.get(name);
+	}
+	return mask;
+}
 
 function add_conf(doc) {
 	const {
@@ -28,6 +53,7 @@ function add_conf(doc) {
 			logger.error(`node:${actuator.name} ID 必须是一个非零数字`);
 			process.exit(1);
 		}
+		actuator.command_mask = command_mask_of(actuator);
 
 		const pumps = actuator.pumps;
 		if (pumps) {

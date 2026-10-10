@@ -50,6 +50,14 @@ actuators:
   temperature_AI: IW102
   pressure_SD: true
   flows: []
+  # 执行器支持的命令；省略时支持全部命令（规范 5.1）
+  supported_commands:
+  - stop_pumps
+  - cancel_stop
+  - enable_pressure_SD
+  - disable_pressure_SD
+  - read_paras
+  - write_paras
   modbus_server:
     port: 503
     unit_id: 12

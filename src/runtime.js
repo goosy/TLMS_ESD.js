@@ -1,12 +1,12 @@
 import { MAIN_PERIOD } from "./config.js";
 import { line_init, line_rules } from "./line_proc.js";
 import { section_init, section_rules } from "./section_proc.js";
-import { node_loop, node_init } from "./node_proc.js";
+import { node_init, node_mask_rule, node_rules } from "./node_proc.js";
+import { action_record_rule } from "./action_record.js";
 import { TData } from "./typed_data/TData.js";
 import { LINE, SECTION, NODE, COMMAND } from "./layouts.js";
 import { Unit_Map } from "./typed_data/server.js";
 import { Scheduler } from "./scan.js";
-import { tick_act } from "./rules.js";
 import { logger } from "./util.js";
 
 /**
@@ -18,7 +18,8 @@ import { logger } from "./util.js";
  * @param {Object} options
  * @param {(driver_info: Object) => {data_driver: Object, command_driver: Object}} options.get_drivers
  *     Returns the drivers of a node, shared between nodes on the same connection.
- * @param {{data: TData}} options.action_record - The action record of the controller.
+ * @param {{data: TData, get: (index: number) => boolean, add_record: () => void}} options.action_record
+ *     The action record of the controller.
  * @return {{unit_map: Unit_Map, scheduler: Scheduler, lines: Object[], sections: Object[], nodes: Object[],
  *     start: () => void, stop: () => void}}
  */
@@ -60,8 +61,10 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 		node_init(node);
 		scheduler.add_data(data);
 		scheduler.add_data(command);
-		// the node data are read on periodic ticks and loaded when they arrive
+		// the node data are read on periodic ticks and loaded when they arrive;
+		// the commands are only written (doc/design-scan.md 6.5)
 		scheduler.add_binding(node.data_binding, node.data_payload);
+		scheduler.add_binding(node.command_binding);
 		nodes.push(node);
 	};
 
@@ -86,23 +89,18 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 		}
 	}
 
-	// rules are declared once the whole graph is built (doc/design-scan.md 7.4)
+	// rules are declared once the whole graph is built, nodes, sections, then
+	// lines (doc/design-scan.md 7.4)
+	for (const node of nodes) node_rules(node, scheduler);
 	for (const section of sections) section_rules(section, scheduler);
 	for (const line of lines) line_rules(line, scheduler);
-	// the former node loop, still a coarse rule run on periodic ticks (doc/design-scan.md 10.2);
-	// declared last, as the main loop ran it after the sections
-	for (const node of nodes) {
-		scheduler.add_rule(tick_act({
-			name: `node ${node.name} loop`,
-			reads: [[node.command, "has_commands"]],
-			writes: [[node.command, "commands"]],
-			run: () => node_loop(node),
-		}));
-	}
+	scheduler.add_rule(action_record_rule(action_record));
+	// the command masks after every other writer of the command bits (doc/design.md 12.1)
+	for (const node of nodes) node_mask_rule(node, scheduler);
 	scheduler.prepare();
 
 	const start = () => {
-		// a first scan computes the derived values and starts the tickers of the coarse rules
+		// a first scan computes the derived values
 		scheduler.scan(false);
 		scheduler.start();
 	};

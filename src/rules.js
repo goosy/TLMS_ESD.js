@@ -98,22 +98,17 @@ export function act(spec) {
 }
 
 /**
- * Declares an act rule run once per periodic tick, for the coarse rules
- * of the migration (doc/design-scan.md 10.2): they count one period per
- * call, so they must not run on triggered scans. The rule's ticker,
- * started by the first scan, tells a new tick by its count.
+ * The component bits of a combined word of a layout (doc/design-scan.md
+ * 7.1): the Bool tags inside its bytes. Empty for any other tag.
  */
-export function tick_act({ run, ...spec }) {
-	let last_count = 0;
-	return act({
-		...spec,
-		run: (ticker) => {
-			ticker.start();
-			if (ticker.count === last_count) return;
-			last_count = ticker.count;
-			run();
-		},
-	});
+export function component_bits(layout, name) {
+	const entry = layout.entries.get(name);
+	if (!entry || entry.type === "bool") return [];
+	const bits = [];
+	for (let i = entry.byte; i < entry.byte + entry.size; i++) {
+		for (const tag of layout.tags_at_byte[i]) if (tag.type === "bool") bits.push(tag.name);
+	}
+	return bits;
 }
 
 /** A readable name of a dependency key owner. */
@@ -128,6 +123,8 @@ function owner_label(owner) {
  * (doc/design-scan.md 7.4): a writer of a key runs before its readers; a
  * read of a key the rule also writes, and a read of the previous value
  * (reads_previous), is no dependency; otherwise the declaration order is kept.
+ * A read of a combined word reads all its bits; a combined word must not be
+ * written (doc/design-scan.md 7.1).
  *
  * @param {Object[]} rules - Rules built by derive() / act(), in declaration order.
  * @param {(owner: Object, name: string) => boolean} is_var - Whether a key of a plain object is a registered variable.
@@ -150,6 +147,9 @@ export function order_rules(rules, is_var) {
 		const where = `rule ${rule.name}: ${owner_label(owner)}.${name}`;
 		if (owner instanceof TData) {
 			if (!owner.layout.entries.has(name)) errors.push(`${where}: no such tag`);
+			else if (mode === "write" && component_bits(owner.layout, name).length > 0) {
+				errors.push(`${where}: a combined word is not written, write its bits`);
+			}
 		} else if (owner instanceof Binding) {
 			if (!BINDING_STATES.includes(name)) errors.push(`${where}: no such binding state`);
 			else if (mode === "write") errors.push(`${where}: a binding state is read-only`);
@@ -176,9 +176,13 @@ export function order_rules(rules, is_var) {
 		for (const [owner, name] of rule.reads_previous) check_key(rule, owner, name, "previous");
 		for (const [owner, name] of rule.reads) {
 			check_key(rule, owner, name, "read");
-			const key = key_of(owner, name);
-			// a read-modify-write of its own key is no dependency
-			if (!writes.has(key)) key.readers.push(index);
+			// a combined word is read through its bits
+			const bits = owner instanceof TData ? component_bits(owner.layout, name) : [];
+			for (const read_name of [name, ...bits]) {
+				const key = key_of(owner, read_name);
+				// a read-modify-write of its own key is no dependency
+				if (!writes.has(key)) key.readers.push(index);
+			}
 		}
 	});
 

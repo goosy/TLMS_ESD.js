@@ -20,3 +20,6 @@ export const { LINE, SECTION, NODE, COMMAND, RECORD } = compiled.layouts;
 
 /** The items of the node parameter block, with offsets relative to the block. */
 export const node_parameters = compiled.fragments.node_parameters;
+
+/** The bits of a command word, with offsets relative to the word. */
+export const node_commands = compiled.fragments.node_commands;

@@ -4,7 +4,7 @@ function add_actuator(section, cfg_node) {
 	const ID = cfg_node.id;
 	const {
 		name, IP,
-		is_begin, is_end, has_pumps,
+		is_begin, is_end, has_pumps, command_mask,
 	} = cfg_node;
 	let driver_info = null;
 	if (cfg_node.modbus_server) {
@@ -24,7 +24,7 @@ function add_actuator(section, cfg_node) {
 	const actuator = {
 		ID, name,
 		driver_info,
-		is_begin, is_end, has_pumps, section,
+		is_begin, is_end, has_pumps, command_mask, section,
 	};
 	if (is_begin) section.begin_nodes.push(actuator);
 	if (is_end) section.end_nodes.push(actuator);

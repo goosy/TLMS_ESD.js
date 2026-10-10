@@ -2,7 +2,7 @@
 import { TData } from "./typed_data/TData.js";
 import { set_access_tracer } from "./typed_data/layout.js";
 import { Binding } from "./drivers/binding.js";
-import { Ticker, order_rules, PREVIOUS_BINDING_STATES } from "./rules.js";
+import { Ticker, order_rules, component_bits, PREVIOUS_BINDING_STATES } from "./rules.js";
 
 const same_value = (a, b) => a === b || (Number.isNaN(a) && Number.isNaN(b));
 
@@ -48,7 +48,11 @@ export class Scheduler {
 		this.#data_blocks.push(tdata);
 	}
 
-	/** A binding loaded in the input phase (its input group), flushed and read in the output phase. */
+	/**
+	 * A binding flushed in the output phase. With an input group, it is also
+	 * read on periodic ticks and loaded in the input phase; without one, it
+	 * is output only (doc/design-scan.md 6.5).
+	 */
 	add_binding(binding, input_group) {
 		this.#check_open();
 		this.#bindings.push({ binding, input_group });
@@ -149,7 +153,7 @@ export class Scheduler {
 		try {
 			this.#phase = "input";
 			for (const { binding, input_group } of this.#bindings) {
-				if (binding.fresh) this.#guarded(() => binding.load(input_group), binding);
+				if (input_group && binding.fresh) this.#guarded(() => binding.load(input_group), binding);
 			}
 			if (tick) for (const ticker of this.#running_tickers) ticker.count++;
 
@@ -166,9 +170,9 @@ export class Scheduler {
 
 			this.#phase = "output";
 			const report = (source) => (error) => this.#on_error?.(error, source);
-			for (const { binding } of this.#bindings) {
+			for (const { binding, input_group } of this.#bindings) {
 				binding.flush_writes().catch(report(binding));
-				if (tick) binding.request_read().catch(report(binding));
+				if (tick && input_group) binding.request_read().catch(report(binding));
 			}
 		} finally {
 			this.#current_rule = null;
@@ -228,13 +232,22 @@ export class Scheduler {
 				add(keys.write, owner, name);
 				add(keys.read, owner, name);
 			}
-			for (const [owner, name] of rule.reads) add(keys.read, owner, name);
+			for (const [owner, name] of rule.reads) {
+				add(keys.read, owner, name);
+				// a combined word is read through its bits (doc/design-scan.md 7.1)
+				if (owner instanceof TData) for (const bit of component_bits(owner.layout, name)) add(keys.read, owner, bit);
+			}
 			declared.set(rule, keys);
 		}
 		const undeclared = [];
 		set_access_tracer((tdata, name, mode) => {
 			const rule = this.#current_rule;
-			if (!rule || declared.get(rule)[mode].get(tdata)?.has(name)) return;
+			if (!rule) return;
+			const names = declared.get(rule)[mode].get(tdata);
+			if (names?.has(name)) return;
+			// a read of a combined word whose bits are all declared
+			const bits = component_bits(tdata.layout, name);
+			if (mode === "read" && bits.length > 0 && bits.every((bit) => names?.has(bit))) return;
 			const line = `${rule.name}: ${tdata.name}.${name} ${mode}`;
 			if (!undeclared.includes(line)) undeclared.push(line);
 		});

@@ -8,7 +8,7 @@
 | --- | --- |
 | `src/cli.js` | `tlms` 命令行，解析参数，调用 pm2 或直接 `import('./main.js')`。 |
 | `src/main.js` | 进程入口：校验布局，读取配置，构建控制器，提供按连接复用的真实驱动，启动 Modbus 服务端和主循环。 |
-| `src/runtime.js` | `build_runtime`：为控制器创建 TData、挂到 `Unit_Map`、调用各 `*_init`，并提供主循环的一次迭代 `cycle` 与 `start` / `stop`。驱动由调用方经 `get_drivers(driver_info)` 提供，测试据此注入假驱动。 |
+| `src/runtime.js` | `build_runtime`：为控制器创建 TData、挂到 `Unit_Map`、调用各 `*_init`，创建扫描调度器并声明全部规则，提供 `start` / `stop`。驱动由调用方经 `get_drivers` 提供。 |
 | `src/gcl.js` | YAML 加载器（`yaml` 库，YAML 1.2），保留源码行号信息。 |
 | `src/config.js` | 合并多份配置文档，填充默认值，建立名称与 ID 索引。 |
 | `src/init.js` | `prepare_controller`：为选定的控制器构建运行时对象图。 |
@@ -20,7 +20,7 @@
 | `src/layouts.js` | 编译 `layouts.yaml` 并导出这些布局。 |
 | `src/layout_types.d.ts` | 由布局生成的类型声明（`pnpm gen:types`）。 |
 | `src/util.js` | log4js 日志、`debouncify` / `debounce`、`Object.mixin`。 |
-| `src/scan.js` / `src/rules.js` | 扫描调度器（`Scheduler`）与规则（`derive` / `act`、排序与启动检查、`Ticker`、`on_delay` / `off_delay`、过渡用的 `tick_act`），见 design-scan.md 第 6、7 节；由 `runtime.js` 接入运行流程（第 2 节）。 |
+| `src/scan.js` / `src/rules.js` | 扫描调度器（`Scheduler`）与规则（`derive` / `act`、排序与启动检查、`Ticker`、`on_delay` / `off_delay`），见 design-scan.md 第 6、7 节；由 `runtime.js` 接入运行流程（第 2 节）。 |
 
 ## 2. 启动流程
 
@@ -45,9 +45,9 @@
    1. 初始化动作记录；
    2. 调用 `build_runtime`（`runtime.js`）：把动作记录挂到 `unit_id.action_records`，按 线 → 段 → 执行器 的顺序创建 TData 并 `attach_unit`，再调用各自的 `*_init`；执行器的驱动由 `main.js` 的 `get_drivers` 按连接复用提供；
    3. 启动 Modbus TCP 服务端并等待其就绪；启动失败（如端口被占用）时记录错误并以退出码 1 退出，由 pm2 重启；
-   4. `build_runtime` 创建扫描调度器（design-scan.md 第 6 节），登记全部 tdata和执行器的数据 Binding（输入分组为 `data_payload`）；对象图建好后，按段 → 线的顺序调用 `section_rules` / `line_rules` 声明规则（第 6、7 节），最后为每个执行器声明 `node_loop` 粗粒度规则，然后 `prepare()` 排序检查。粗粒度规则（`tick_act`）用自己的 ticker 判断新的周期 tick，只在周期 tick 的扫描中执行，因为它们每调用一次就按 500 ms 计时；
-   5. 全部 tdata使用立即检测模式，`on_write` 接到调度器的 `request_scan()`：任何写入（规则、事件处理器、HMI、异步回调）在检测之后都请求一次扫描（design-scan.md 3.3 节）；
-   6. `runtime.start()` 先做一次初始扫描（算出全部派生量，启动粗粒度规则的 ticker），再启动周期 tick（`MAIN_PERIOD = 500`）；规则出错经调度器的 `on_error` 写入日志。
+   4. `build_runtime` 创建扫描调度器（design-scan.md 第 6 节），登记全部 tdata、执行器的数据 Binding（输入分组为 `data_payload`）和只写的命令 Binding；对象图建好后，按执行器 → 段 → 线的顺序调用 `node_rules` / `section_rules` / `line_rules` 声明规则（第 5、6、7 节），再声明动作记录的规则（第 8 节）和各执行器的命令屏蔽规则（12.1 节），然后 `prepare()` 排序检查；
+   5. 全部 tdata 使用立即检测模式，`on_write` 接到调度器的 `request_scan()`：任何写入（规则、事件处理器、HMI、异步回调）在检测之后都请求一次扫描（design-scan.md 3.3 节）；
+   6. `runtime.start()` 先做一次初始扫描（算出全部派生量），再启动周期 tick（`MAIN_PERIOD = 500`）；规则出错经调度器的 `on_error` 写入日志。
 
 ## 3. 带类型数据层
 
@@ -139,7 +139,7 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
 - 写：`request_write(group)` 登记写请求，同一分组多次登记只写一次；`flush_writes()` 按掩码把本组的位导出到 `IO_buffer`，再按写区间逐段调用驱动写入，并把区间长度一并传给驱动。区间内不属于本组的位取自最近一次读入的值；按写入所有权规则，这些字节也由控制器写入，不会覆盖执行器的数据。
 - 驱动未连接时不读不写，写请求保留到下一次 `flush_writes()`。
 - 状态：`connected`（随驱动的 `connect` / `connfailed` 事件更新）、`read_ok`（最近一次读取是否成功）、`write_done(group)`（每个分组最近一次写入的序号和结果）；新数据到达或状态变化时调用创建时传入的 `on_update(binding)`。目前这些状态只记录，尚未使用。
-- 便捷方法（扫描调度器上线之前使用）：`group.read()` 读取、装载并立即检测；`group.write()` 登记并立即写出；`group.copy_from(source)` 按同名 tag 复制值，全部复制完后做一次检测，用于在 data 与 command 之间同步参数块。
+- 便捷方法（目前只有测试使用）：`group.read()` 读取、装载并立即检测；`group.write()` 登记并立即写出；`group.copy_from(source)` 按同名 tag 复制值，全部复制完后做一次检测，用于在 data 与 command 之间同步参数块。
 
 ## 4. 驱动
 
@@ -201,45 +201,39 @@ TData（实例记作 tdata）与 TTag 的对外要求和术语见规范 3.6 节�
   - 从本地字节 16 开始绑定（跳过 0–15 的本地区），远端起点为 `driver_info.commands.start`；
   - `commands_payload` 包含 ID、commands 和参数块。
 
-### 5.2 周期处理
+### 5.2 读取与写入
 
-执行器数据的读取由扫描完成：周期 tick 的扫描在输出阶段发起读取，数据到达后 Binding 的 `on_update` 请求扫描，在输入阶段装载 `data_payload`，在发布阶段检测变化。
+- 执行器数据的读取由扫描完成：周期 tick 的扫描在输出阶段发起读取，数据到达后 Binding 的 `on_update` 请求扫描，在输入阶段装载 `data_payload`，在发布阶段检测变化。
+- 命令 Binding 只写不读（design-scan.md 6.5 节）：规则登记写入，扫描的输出阶段写出；写入完成后 `on_update` 请求扫描。驱动未连接时写请求保留，连接恢复后写出。
+- 驱动事件只记日志；连接和读取结果由 Binding 记为 `connected` / `read_ok`，供规则读取。
 
-`node_loop` 在每次周期 tick 的扫描中执行一次：
+### 5.3 规则（`node_rules`）
 
-1. 命令屏蔽（驱动已连接时）：`command.commands &= 0xB1`，对所有执行器统一保留位 0、4、5、7（见第 11、12 节）。
-2. `has_commands` 为真的周期数超过 3 时，重新发送命令（`debounce_send_commands`）。
+| 规则 | 处理 |
+| --- | --- |
+| `comm_OK`（derive） | `off_delay(connected, delay_protect_time)`：已连接时为 true，断开后保持 `delay_protect_time` 再变为 false；从未连上时，启动后保持同样时长 |
+| `work_OK` | `off_delay(read_ok, delay_protect_time)` 为 false，即读取持续失败超过 `delay_protect_time` 时置 false；读取成功后由装载恢复执行器上报的值 |
+| 参数刷新 | `connected` 上升沿开始计时，满 2 s 时把节点 tdata 的参数复制到命令块；其间断开则停止 |
+| `stop_pumps` 收回（带泵执行器） | `pump_run` 下降沿时清除命令块的 `stop_pumps` |
+| 应答握手 | `response_code` 变化且不为 0 时，`response_code` 中置 1 的位，命令块中同名的命令位逐位清除，并清除 `executing` |
+| `pressure_SD_F` | 变化时清除对应的允许或禁止命令位 |
+| `read_paras` | 上升沿时把节点 tdata 的参数复制到命令块，并复位该位 |
+| `write_paras` | 上升沿时把命令块的参数复制到节点 tdata，登记写入 `data_parameters`；写入完成（`write_done` 的序号到达）后复位该位 |
+| `has_commands`（derive） | `commands` 不为 0 |
+| 发送 | `commands` 变化时，或 `response_code` 变化且不为 0 时（让执行器看到已应答的位被清除），登记写入 `commands_payload` |
+| 重发 | `has_commands` 持续超过 3 个 tick 后，每个 tick 再登记一次写入；每个执行器单独计时 |
 
-### 5.3 事件
-
-- 驱动事件：
-  - `connfailed`：延时 `delay_protect_time` 后置 `comm_OK = false`；
-  - `connect`：置 `comm_OK = true`，2 s 后执行 `reset_parameters`（command 参数块 ← data）；
-  - `io_error`：延时后置 `work_OK = false`。
-- `response_code` 变化（应答握手）：
-  1. `commands &= ~response_code`，清除已应答的命令位；
-  2. `executing = false`；
-  3. 若 `response_code` 仍不为 0，再发送一次命令（执行器据此看到命令位已清除）。
-- `commands` 变化：更新 `has_commands`，并以 100 ms 防抖调用 `commands_payload.write()`。
-- `read_paras`：把 data 中的参数复制到 command，然后在 nextTick 中复位该位。
-- `write_paras`：
-  1. 把 command 中的参数复制到 `data_parameters`；
-  2. 写入执行器 data 区的参数块；
-  3. 写入完成后复位该位。
-- `pressure_SD_F` 变化：清除对应的允许或禁止命令位，并发送命令。
-- `pump_run` 变为 false 时，清除该执行器的 `stop_pumps` 命令。`pump_run` 以执行器上报的值为准（执行器已对各泵的状态做“或”运算），控制器不再计算。
-- 其余状态变化只记日志；向段的汇总由段的规则完成（第 6 节）。
+- `write_paras` 把命令块的参数写入节点 tdata，而参数刷新、`read_paras` 把节点 tdata 的参数复制到命令块，`comm_OK` / `work_OK` 读节点 tdata 的 `delay_protect_time`，形成环。后者读节点参数在上一次扫描结束时的值（`reads_previous`）打断这个环：节点参数来自执行器，晚一次扫描没有影响；`write_paras` 则必须读本次扫描的命令参数，HMI 常在同一请求中先写参数、再写 `write_paras`。
+- 规则只写命令位，不写 `commands` 整字（design-scan.md 7.1 节）。
+- `pump_run` 以执行器上报的值为准（执行器已对各泵的状态做“或”运算），控制器不再计算。
+- 状态变化只记日志；向段的汇总由段的规则完成（第 6 节）。
 
 ## 6. 段处理（`section_proc.js`）
 
 ### 6.1 事件处理（`section_init`）
 
 - 写入段的 ID、名称和输差参数（`flow_diff_WH` 等、`action_time`）。
-- `stop_pumps` 变化：
-  - 为真时，对每个带泵执行器设置 `command.stop_pumps = node.data.pump_run`；
-  - 为假时，设置 `stop_pumps = false` 和 `cancel_stop = true`。
-- `pump_run` 下降沿：清除段的 `autoStopCmd` / `manStopCmd`。
-- 其余变化（`action_F`、报警、挂起、`pre_stop_notice` 等）只记日志。
+- 状态变化（`action_F`、报警、挂起、`pre_stop_notice` 等）只记日志。
 
 ### 6.2 规则（`section_rules`）
 
@@ -269,20 +263,22 @@ derive 规则，每次扫描都执行，规则之间的顺序由排序决定：
 
 `pre_stop_notice` 读线的 `pump_run`，线的 `pump_run` 又汇总各段的 `pump_run`；排序后它们在同一次扫描中依次算出，不再需要线的变化事件补算。
 
-### 6.3 联锁动作（粗粒度规则）
+### 6.3 联锁动作
 
-`section ${name} actions` 是剩下的粗粒度规则，声明读写的键参与排序（排在 `flow_alarm_F`、倒计时之后，`action_F`、`stop_pumps` 之前），只在周期 tick 的扫描中执行：
+act 规则，每次扫描都执行：
 
-1. 压力动作（变量 `press_action`）：
+1. 停泵命令复位：`pump_run` 下降沿时清除段的 `autoStopCmd` / `manStopCmd`。它在压力动作之前声明，两者都写 `autoStopCmd`，按声明顺序排列。
+2. 压力动作（变量 `press_action`）：
    - `press_SD_trigger && pump_run` 时置位，同时置位段的 `autoStopCmd`。不检查 `protect_F`，所以不受挂起约束；
    - 否则在 `pump_run && !autoStopCmd` 时复位：本段泵在运行（必然是停泵后重新启动的），联锁条件已消失。
-2. 输差动作（变量 `flow_action`）：
+3. 输差动作（变量 `flow_action`）：
    - `countdown_expired` 时置位，同时置位线的 `autoStopCmd` 和本段的 `line_action_source`；
    - 否则先执行 `line_action_source &&= line.autoStopCmd`，再在 `line.pump_run && !flow_alarm_F && !line_action_source` 时复位。泵运行条件取线的，与停泵预告一致，否则没有泵的段永远无法复位。
-3. 复位条件每周期判断，不锁存；停泵期间两个泵运行条件都不成立，所以动作状态保留到泵重新运行。
-4. 任一动作变量由 false 变为 true 时，把线的 `action_section_ID` 设为本段 ID，并调用 `add_action_record()` 生成一条记录；同一周期两者同时发生只生成一条。两个动作变量都为 false 且线的 `action_section_ID` 等于本段 ID 时，把它清零，避免抹掉其他段的动作。
+4. 复位条件每次扫描都判断，不锁存；停泵期间两个泵运行条件都不成立，所以动作状态保留到泵重新运行。
+5. 动作记录：任一动作变量出现上升沿时，把线的 `action_section_ID` 设为本段 ID，并调用 `add_action_record()` 生成一条记录；同一次扫描两者同时发生只生成一条。两个动作变量都为 false 且线的 `action_section_ID` 等于本段 ID 时，把它清零，避免抹掉其他段的动作。
+6. 泵命令：段的 `stop_pumps` 变化时，为真则对每个带泵执行器设置 `command.stop_pumps = node.data.pump_run`；为假则设置 `stop_pumps = false` 和 `cancel_stop = true`。
 
-v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级为 TTag，届时动作记录改由它们的变化事件触发，不再在动作规则中比较新旧值。
+v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级为 TTag，届时动作记录改由它们的变化事件触发，不再在动作记录规则中判断上升沿。
 
 ## 7. 线处理（`line_proc.js`）
 
@@ -290,7 +286,7 @@ v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级�
   - `pump_run`、`pre_stop_notice`：取各段同名属性的“或”；
   - `alarm_F`：取各段 `flow_alarm_F` 与 `press_alarm_F` 的“或”。
 - 线的 `flow_override` 只记日志，不改写任何段；其作用在段的 `protect_F` 规则中以与运算体现（见 6.2 节）。
-- `pump_run` 下降沿时，清除线的 `autoStopCmd` / `manStopCmd`。
+- act 规则：`pump_run` 下降沿时，清除线的 `autoStopCmd` / `manStopCmd`。
 
 ## 8. 动作记录（`action_record.js`）
 
@@ -304,9 +300,8 @@ v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级�
   2. 把记录放到内存列表头部；
   3. 设置 `index = 0`；
   4. 用 `appendFile` 追加一行。
-- `index` 变化：
-  - 为 -1 时清空时间 TTag；
-  - 否则把对应记录装载到 data；越界时恢复为原值。
+- `index` 由一条 act 规则处理（`action_record_rule`），在全部段的规则之后声明；规则在闭包中记住当前显示的记录：
+  - `index` 与当前显示的不同时：为 -1 时清空时间 TTag；否则把对应记录装载到 data，越界时恢复为原值。
 - 记录内容由段的 `add_action_record()` 在压力动作或输差动作发生时填写（见 6.3 节）；`press_action` / `flow_action` 取段的动作变量；执行器位置的对应规则见第 11 节。
 
 ## 9. 日志
@@ -356,11 +351,9 @@ v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级�
 
 | 项 | 规范要求 | 代码现状 | 涉及位置 |
 | --- | --- | --- | --- |
-| 按执行器配置屏蔽命令 | 每个执行器在配置中用 `supported_commands` 列出支持的命令，控制器只发送支持的命令，其余命令位直接复位（规范 5.1）；实现方式见 12.1 节 | 配置中没有该字段；`node_loop` 对所有执行器统一执行 `command.commands &= 0xB1`，只保留位 0、4、5、7（`stop_pumps`、`enable_pressure_SD`、`disable_pressure_SD`、`write_paras`），`cancel_stop` 也因此被复位 | `config.js` 的执行器解析；`node_proc.js` 的 `node_loop` |
 | ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个 tdata 共用 ID（规范 4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
 | ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 4.1、5.5） | `build_runtime` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `runtime.js` 的 `build_runtime` |
 | 配置检查命令 | `tlms check` 读取并校验配置和全部布局（3.1 节 `validate_structure`）、报告全部错误，不启动控制器（规范 3.6、5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃；布局校验已在启动时执行（`main.js`），尚未接入命令行 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
-| 无应答重发（现有代码有缺陷） | 连续 3 个周期没有应答时，重新发送命令（规范 5.1） | 计数器 `no_response_count` 是 `node_proc.js` 的模块级变量，所有执行器共用：每个执行器的 `node_loop` 都会累加或清零它，只要还有别的执行器没有待发命令，计数就会被清零，重发实际不会发生。`test/system_test.js` 中对应用例标记为 `todo` | `node_proc.js` 的 `node_loop` |
 | 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 的 `add_action_record` |
 
 ## 12. 命令处理
@@ -381,11 +374,11 @@ v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级�
 
 ### 12.1 命令屏蔽
 
-按规范，依据各执行器配置的 `supported_commands` 屏蔽命令：
+依据各执行器配置的 `supported_commands` 屏蔽命令（规范 5.1）：
 
 - 解析：`config.js` 解析执行器时，把 `supported_commands` 数组转换为一个 16 位屏蔽字 `command_mask`。数组中每个命令名按命令枚举（`node_commands`）查出命令字位号 k，屏蔽字的第 k 位置 1；位号与寄存器 bit 一致（见 3.1 节）。
 - 校验：数组中出现命令枚举以外的名称时，视为配置错误，启动时报错退出，与执行器 `id` 的校验方式一致。
 - 省略字段时视为支持全部命令，`command_mask` 取命令枚举的全部位 0–13，即 `0x3FFF`。
-- 位 14（`reserve`）和位 15（`executing`）不是命令，不受屏蔽字影响：实际过滤时用 `commands & (command_mask | 0xC000)`，避免误清 `executing`。
-- 使用：`command_mask` 随执行器对象带入运行时。发送命令前先执行 `commands & command_mask`，不支持的命令位直接复位，不进入发送；取代现在 `node_loop` 中统一的 `& 0xB1`。
-- 注意：现在的统一掩码在 `node_loop` 中每 500 ms 执行一次，而命令发送有 100 ms 防抖，被屏蔽的命令位仍可能在复位前被发送；按执行器屏蔽时应在发送路径上过滤，不能只靠周期复位。
+- 使用：`command_mask` 随执行器对象带入运行时。每个执行器有一条屏蔽规则，每次扫描对 `command_mask` 中为 0 的命令位按名逐位复位；位 14（`reserve`）和位 15（`executing`）不是命令，不受影响。
+- 屏蔽规则在全部规则之后声明：同一个命令位的多个写入者按声明顺序排列，所以它排在其他写命令位的规则之后；它写命令位，所以排在读 `commands` 的发送规则之前，不支持的命令位不会发出。
+
