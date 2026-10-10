@@ -5,7 +5,7 @@ const section_status = [ // Note: from high byte
 	{ name: "work_OK", type: "Bool", offset: 9, length: 1, init_value: false }, // Whether all nodes in this section work normally
 	{ name: "protect_F", type: "Bool", offset: 10, length: 1, init_value: false }, // Whether this section is in protective mode
 	{ name: "hangon_AF", type: "Bool", offset: 11, length: 1, init_value: false }, // Whether this section is automatically hung up
-	{ name: "hangon_MF", type: "Bool", offset: 12, length: 1, init_value: false }, // Whether this section is manually hung up
+	{ name: "flow_override", type: "Bool", offset: 12, length: 1, init_value: false }, // Whether this section is manually hung up
 	{ name: "action_F", type: "Bool", offset: 13, length: 1, init_value: false }, // Whether this section is in the action of stopping the pump due to leakage
 	{ name: "flow_warning_F", type: "Bool", offset: 14, length: 1, init_value: false }, // Whether this section is in the flow warning status
 	{ name: "flow_alarm_F", type: "Bool", offset: 15, length: 1, init_value: false }, // Whether this section is in the flow alarm status
@@ -27,12 +27,7 @@ const inner_tags = [ // Note: from high byte
 
 const items = [
 	{ name: "ID", type: "UInt", offset: 0, length: 16, init_value: 0 }, // Section ID
-	{   // bypass word
-		name: "bypass_word", type: "Word", offset: 16, length: 16, init_value: 0,
-		is_combined: true, coupling: [ // Note: from high byte
-			{ name: "bypass", type: "Bool", offset: 8, length: 1, init_value: false }, // Whether there is bypass in the intermediate station
-		],
-	},
+	{ name: "upward_input", type: "Word", offset: 16, length: 16, init_value: 0 }, // Upward input area, writable by the upward clients (reserved)
 	{   // status word
 		name: "status", type: "Word", offset: 32, length: 16, init_value: 0,
 		is_combined: true, coupling: section_status,

@@ -4,7 +4,7 @@ const items = [
 	{   // status word
 		name: "status", type: "Word", offset: 0, length: 16, init_value: 0,
 		is_combined: true, coupling: [ // Note: from high byte
-			{ name: "bypass", type: "Bool", offset: 8, length: 1, init_value: false }, // Whether bypass
+			{ name: "flow_override", type: "Bool", offset: 8, length: 1, init_value: false }, // Manual hang-up of the whole line
 			{ name: "pump_run", type: "Bool", offset: 9, length: 1, init_value: false }, // Whether this line pumps
 			{ name: "alarm_F", type: "Bool", offset: 10, length: 1, init_value: false }, // Whether this line alarms
 			{ name: "autoStopCmd", type: "Bool", offset: 11, length: 1, init_value: false }, // Auto stop command

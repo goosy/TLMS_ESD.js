@@ -20,7 +20,7 @@ TLMS_ESD（Pipeline Leakage Emergency Shutdown System，管道泄漏紧急停输
 - 读取 YAML 配置，按控制器名称运行其中一个控制器；
 - 与执行器通信：Modbus TCP、Siemens S7 两种协议；
 - 段级流量差报警、压力报警汇总、联锁停泵、取消停泵；
-- 线级旁路、报警汇总、自动/手动停泵命令；
+- 线级越站挂起、报警汇总、自动/手动停泵命令；
 - 执行器参数的发布与写回、执行器命令下发；
 - 联锁动作记录（CSV 持久化，经 Modbus 浏览最近 N 条）；
 - 日志记录；
@@ -70,7 +70,7 @@ TLMS_ESD（Pipeline Leakage Emergency Shutdown System，管道泄漏紧急停输
 | --- | --- | --- |
 | 输差超限 | 控制器 | 按段计算输差；超过 WH 并持续延时后警告，超过 AH 并持续延时后发出停泵预告并倒计时，倒计时结束后停输整条线。 |
 | 压力超限 | 执行器 | 执行器判断压力越限并上报 `pressure_AH_F`，同时上报是否允许压力联锁停输（`pressure_SD_F`）；控制器只对允许压力联锁的执行器，在其压力报警且段内有泵运行时立即停输所在段，没有倒计时。 |
-| 挂起 | 控制器 | 即段的 `hangon_AF`（自动挂起）和 `hangon_MF`（人工挂起），只作用于输差联锁：段挂起时不因输差停泵，倒计时期间人工挂起即中断停输。压力联锁不受挂起约束。 |
+| 挂起 | 控制器 | 即段的 `hangon_AF`（自动挂起）和 `flow_override`（人工挂起），只作用于输差联锁：段挂起时不因输差停泵，倒计时期间人工挂起即中断停输。压力联锁不受挂起约束。 |
 
 ### 3.5 部署形态
 
@@ -218,12 +218,12 @@ TTag 即接口：
 - 流量：
   - `flow_begin` 为首端执行器流量之和，`flow_end` 为末端执行器流量之和；
   - `flow_diff = flow_begin - flow_end`。
-- 流量差判定（段旁路 `bypass` 时不判定）：
+- 流量差判定：
   - 流量差持续超过 `flow_diff_WH` 达到 `flow_diff_WH_delay` 后，`flow_warning_F` 置位；
   - 持续超过 `flow_diff_AH` 达到 `flow_diff_AH_delay` 后，`flow_alarm_F` 置位。
 - 保护状态：
-  - 当通信正常、工作正常、无泵启停过渡、未旁路，且未被手动挂起（`hangon_MF`）时，段处于保护状态（`protect_F`）；
-  - 前四个条件中任一不满足时，自动挂起（`hangon_AF`）。
+  - 当通信正常、工作正常、无泵启停过渡，且未被手动挂起（`flow_override`）时，段处于保护状态（`protect_F`）；
+  - 前三个条件中任一不满足时，自动挂起（`hangon_AF`）。
 - 停泵预告：
   - 本段 `flow_alarm_F`、本段 `protect_F` 与所属线的 `pump_run` 同时成立时，发出停泵预告（`pre_stop_notice`），并开始 `action_time` 倒计时（`countdown`，单位 s）；
   - 泵运行条件取线的 `pump_run`，而不是本段的：输差联锁停整条线，目的是避免中间站缓冲罐带压；泄漏段本身可能没有运行的泵（例如由上游段跨站驱动），只要线上有泵运行就应当停线。压力联锁只停本段，仍取本段的 `pump_run`；
@@ -248,7 +248,7 @@ TTag 即接口：
 - `pump_run`：任一段有泵运行时为 true；
 - `alarm_F`：任一段流量报警或压力报警时为 true；
 - `pre_stop_notice`：任一段处于停泵预告时为 true；
-- `bypass`：线旁路状态下发到线内所有段；
+- `flow_override`（全线人工挂起）：线级总闸，置位时线内所有段均不保护，复位后恢复；它不改写任何段自己的 `flow_override`，因此各段单独设置的挂起在线总闸复位后依然保持；HMI 应同时显示线与段的 `flow_override`；
 - 线内泵全部停止后，清除线的 `autoStopCmd` / `manStopCmd`；
 - `manStopCmd` 由 HMI 写入，用于手动停泵。
 

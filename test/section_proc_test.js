@@ -219,7 +219,7 @@ describe("flow interlock action", () => {
 		assert.equal(downstream.data.action_F, true);
 
 		// restart while the alarm is still present, without protection
-		downstream.data.hangon_MF = true;
+		downstream.data.flow_override = true;
 		await set_pump_run(context, true);
 		await run_cycles(context, 2);
 		assert.equal(downstream.data.flow_alarm_F, true);
@@ -247,5 +247,33 @@ describe("line action_section_ID", () => {
 		await run_cycles(context, 1);
 		assert.equal(upstream.data.action_F, false);
 		assert.equal(line.data.action_section_ID, downstream.ID);
+	});
+});
+
+describe("line flow_override", () => {
+	test("masks protection without rewriting the section flow_override", async () => {
+		const context = build_line();
+		const { line, upstream, downstream } = context;
+		for (const section of line.sections) {
+			section.data.comm_OK = true;
+			section.data.work_OK = true;
+		}
+		downstream.data.flow_override = true;
+		await run_cycles(context, 1);
+		assert.equal(upstream.data.protect_F, true);
+		assert.equal(downstream.data.protect_F, false);
+
+		line.data.flow_override = true;
+		await run_cycles(context, 1);
+		assert.equal(upstream.data.protect_F, false);
+		assert.equal(downstream.data.protect_F, false);
+		assert.equal(upstream.data.flow_override, false);
+		assert.equal(downstream.data.flow_override, true);
+
+		line.data.flow_override = false;
+		await run_cycles(context, 1);
+		assert.equal(upstream.data.protect_F, true);
+		assert.equal(downstream.data.protect_F, false);
+		assert.equal(downstream.data.flow_override, true);
 	});
 });

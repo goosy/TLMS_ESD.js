@@ -22,7 +22,7 @@
 | 寄存器 | 线圈 | 名称 | 类型 | 初值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | 0 |  | status | Word | 0 | 线状态字 |
-| 0.0 | 8 | bypass | Bool | false | 是否越站 |
+| 0.0 | 8 | flow_override | Bool | false | 全线人工挂起；总闸，不改写各段的 flow_override |
 | 0.1 | 9 | pump_run | Bool | false | 本线是否起泵输油 |
 | 0.2 | 10 | alarm_F | Bool | false | 本线有报警 |
 | 0.3 | 11 | autoStopCmd | Bool | false | 自动停输命令 |
@@ -37,14 +37,13 @@
 | 寄存器 | 线圈 | 名称 | 类型 | 初值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
 | 0 |  | ID | UInt | 0 | 段号 |
-| 1 |  | bypass_word | Word | 0 | 越站字 |
-| 1.0 | 24 | bypass | Bool | false | 本段超驰 |
+| 1 |  | upward_input | Word | 0 | 对上输入区（保留） |
 | 2 |  | status | Word | 0 | 段状态字 |
 | 2.0 | 40 | comm_OK | Bool | false | 本段所有执行器通讯正常 |
 | 2.1 | 41 | work_OK | Bool | false | 本段所有执行器工作正常 |
 | 2.2 | 42 | protect_F | Bool | false | 本段处于保护状态下 |
 | 2.3 | 43 | hangon_AF | Bool | false | 本段自动挂起 |
-| 2.4 | 44 | hangon_MF | Bool | false | 本段人工挂起 |
+| 2.4 | 44 | flow_override | Bool | false | 本段人工挂起 |
 | 2.5 | 45 | action_F | Bool | false | 本段是否泄漏停泵 |
 | 2.6 | 46 | flow_warning_F | Bool | false | 本段流量警告 |
 | 2.7 | 47 | flow_alarm_F | Bool | false | 本段流量报警（预动作） |

@@ -85,7 +85,7 @@
 | --- | --- |
 | NODE | 0 ID；2 status；4 temperature；8 pressure；12 flowmeter；16 response_code；18 起为参数块 |
 | COMMAND | 0 response_code（弃用）；2 overtime（弃用）；6 extra_commands（`has_commands`、`reset_paras`）；16 ID；18 commands；20 起为参数块 |
-| SECTION | 0 ID；2 bypass_word；4 status；6 flow_begin；10 flow_end；14 flow_diff；18–34 限值与延时；38 countdown；40 inner_word（内部触发位） |
+| SECTION | 0 ID；2 upward_input（保留）；4 status；6 flow_begin；10 flow_end；14 flow_diff；18–34 限值与延时；38 countdown；40 inner_word（内部触发位） |
 | LINE | 0 status；2 ID；4 action_section_ID；6 flow_diff（保留） |
 | RECORD | 0–10 时间；12 section_ID；14–36 流量与压力；42–48 执行器 ID；50 status；52 index |
 
@@ -223,8 +223,8 @@
   - `press_action` / `flow_action`：压力动作和输差动作，由 `section_loop` 置位和复位（见 6.3 节）。
 - `flow_begin` / `flow_end` 变化时，重新计算 `flow_diff`。
 - `flow_diff` 变化时，计算触发位：
-  - `flow_warning_trigger = flow_diff > flow_diff_WH && !bypass`；
-  - `flow_alarm_trigger = flow_diff > flow_diff_AH && !bypass`。
+  - `flow_warning_trigger = flow_diff > flow_diff_WH`；
+  - `flow_alarm_trigger = flow_diff > flow_diff_AH`。
 - `flow_alarm_F`、`protect_F`、`pump_run` 变化时，更新 `pre_stop_notice = flow_alarm_F && line.data.pump_run && protect_F`：
   - 泵运行条件取线的 `pump_run`（规范 5.2），线的 `pump_run` 变化时也会触发这次更新（见第 7 节）；
   - 本段 `pump_run` 变化时，这次计算可能读到线的旧值，随后线的变化事件会再算一次；线的 `pre_stop_notice` 只汇总各段的结果，不参与段的计算，所以不会形成循环；
@@ -244,8 +244,8 @@
 每 500 ms 执行一次：
 
 1. 计算保护状态：
-   - `protect_prereq = comm_OK && work_OK && !pump_change_F && !bypass`；
-   - `protect_F = protect_prereq && !hangon_MF`；
+   - `protect_prereq = comm_OK && work_OK && !pump_change_F`；
+   - `protect_F = protect_prereq && !flow_override && !line.flow_override`，即本段与所属线的 `flow_override` 任一为真则不保护；
    - `hangon_AF = !protect_prereq`。
 2. 延时计数：触发位为真时，对应计数器每周期加 500 ms，否则清零；计数超过 `*_delay` 时置位 `flow_warning_F` / `flow_alarm_F`。
 3. 倒计时：
@@ -271,7 +271,7 @@ v0.7.0 调整段数据块时，计划把 `press_action` / `flow_action` 升级�
   - `pump_run`、`pre_stop_notice`：取各段同名属性的“或”；
   - `alarm_F`：取各段 `flow_alarm_F` 与 `press_alarm_F` 的“或”；
   - 均带 50 ms 防抖。
-- `bypass` 变化时，写入所有段的 `bypass`。
+- 线的 `flow_override` 只记日志，不改写任何段；其作用在段的 `protect_F` 计算中以与运算体现（见 6.3）。
 - `pump_run` 变化时，对线内每个段调用 `update_pre_stop_notice()`；下降沿时，还要清除线的 `autoStopCmd` / `manStopCmd`。
 
 ## 8. 动作记录（`action_record.js`）
