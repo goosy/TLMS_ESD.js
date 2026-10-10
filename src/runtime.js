@@ -3,41 +3,35 @@ import { line_init, line_rules } from "./line_proc.js";
 import { section_init, section_rules } from "./section_proc.js";
 import { node_init, node_mask_rule, node_rules } from "./node_proc.js";
 import { action_record_rule } from "./action_record_proc.js";
-import { TData } from "./typed_data/TData.js";
-import { LINE, SECTION, NODE, COMMAND } from "./layouts.js";
-import { Unit_Map } from "./typed_data/server.js";
 import { Scheduler } from "./scan.js";
 import { logger } from "./util.js";
 
 /**
- * Builds the runtime object graph of a prepared controller: the data blocks
- * of its lines, sections and nodes, their attachment to the upward unit map,
+ * Builds the runtime object graph of a prepared controller: takes the data blocks
+ * of its lines, sections and nodes from the upward emulator (create_upward),
  * the event wiring of the *_init functions, the scan scheduler and its rules.
  *
  * @param {Object} controller - The controller returned by prepare_controller.
  * @param {Object} options
  * @param {(driver_info: Object) => {data_driver: Object, command_driver: Object}} options.get_drivers
  *     Returns the drivers of a node, shared between nodes on the same connection.
- * @param {{data: TData, get: (index: number) => boolean, update_record: (fields: Object) => void}} options.action_record
+ * @param {import("modbus-emulator").Modbus_Emulator} options.emulator
+ *     The upward emulator of the controller, holding the data blocks.
+ * @param {{data: import("modbus-emulator").Ldata, get: (index: number) => boolean, update_record: (fields: Object) => void}} options.action_record
  *     The action record of the controller.
- * @return {{unit_map: Unit_Map, scheduler: Scheduler, lines: Object[], sections: Object[], nodes: Object[],
+ * @return {{scheduler: Scheduler, lines: Object[], sections: Object[], nodes: Object[],
  *     start: () => void, stop: () => void}}
  */
-export function build_runtime(controller, { get_drivers, action_record }) {
-	const unit_id_map = controller.modbus_server.unit_id;
-	const unit_map = new Unit_Map();
+export function build_runtime(controller, { get_drivers, action_record, emulator }) {
 	const scheduler = new Scheduler({
 		period: MAIN_PERIOD,
 		on_error: (error, source) => logger.error(`scan: ${source?.name ?? "unknown"}: ${error.message}`),
 	});
-	// immediate detection; every write then requests a scan (doc/design.md 3.5)
-	const data_options = { on_write: () => scheduler.request_scan() };
 	const lines = [];
 	const sections = [];
 	const nodes = [];
 
 	controller.action_record = action_record;
-	unit_map.attach_unit(unit_id_map.action_records, action_record.data, 0);
 	scheduler.add_data(action_record.data);
 
 	const add_node = (node) => {
@@ -46,17 +40,12 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 		node.command_driver = command_driver;
 		node.scheduler = scheduler;
 
-		// for controller side, do not use `node.driver_info.unit_id;`
-		const name = node.name;
-		const s_unit_id = unit_id_map[name];
-		/** @type {import("./layout_types").Node_TData} */
-		const data = new TData(NODE, name, data_options);
+		/** @type {import("./layout_types").NODE_Ldata} */
+		const data = emulator.block(node.block);
 		node.data = data;
-		unit_map.attach_unit(s_unit_id, data, 0);
-		/** @type {import("./layout_types").Command_TData} */
-		const command = new TData(COMMAND, name, data_options);
+		/** @type {import("./layout_types").COMMAND_Ldata} */
+		const command = emulator.block(node.command_block);
 		node.command = command;
-		unit_map.attach_unit(s_unit_id, command, 400);
 
 		node_init(node);
 		scheduler.add_data(data);
@@ -69,18 +58,16 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 	};
 
 	for (const line of controller.lines) {
-		/** @type {import("./layout_types").Line_TData} */
-		const data = new TData(LINE, line.name, data_options);
+		/** @type {import("./layout_types").LINE_Ldata} */
+		const data = emulator.block(line.block);
 		line.data = data;
-		unit_map.attach_unit(unit_id_map[line.name], data, 0);
 		line_init(line);
 		scheduler.add_data(data);
 		lines.push(line);
 		for (const section of line.sections) {
-			/** @type {import("./layout_types").Section_TData} */
-			const data = new TData(SECTION, section.name, data_options);
+			/** @type {import("./layout_types").SECTION_Ldata} */
+			const data = emulator.block(section.block);
 			section.data = data;
-			unit_map.attach_unit(unit_id_map[section.name], data, 0);
 			for (const node of section.begin_nodes) add_node(node);
 			for (const node of section.end_nodes) add_node(node);
 			section_init(section);
@@ -106,5 +93,5 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 	};
 	const stop = () => scheduler.stop();
 
-	return { unit_map, scheduler, lines, sections, nodes, start, stop };
+	return { scheduler, lines, sections, nodes, start, stop };
 }

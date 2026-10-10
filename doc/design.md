@@ -2,7 +2,7 @@
 
 > English version of [design.zh-cn.md](design.zh-cn.md), the primary Chinese version. When the two differ, update both.
 >
-> This document describes how the system works: architecture, data structures, algorithms and internal mechanisms. For the requirements see [spec.md](spec.md), for the programming interface of TData / TTag see [spec-data-api.md](spec-data-api.md).
+> This document describes how the system works: architecture, data structures, algorithms and internal mechanisms. For the requirements see [spec.md](spec.md), for the programming interface of Ldata / Ltag see `doc/spec-data-api.md` of the layout-data package.
 
 ## 1. Modules
 
@@ -10,17 +10,17 @@
 | --- | --- |
 | `src/cli.js` | The `tlms` command line: parses arguments, calls pm2 or directly `import('./main.js')`. |
 | `src/main.js` | Process entry: reads the configuration, builds the controller, provides the real drivers reused per connection, starts the Modbus server and the scan. |
-| `src/runtime.js` | `build_runtime`: creates the TData of the controller, mounts them on `Unit_Map`, calls each `*_init`, creates the scan scheduler and declares all rules, and provides `start` / `stop`. The drivers are provided by the caller through `get_drivers`. |
+| `src/runtime.js` | `build_runtime`: creates the Ldata of the controller, mounts them on `Unit_Map`, calls each `*_init`, creates the scan scheduler and declares all rules, and provides `start` / `stop`. The drivers are provided by the caller through `get_drivers`. |
 | `src/gcl.js` | YAML loader (`yaml` library, YAML 1.2), keeping source line information. |
 | `src/config.js` | Merges several configuration documents, fills in defaults, builds the name and ID indexes, converts the `supported_commands` of actuators into command mask words. |
 | `src/init.js` | `prepare_controller`: builds the runtime object graph for the selected controller. |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | Initialization (log handlers, IO binding) and rule declarations of actuators (nodes), sections and lines. |
 | `src/action_record.js` | Action records: CSV reading and writing. |
 | `src/action_record_proc.js` | The rule of the action record: browsing records by index. |
-| `src/scan.js` | The scan scheduler `Scheduler` (section 5). |
-| `src/rules.js` | Rules: `derive` / `act` declarations, ordering and startup checks, `Ticker`, `on_delay` / `off_delay` (section 6). |
-| `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, `createMTServer` (upward server, using the vector of the data layer), and the IO binding `binding.js` (4.5). |
-| `src/typed_data/` | Data layer (section 3): `TData` / `TTag`, `observer.js` (change detection), `structure.js` (structure expansion and layout validation), `layout.js` (layout compilation), `codecs.js` (codecs of the types), `endian.js` (byte order conversion per item), `server.js` (`Unit_Map` and the vector of the upward server), `types.js` (type declaration generation). |
+| `src/scan.js` | The scan scheduler `Scheduler` (§5). |
+| `src/rules.js` | Rules: `derive` / `act` declarations, ordering and startup checks, `Ticker`, `on_delay` / `off_delay` (§6). |
+| `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, and the IO binding `binding.js` (§4.5). The upward server comes from the `modbus-emulator` package (§4.4). |
+| `layout-data` (external package) | Data layer (§3): `Ldata` / `Ltag`, layout compilation and validation, change detection, byte order conversion. |
 | `src/layouts.yaml` | Layout descriptions of LINE, SECTION, NODE, COMMAND, RECORD. |
 | `src/layouts.js` | Compiles `layouts.yaml` and exports these layouts and the fragments the business needs. |
 | `src/layout_types.d.ts` | Type declarations generated from the layouts (`pnpm gen:types`). |
@@ -39,7 +39,7 @@
    - parses the `pumps` strings;
    - normalizes `modbus_server` / `s7_server` into `{data, commands, endian, ...}` with defaults;
    - when the pressure and temperature limits are missing, takes the range limits;
-   - computes the command mask word `command_mask` from `supported_commands` (14.1).
+   - computes the command mask word `command_mask` from `supported_commands` (§14.1).
 4. After all documents are merged, lines are linked to controllers and sections to lines by name (objects referencing each other).
 5. `prepare_controller(name)`:
    1. selects the controller (the first one when empty or 0);
@@ -49,75 +49,37 @@
 6. `run_controller`:
    1. initializes the action record;
    2. calls `build_runtime` (`runtime.js`):
-      1. mounts the action record on `unit_id.action_records`, creates the TData in the order line -> section -> actuator, calls `attach_unit`, then each `*_init`; the drivers of the actuators are provided by `get_drivers` of `main.js`, reused per connection;
-      2. creates the scan scheduler (section 5), registers all tdata, the data Bindings of the actuators (with the input group `data_payload`) and the write-only command Bindings;
-      3. after the object graph is built, calls `node_rules` / `section_rules` / `line_rules` in the order actuators -> sections -> lines to declare the rules (sections 7, 8, 9), then declares the rule of the action record (section 10) and the command masking rule of each actuator (14.1), then `prepare()` orders and checks;
-      4. all tdata use the immediate detection mode, with `on_write` wired to `request_scan()` of the scheduler (3.5);
+      1. mounts the action record on `unit_id.action_records`, creates the Ldata in the order line -> section -> actuator, calls `attach_unit`, then each `*_init`; the drivers of the actuators are provided by `get_drivers` of `main.js`, reused per connection;
+      2. creates the scan scheduler (§5), registers all blocks, the data Bindings of the actuators (with the input group `data_payload`) and the write-only command Bindings;
+      3. after the object graph is built, calls `node_rules` / `section_rules` / `line_rules` in the order actuators -> sections -> lines to declare the rules (§7, §8, §9), then declares the rule of the action record (§10) and the command masking rule of each actuator (§14.1), then `prepare()` orders and checks;
+      4. the `write` event of each block registered with the scheduler is wired to `request_scan()` (§3.5);
    3. starts the Modbus TCP server and waits until it is ready; when it fails to start (e.g. the port is in use), logs an error and exits with exit code 1, to be restarted by pm2;
    4. `runtime.start()` first runs an initial scan (computing all derived values), then starts the periodic tick (`MAIN_PERIOD = 500`); rule errors are written to the log through the `on_error` of the scheduler.
 
-## 3. Data layer (`src/typed_data/`)
+## 3. Data layer (the layout-data package)
 
-The external requirements and terminology of TData (an instance written tdata) and TTags are in section 3.6 of the spec, the programming interface in spec-data-api.md; this section describes the implementation. The data layer consists of four parts:
-
-| Part | Responsibility | Instances | Mutability |
-| --- | --- | --- | --- |
-| Layout | Compiled from the layout description: byte positions and codecs of the tags, the reverse table from bytes to tags, prototype accessors | One per structure | Immutable |
-| TData | The value buffer `buffer` (big-endian), access by name, raw write methods, the TTag returned by `get(name)` | One per tdata | Mutable |
-| Observer | Snapshot comparison, emitting change events, providing the values at the end of the previous scan | One per tdata | Mutable |
-| Unit_Map and vector | Mount tdata on the units and addresses of the upward server (4.4) | One per server | Mutable |
-
-Dependency direction: Observer depends on TData and Layout, TData only on Layout, Layout only on the layout description. The IO binding (4.5), the scan scheduler (section 5) and rules (section 6) are outside the data layer and depend on it; the data layer notifies them only through callbacks passed in by the user (wired to `request_scan()` in the controller) and does not know they exist.
+The terminology of Ldata (an instance written block) and Ltag and the requirements of the controller on them are in spec §3.6, the requirements of the data blocks themselves in the spec of layout-data. The data layer is implemented in the separate `layout-data` package: structured, reactive, buffer-based data blocks, tag access by name, layout compilation and validation, change detection, device byte order conversion; its spec and design are in `doc/spec.md`, `doc/spec-data-api.md` (programming interface) and `doc/design.md` of that package. This section describes only how this project uses it.
 
 ### 3.1 Component boundary
 
-The data layer is to become a separate component in the future, shared by a Modbus device emulator and controllers like this project: the component offers a Modbus TCP server and operates its internal state through TData / TTag. The code is organized along the component boundary:
-
-- The component code is all in `src/typed_data/` and imports no modules outside the component: it does not depend on the configuration (`config.js`), the business processing (`*_proc.js`), the project's layouts (`src/layouts.yaml`, `src/layouts.js`) or the project's logger (`util.js`);
-- On errors the component code throws, without logging or calling `process.exit`, and the caller decides how to report and exit; non-fatal situations at run time that need reporting (such as accessing an unmapped address) go through a logger injected by a constructor argument, which outputs nothing by default;
-- Layout descriptions are external input to the component: this project's `src/layouts.yaml` is handed to the component for compilation by `src/layouts.js`;
-- The interface of the component (spec-data-api.md) is for programmers: TData / TTag can be read and written at any time and emit events when values change, and the component does not restrict these capabilities because of the scheduling of any user.
+- This project gets the interface of `layout-data` (`Ldata`, `Ltag`, `register_layout`, `get_layout`, `io_index_table`, `render_types` and their types) through `import ... from "modbus-emulator"`: modbus-emulator forwards these interfaces, this project does not depend on `layout-data` directly, and the process holds only one copy (`register_layout` can succeed only once per process); ESLint forbids importing `layout-data` directly. There is no `src/typed_data/` any more; at build time rolldown bundles modbus-emulator together with the `layout-data` it depends on into `main.js`;
+- The package does not depend on the configuration, business processing, layouts or logger of this project, and throws on errors: `src/layouts.js` catches layout errors, logs them and exits;
+- The upward server (`Unit_Map`, handler, Modbus TCP service) is in the separate `modbus-emulator` package (§4.4).
 
 ### 3.2 Layout definitions (`src/layouts.yaml`)
 
-- The layout description is a YAML 1.2 file: the root key `layouts` maps layout names to item lists; all other root keys are fragments (such as `node_commands`, `node_parameters`, `node_status`), referenced by name from items.
-- Each item contains `{ name, type, offset, init_value }`, optionally `length`, `comment`; `offset` and `length` are in bits, and when `length` is omitted it is given by the type.
-- Only one side of a combined word and its component bits gives `init_value` (spec 3.6): when `build_structure` expands, if the combined word gives none it is composed from the component bits (bits not given are false), and if the combined word gives one the values of the component bits are split from the whole word; when both sides give values, the given values are kept and the validation reports it. All existing layouts give them on the component bits.
-- `type` values (case-insensitive): `Bool`, `Byte`, `SInt`, `USInt`, `Int`, `UInt`, `Word`, `DInt`, `UDInt`, `DWord`, `Real`.
-- A `Word` item with `coupling` (a fragment name or an inline list) is a status word or command word made of Bools; `is_combined: true` links the whole word and its bits in both directions. The `offset` of each coupling entry is relative to the start of the word.
-- `{ includes: <fragment name or inline list>, offset }` splices in a group of shared items (such as `node_parameters`), shifted as a whole, optionally with `name_prefix`.
-- `src/typed_data/layout.js#compile_layout(yaml_path)` reads the file synchronously, resolves fragment references (an error for a missing or cyclic reference), fills in omitted `length`s, then for each layout calls `structure.js#build_structure` to expand it into a flat `items` (computing the total length `length` of the structure and normalizing coupling into an array of names) and validates it, returning `{ layouts, fragments }`.
-- `src/layouts.js` compiles `layouts.yaml` in its directory at load time (the path resolved from the module location; at build time a copy plugin in the rolldown configuration outputs it as a separate file next to `main.js`, not bundled into `main.js`), and exports `LINE`, `SECTION`, `NODE`, `COMMAND`, `RECORD`, plus the parameter block items `node_parameters` and the command bit items `node_commands`; when a layout is invalid, each violation is written to the error log and the program exits.
-- Each layout is compiled into a Layout (`layout_of`): besides the expanded `name`, `length`, `items`, it has the item table `entries` indexed by name (byte offset, bit mask, codec), the reverse table `tags_at_byte` from bytes to tags, and the TData subclass `Data_Class` dedicated to the structure.
-- Bool position rule: `byte = offset >> 3`, `bit = offset % 8`. The internal buffer is big-endian, so the first byte of a word is the high byte of the register; coupling offsets 8-15 are register bits 0-7, offsets 0-7 bits 8-15. The definition files list 8-15 before 0-7, i.e. in the order of register bit 0 to bit 15; bit k of the word value is register bit k, and the command mask word `command_mask` is computed with these bit numbers (14.1).
-- The point table in [spec-modbus.md](spec-modbus.md) is computed from these definitions by the rules above.
-- The bit numbers of a combined word are fully guaranteed by the offset numbering above; in `buffer` a combined word is big-endian like any other multi-byte type, and neither the upward server nor the drivers swap bytes for combined words separately (spec 3.6).
+- The format of layout descriptions (YAML 1.2, fragments, `coupling`, `includes`, item fields, types, initial value rules, the Bool position rule, layout validation) is in the design document of layout-data; this project's layout file is `src/layouts.yaml`, with `LINE`, `SECTION`, `NODE`, `COMMAND`, `RECORD` under the root key `layouts`, and the other root keys being fragments (such as `node_commands`, `node_parameters`, `node_status`).
+- `src/layouts.js` only provides the layout source: it exports the path `layouts_file` of `layouts.yaml` in its directory (the path resolved from the module location; at build time a copy plugin in the rolldown configuration outputs it as a separate file next to `main.js`, not bundled into `main.js`), and reads the parameter block items `node_parameters` and the command bit items `node_commands` (the item lists of these two fragments, used by name by the configuration and the node rules). The layouts are registered by modbus-emulator when the upward emulator is created (`register_layout`, once per process), after which `get_layout(name)` gets `LINE`, `SECTION`, `NODE`, `COMMAND`, `RECORD`; when a layout is invalid, `create_upward` throws an error with `errors`, and `main.js` writes each to the error log and exits.
+- Coupling offsets 8-15 are register bits 0-7, offsets 0-7 bits 8-15; the definition files list 8-15 before 0-7, i.e. in the order of register bit 0 to bit 15; bit k of the word value is register bit k, and the command mask word `command_mask` is computed with these bit numbers (§14.1).
+- The point table in [spec-modbus.md](spec-modbus.md) is computed from the layouts by these rules.
+- The bit numbers of a combined word are fully guaranteed by the offset numbering; inside a block a combined word is big-endian like any other multi-byte type, and neither the upward server nor the drivers swap bytes for combined words separately (spec of layout-data).
 - These layouts are the memory images of the Modbus register table and of the actuator data areas; changing any offset is a protocol change.
-- Write ownership (spec 3.6) is currently guaranteed by manual review: the layouts do not mark who writes a TTag, and the validation does not check this rule. The existing write paths all comply: the ID, command word and parameter block of the command block and the parameter block of the node tdata are written by the controller, all word aligned and contiguous; the rest of the node tdata is written by the actuator and only read by the controller.
-
-#### Layout validation
-
-The layout rules of spec 3.6 are validated together at the layout stage, not scattered over the runtime of TData, TTag and Binding:
-
-- `structure.js` provides `validate_structure(data_struct)`, which validates the flat `items` expanded by `build_structure` and returns an array of violation descriptions (an empty array means valid), without exiting at the first error.
-- What is validated:
-  - Names: duplicate names in `items`; names conflicting with the members of TData (methods and getters on `TData.prototype`, and instance fields such as `name`).
-  - Type and length: `type` not among the supported types; `length` not matching the type (Bool 1, Byte / SInt / USInt 8, Int / UInt / Word 16, DInt / UDInt / DWord / Real 32).
-  - Alignment: the `offset` of a non-Bool must be a multiple of 8; the byte offset of a multi-byte type must be even.
-  - Overlap: the non-Bool items are sorted by byte range and adjacent ranges are checked for intersection; Bools are checked by `offset` for occupying the same bit twice; when a Bool falls inside a non-Bool range, the `coupling` of that non-Bool item must contain the name of the Bool.
-  - Combined words: for an item with `coupling`, the `offset` of each component bit lies within `[offset, offset + length)`.
-  - Total length: `length % 16 === 0`.
-  - The type and range of `init_value` match `type` (a boolean for Bool, otherwise a number representable by the type).
-  - Both a combined word and its component bits give `init_value`.
-- `build_structure` keeps an item with a duplicate name and leaves it to the validation report.
-- Callers:
-  - `compile_layout` runs the validation on all layouts of the file and on violations throws an error containing all of them; when the controller loads `src/layouts.js`, each is accordingly written to the error log and the program exits;
-  - `tlms check` runs the validation on all structures and reports its errors together with those of the configuration validation (not implemented, see section 13).
-- After the validation passes, TData, TTag and Binding do not repeat these checks; `layout_of` keeps only defensive assertions.
+- Write ownership (spec §3.6) is currently guaranteed by manual review: the layouts do not mark who writes a Tag, and the validation does not check this rule. The existing write paths all comply: the ID, command word and parameter block of the command block and the parameter block of the node block are written by the controller, all word aligned and contiguous; the rest of the node block is written by the actuator and only read by the controller.
+- Layout validation is run by `register_layout` on all layouts of the file; `tlms check` reports it together with the errors of the configuration validation (not implemented, see §13).
 
 Main layouts (byte offsets):
 
-| Structure | Key TTags |
+| Structure | Key Tags |
 | --- | --- |
 | NODE | 0 ID; 2 status; 4 temperature; 8 pressure; 12 flowmeter; 16 response_code; parameter block from 18 |
 | COMMAND | 0 response_code (deprecated); 2 overtime (deprecated); 6 extra_commands (`has_commands`, `reset_paras`); 16 ID; 18 commands; parameter block from 20 |
@@ -125,76 +87,39 @@ Main layouts (byte offsets):
 | LINE | 0 status; 2 ID; 4 action_section_ID; 6 flow_diff (reserved) |
 | RECORD | 0-10 time; 12 section_ID; 14-36 flows and pressures; 42-48 actuator IDs; 50 status; 52 index |
 
-### 3.3 Codecs and prototype accessors
+### 3.3 Access tracing and type declarations
 
-- The codec table `codecs.js` has an entry per type; `get(buffer, byte, mask)` decodes from the big-endian buffer, and `set(buffer, byte, mask, value)` encodes and writes; the device byte order is not handled in the table, only in the IO binding (4.5).
-- `layout_of` generates a TData subclass `Data_Class` for each structure and defines an accessor once on its prototype for each item, shared by the instances of the same structure:
-  - the getter decodes from `buffer` with the codec table every time and caches no value;
-  - the setter writes `buffer` with the codec table, then calls `after_write` (3.5).
-- A combined word and its component bits share the same bytes; after writing either side, the other side naturally reads the new value, and no extra linkage is needed.
-- A tag name must not equal a member of TData (the accessor would shadow the member), checked by `validate_structure`, with a further defensive check in `layout_of`.
-- `set_access_tracer(tracer | null)` (`layout.js`): once set, the accessors call `tracer(tdata, name, "read" | "write")` on every read and write of a tag, for the dependency tracing test mode of the scheduler (6.5); when not set, the accessors only add one check. The data layer only knows the hook, not the existence of rules.
-- The type declarations `src/layout_types.d.ts` are generated from the layout file (one interface per layout, the tags as properties, `comment` as doc comments), providing editor completion for access by name; the generated file goes into version control, and a test checks it matches the layout file.
+- `trace_dependencies()` of the scheduler subscribes to the `access` events of all data blocks with `Ldata.on_access`, recording the reads and writes of tags by rules into the actual read and write sets of the "current rule"; `untrace_dependencies()` unsubscribes (§6.5).
+- The type declarations `src/layout_types.d.ts` are generated from the layouts (`pnpm gen:types`, calling `render_types` of layout-data): one interface per layout, the tags as properties, `comment` as doc comments, providing editor completion for access by name; the generated file goes into version control, and a test checks it matches the layout file.
 
-### 3.4 TData
+### 3.4 Reading and writing the content of data blocks
 
-- `new TData(struct, name, { detection, on_write })` returns an instance of the `Data_Class` of the structure: allocates `buffer` (`layout.size` bytes) and encodes and writes the `init_value` of each item in turn. `detection` is `"immediate"` (default) or `"deferred"` (4.2 of spec-data-api.md).
-- `name` is writable; `layout`, `size`, `buffer` are read-only (getters only, assignment throws a `TypeError`), and the content of `buffer` can be read and written. `buffer` is always big-endian; the buffer exchanged with drivers belongs to the IO binding (4.5).
-- There are two ways to write `buffer`, both through TData, allowed at any time, whether during a scan or not:
+- The bytes of a block are not exposed as a property, and the content is read and written only through Ldata, so every write goes through Ldata and none is missed by detection. The ways of reading and writing are allowed at any time, whether during a scan or not:
 
   | Way | Users |
   | --- | --- |
-  | Assignment by name (`data[name] = v` or `tag.value = v`) | Any code: rules, event handlers, asynchronous callbacks, ordinary programs |
-  | The raw write methods `write_register(offset, value)`, `write_bit(offset, mask, value)`, `write_bytes(offset, source)`, located by byte offset | The upward server (4.4) |
+  | Reading and writing by name (`data[name]`, `tag.value`) | Any code: rules, event handlers, asynchronous callbacks, ordinary programs |
+  | Device byte order conversion per tag: `tag.load(io_buffer, endian)`, `tag.store(io_buffer, endian)` | The IO binding (§4.5) |
+  | The raw read and write methods `read_bytes(offset, length)`, `write_bytes(offset, source)`, `write_bit(offset, mask, value)`, located by byte offset | The upward server (§4.4) |
 
-- Apart from the data layer and the IO binding, no code writes the content of `buffer` directly; a test checks that no other file in `src/` calls a write on `.buffer`. The loading of the IO binding (4.5) writes the content of `buffer` directly in the input phase of a scan, without requesting a scan, and the changes after loading are detected in the publish phase of the same scan.
-- A function code 16 request writes several registers in a row within one synchronous call. In the immediate detection mode every write detects, so a Real spanning two registers emits one `change` event with a half-written value after the first register and another with the complete value after the second; rules are not affected, because `request_scan()` merges (5.2) and the scan runs only after the whole request has been handled.
-- On errors TData throws (layout conflicts, values out of range), without logging or exiting.
+- The loading of the IO binding (§4.5) happens in the input phase of a scan and puts all tags of a group into one transaction, which on commit detects once and emits one `write`; scan requests caused by `write` in the input phase are ignored (§5.2).
+- A function code 16 request writes several registers in a row within one synchronous call. The upward server writes each register separately, and every write detects, so a Real spanning two registers emits one `change` event with a half-written value after the first register and another with the complete value after the second; rules are not affected, because `request_scan()` merges (§5.2) and the scan runs only after the whole request has been handled.
 
-### 3.5 Detection modes and Observer
+### 3.5 Change detection and write notification
 
-Detection is done by the Observer (`observer.js`) of each tdata. All write paths end in the same private method of TData, and the two detection modes (behavior in 4.2 of spec-data-api.md) only decide who calls `diff()` after a write, and when:
+The mechanism of change detection (snapshot comparison, event order, oscillation protection) and transactions (`transaction(fn)`) are in the design document of layout-data: a block detects right after every write and emits `change` events, then a `write` event. The scan is not part of Ldata, and "the values at the end of the previous scan" are kept by the scheduler itself (§5.1).
 
-```js
-// setter -> after_write -> #written; write_register / write_bit / write_bytes -> #written
-#written() {
-    if (this.#detection === "immediate") this.#observer.diff();  // detect right now
-    this.#on_write?.(this);                                       // then notify the user
-}
+**Write notifications are wired to scan requests.** When the scheduler registers a block (`add_data`), it listens to its `write` event and requests a scan, so any write (rules, event handlers, HMI, asynchronous callbacks) to any block of the controller (data and command of lines, sections and actuators, the action record) requests a scan after detection. The reasons:
 
-detect() {
-    this.#observer.diff();
-}
-```
+- Writes take effect immediately, and rules always read the current value; `change` events are only notifications;
+- The interlocks and aggregations of the controller are all in rules and do not depend on events (§6.6);
+- Events are emitted in the call stack of the write, so the writer can be traced when debugging.
 
-- Immediate mode: calls `diff()` synchronously inside the write statement, then `on_write`; deferred mode: only calls `on_write`, and detection is done by the user calling `detect()`.
-- The scan is not part of TData: TData has no phases, ordering or timing, and only chooses between "detect itself" and "leave it to the user".
+The costs affect only event handlers (logging): the events of writes of rules in the evaluate phase are emitted in the middle of rule execution; several changes of the same tag within one scan emit separate events; a function code 16 write of a value spanning two registers shows one intermediate value (§3.4). When a group of writes needs to be presented as a whole, the transactions of layout-data can be used; the controller has no such need for now.
 
-**Snapshot comparison.** The Observer holds a snapshot as long as `buffer`, copied from `buffer` at creation. `diff()` compares `buffer` with the snapshot byte by byte; only for differing bytes does it find the related tags through the reverse table `tags_at_byte`, decoding the old value from the snapshot and the new value from `buffer`, and records a change when the values differ (two NaN count as the same); after the comparison it updates the snapshot, then reports together:
+### 3.6 Byte order conversion
 
-- Reported in layout order (a combined word before its component bits); for each change, first the TData emits `change(tagname, old, new)`, then the TTag of the tag emits `change(old, new)`; events are always emitted after the new value takes effect;
-- Several writes of the same tag between two detections merge into one event, and a value that changed and was then restored emits no event;
-- When an event handler writes a tag again, the nested comparison only registers, and after the current round of changes has been reported another round of comparison follows; when there are still new changes after 16 consecutive rounds, an exception is thrown to prevent oscillation;
-- Old values are decoded from the snapshot, and no values are cached;
-- `bench/change_detection_bench.js` measures the cost of loading item by item and then detecting on the NODE structure (74 tags, 146 bytes): about 1.2-1.7 µs per cycle without changes, about 2-3 µs with few changes, about 7 µs with all values changed (development machine).
-
-**Values of the previous scan.** `observer.previous(name)` returns the value at the end of the previous scan, decoded from the scan snapshot; the scheduler updates it by calling `take_scan_snapshot()` at the end of each scan. In immediate mode the detection snapshot keeps refreshing between scans, so the scan snapshot is kept separately.
-
-**The controller uses the immediate mode.** All tdata of the controller (data and command of lines, sections and actuators, the action record) use the immediate detection mode, with `on_write` wired to `request_scan()` of the scheduler, so any write (rules, event handlers, HMI, asynchronous callbacks) requests a scan after detection. The reasons:
-
-- Values are equally timely in both modes: writes take effect immediately, and rules always read the current value; the detection mode only decides when `change` events are emitted;
-- The interlocks and aggregations of the controller are all in rules and do not depend on events (6.6), so the deferred mode brings no benefit to the interlock results;
-- In immediate mode events are emitted in the call stack of the write, so the writer can be traced when debugging.
-
-The costs affect only event handlers (logging): the events of writes of rules in the evaluate phase are emitted in the middle of rule execution; several changes of the same tag within one scan emit separate events; a function code 16 write of a value spanning two registers shows one intermediate value (3.4).
-
-### 3.6 TTag and byte order conversion
-
-- `data.get(name)` returns the `TTag` of the tag, created and cached on first access, `undefined` when the name does not exist. A TTag holds no value: reading `value` decodes from the `buffer` of the TData, and writing `value` is exactly equivalent to `data[name] = v`; `name`, `type`, `length` come from the Layout item; `change` events are emitted by the Observer.
-- `endian.js` implements the conversion between the device byte order and the internal big-endian per layout item (`load_entry` / `store_entry` / `io_index` / `io_range`), without detecting changes; the IO binding implements the same mapping per byte (4.5), and tests use `endian.js` as the reference to check that the two agree byte by byte:
-  - 2 bytes: `BE` copies as is; `LE` / `little` / `BEBS` swap the two bytes;
-  - 4 bytes: the four orders `BE`, `LE` / `little`, `BEBS`, `LEBS` are supported;
-  - Bool and the single-byte types (Byte, SInt, USInt) read and write only one byte, without conversion within the byte; their index in the IO buffer is computed per 16-bit register: `byte ^ 1` for `LE` / `little` / `BEBS`, `byte` for `BE` / `LEBS`. A Bool changes only its own bit by its bit mask.
+The conversion between the device byte orders (`BE`, `LE`, `BEBS`, `LEBS`, without aliases) and the internal big-endian is implemented by layout-data (rules in its design document): conversion per tag uses `tag.load` / `tag.store`, and the IO binding gets the byte map of a whole block with `io_index_table` (§4.5); this package implements no conversion of its own; tests use `load_tag` / `store_tag` of the block as the reference to check that Binding agrees with them byte by byte.
 
 ## 4. Drivers
 
@@ -215,7 +140,7 @@ The costs affect only event handlers (logging): the events of writes of rules in
 
 ### 4.2 MTClient (es-modbus)
 
-- Address conversion: areas in the configuration and in TData are in bytes; the byte start `start` corresponds to the holding register PDU address `start >> 1` (0-based), and the length is `length >> 1` registers; they are passed as the structured range `[func_code, pdu_addr, length]` of es-modbus, not in Modicon notation.
+- Address conversion: areas in the configuration and in Ldata are in bytes; the byte start `start` corresponds to the holding register PDU address `start >> 1` (0-based), and the length is `length >> 1` registers; they are passed as the structured range `[func_code, pdu_addr, length]` of es-modbus, not in Modicon notation.
 - es-modbus throws synchronously on invalid arguments (range, quantity limits, unit_id); `read` / `write` catch it, log an error, and treat it as a read / write failure (`emit_io_error`).
 - Only holding registers are accessed: MTClient gives the function codes explicitly, 03 for reading, 06 (single register) / 16 (multiple registers) for writing. Coils, discrete inputs and input registers are not used.
 - `write_unit = 2`: the write unit is one register.
@@ -230,49 +155,42 @@ The costs affect only event handlers (logging): the events of writes of rules in
 - `write_unit = 1`: the write unit is one byte.
 - Because `S7Endpoint.connect()` is incomplete, the library's own automatic reconnection is used for now (`autoReconnect`, taking `reconnect_time`, default 5000 ms, at a fixed interval), and `start_tick` is overridden too (marked as temporary code in the source).
 
-### 4.4 Upward server (createMTServer + Unit_Map)
+### 4.4 Upward server (modbus-emulator)
 
-- `Unit_Map` and `create_vector(unit_map, { logger })` belong to the data layer (`src/typed_data/server.js`). The warnings of the vector about accesses to unmapped addresses are output through the injected `logger`, nothing by default; `createMTServer` (driver) passes the project logger and uses the vector to create the es-modbus server. Tests call the vector directly to simulate HMI requests.
+- The creation of data blocks and the upward service are provided by the separate `modbus-emulator` package (spec and design in `doc/` of that package). `src/upward.js#create_upward(controller)` describes the controller object graph in the object form of an emulator description: `layouts_file` points to `src/layouts.yaml`, `blocks` holds all data blocks, and `servers` one TCP service listening on `0.0.0.0:<modbus_server.port>`. The emulator outputs no logs itself: `create_upward` writes the `warnings` of construction to the log and subscribes to the server events it forwards (`server_<name>`: start and stop, client connects and disconnects, the various errors) and the handler events (`unmapped`, `unmapped_limit`, `listener_error`), writing them to the project log.
+- Data blocks (unit ids from `controller.modbus_server.unit_id`): the action record (`RECORD`, byte 0); one for each line (`LINE`) and each section (`SECTION`); the data (`NODE`, byte 0) and command (`COMMAND`, byte 400, i.e. from register 200) of each actuator share the unit of the actuator. The block names are the names of the lines, sections and actuators (the command with the suffix ` command`).
+- The block names are stored back into the object graph (`controller.record_block`, `line.block`, `section.block`, `node.block`, `node.command_block`), and `main.js` and `runtime.js` get the Ldata back by them with `emulator.block(name)`; the display names of the Ldata are set again by each `*_init`.
+- Write notification: not passed through the emulator. When the data blocks are created the scheduler does not exist yet; when `build_runtime` registers the data blocks with the scheduler (`add_data`), the scheduler listens to the `write` event of the block and requests a scan; other users that need to know about writes listen on their own as well.
+- The address mapping of registers and coils, the handling of unmapped addresses and exception responses are in the spec of modbus-emulator; reads go through `read_bytes` / `read_bit` of Ldata and writes through `write_bytes` / `write_bit`, and Ldata detects changes after every write; one FC 15 / FC 16 request writes the same block within one transaction. Tests simulate HMI requests through `emulator.handler`.
+- `src/layouts.js` reads only the fragments of `layouts.yaml` that are used by name; the validation and registration of the layouts are done in one go by the emulator from `layouts_file`, and layout metadata such as the fields of the action record are taken from the registered `Layout` (`block.layout`, `get_layout`).
 
-- `Unit_Map.attach_unit(unit_id, tdata, start)` mounts a TData on the byte range `[start, start + size)` of a unit; a unit can hold several TData.
-  - Actuator unit: data at byte 0, command at byte 400 (i.e. from register 200).
-- Register `addr` corresponds to byte `addr * 2`, read big-endian from `tdata.buffer`; coil `addr` corresponds to bit `addr % 8` of byte `addr >> 3`.
-- Writes go through `write_register` / `write_bit` of TData, which processes them by the detection mode (currently immediate detection); the vector does not change `buffer` directly.
-- The vector method names are the snake_case names required by es-modbus: `get_holding_register`, `get_input_register`, `set_register`, `get_coil` (used for both FC 1 and FC 2), `set_coil`.
-- Unmapped addresses (e.g. the gap between the node data area and the command block in an actuator unit) read as 0 / false and writes to them are ignored, so a block read of the HMI across the gap still succeeds. A warning is logged only once per (type, unit, address), to avoid flooding the log while polling.
-- Requests are validated by es-modbus first: an unregistered unit id is answered with exception 0x0B, an illegal function code, quantity or address out of range with 0x01 / 0x03 / 0x02; when the vector throws, 0x04 is answered and the `vector_error` event logs it.
 
 ### 4.5 IO binding (`src/drivers/binding.js`)
 
-The IO binding is not part of the data layer: it operates tdata through the interface of TData and `buffer`, and writes `buffer` only when loading device data.
+The IO binding is not part of the data layer: it exchanges data with devices tag by tag only through the interfaces of Ldata and Ltag.
 
-- `new Binding(data, driver, { start, remote_start, length, endian, on_update }, ...extras)` maps the exchange area `[start, start + length)` of a tdata to the remote area of the same length from `remote_start`; `extras` is passed to the driver as is (`unit_id` for Modbus, `area, db` for S7). The three exchange area parameters must be whole multiples of the driver write unit `driver.write_unit` (default 1), otherwise an exception is thrown, so that the extended write ranges never leave the exchange area and the local write units align with the remote write units.
-- Binding holds the `IO_buffer` in device byte order (as long as the tdata, with the same indexes), and data read by the driver is written only into it.
-- Byte mapping `io_index`: at creation, the index in `IO_buffer` of each byte of the tdata is computed. The device byte order applies per 16-bit register and per 32-bit value (spec 3.6): 4-byte items are converted by the four orders `BE`, `LE` / `little`, `BEBS`, `LEBS`; other bytes are converted per 16-bit register, `byte ^ 1` for `LE` / `little` / `BEBS`, unchanged for `BE` / `LEBS`. The layout validation guarantees that non-Bool items do not overlap and Bools fall only inside combined words, so the mapping of each byte is unique.
+- `new Binding(data, driver, { start, remote_start, length, endian, on_update }, ...extras)` maps the exchange area `[start, start + length)` of a block to the remote area of the same length from `remote_start`; `extras` is passed to the driver as is (`unit_id` for Modbus, `area, db` for S7). The three exchange area parameters must be whole multiples of the driver write unit `driver.write_unit` (default 1), otherwise an exception is thrown, so that the extended write ranges never leave the exchange area and the local write units align with the remote write units.
+- Binding holds the `IO_buffer` in device byte order (as long as the block, with the same indexes), and data read by the driver is written only into it.
+- Byte mapping `io_index`: at creation, `io_index_table(layout, endian)` of layout-data computes for each byte of the block its index in `IO_buffer` (rule: the device byte order applies per 16-bit register and per 32-bit value, see spec §3.6 and the design document of layout-data). The layout validation guarantees that non-Bool items do not overlap and Bools fall only inside combined words, so the mapping of each byte is unique.
 - `create_group(...names)` returns a group of tags to be synchronized with the device together (`Binding_Group`):
   - a missing name or a tag outside the exchange area throws; adding the same tag again is ignored;
-  - ownership mask `own`: the bits of each byte of the group that belong to the group, the whole byte for non-Bool items, only its own bit for a Bool, several items of the group on the same byte ORed;
-  - write ranges: the positions of the bytes of the group in `IO_buffer`, extended outward to write units, with adjacent write units merged.
-- Loading and exporting are both byte-by-byte loops by the ownership mask:
+  - the Ltag of each tag of the group is taken once at creation, and loading and exporting no longer look them up by name;
+  - write ranges: the bytes occupied by the tags of the group are computed from the `items` of the layout (a Bool occupies one byte), mapped through `io_index` to positions in `IO_buffer`, extended outward to write units, with adjacent write units merged.
+- Loading and exporting are conversions tag by tag, and bits of the same byte belonging to different groups do not affect each other:
 
   ```js
-  // load: IO_buffer -> buffer, only the bits owned by the group
-  for (const i of group.bytes) {
-      const m = group.own[i];
-      buffer[i] = (buffer[i] & ~m) | (IO_buffer[io_index[i]] & m);
-  }
-  // store: buffer -> IO_buffer, before writing the group areas
-  for (const i of group.bytes) {
-      const j = io_index[i];
-      const m = group.own[i];
-      IO_buffer[j] = (IO_buffer[j] & ~m) | (buffer[i] & m);
-  }
+  // load: IO_buffer -> block, one transaction: one detection and one write event
+  block.transaction(() => { for (const tag of group.tags) tag.load(IO_buffer, endian); });
+  // store: block -> IO_buffer, right before the group areas are written
+  for (const tag of group.tags) tag.store(IO_buffer, endian);
   ```
+- An exception thrown by a change event handler during loading is passed out after the transaction commits: the data has been loaded, `fresh` is cleared as usual, and the exception is reported by the scheduler under the Binding (§5.4).
+- Exporting happens right before the ranges of each group are written: writing a range is asynchronous, a scan may run in between, and the groups exported later export the latest values.
 
 - Reading: `request_read()` reads the whole exchange area into `IO_buffer`, sets `fresh` and calls `on_update`; a read in progress is shared and not started again, so requests do not pile up on slow devices. `load(group)` loads, in the input phase of a scan, only the bits of the group by the mask and clears `fresh`; bits outside the group (such as `comm_OK`, maintained by the controller) stay unchanged; it changes only `buffer`, emits no events, and requests no scan.
 - Writing: `request_write(group)` registers a write request, and the same group registered several times within one scan is written only once; `flush_writes()`, in the output phase of a scan, exports the bits of the group into `IO_buffer` by the mask, then calls the driver to write each write range, passing the length of the range to the driver as well. Writes are asynchronous and do not block the scan. Bits within a range that do not belong to the group take the values last read; by the write ownership rule these bytes are also written by the controller, so the data of the actuator is not overwritten.
 - While the driver is not connected, nothing is read or written, and write requests are kept until the `flush_writes()` after the connection recovers.
-- Driver events and the results of asynchronous reads and writes are recorded as states of Binding for rules to read (6.1), written only by Binding:
+- Driver events and the results of asynchronous reads and writes are recorded as states of Binding for rules to read (§6.1), written only by Binding:
 
   | State | Updated when |
   | --- | --- |
@@ -297,10 +215,8 @@ function scan(tick) {
     // 2 evaluate: all rules in one fixed dependency order, each isolated (5.4)
     phase = "evaluate";
     for (const rule of ordered_rules) guarded(() => rule.run(rule.ticker), rule);
-    // 3 publish: detect every change since the last scan, emit change events
+    // 3 publish: the end of this scan, the used tags, binding states and variables save their values
     phase = "publish";
-    for (const data of data_blocks) guarded(() => data.detect(), data);
-    // the end of this scan: tdata, binding states and variables save their values
     take_scan_snapshots();
     // 4 output: send what was requested, start reads on periodic ticks
     phase = "output";
@@ -312,15 +228,15 @@ function scan(tick) {
 }
 ```
 
-1. **Input**: loads the actuators with new data from `IO_buffer` into `buffer`, forming the process image of this scan. Actuators without new data keep their values, and communication anomalies are reflected by `comm_OK` / `work_OK`. The scan of a periodic tick also adds 1 to the count of all running tickers (6.3).
-2. **Evaluate**: runs all rules in the arranged order (section 6), computing aggregated values, trigger bits, timing and interlock actions, and registering write requests.
-3. **Publish**: all Observers compare their snapshots and emit change events. Event handlers only log (6.6).
+1. **Input**: loads the actuators with new data from `IO_buffer` into their blocks, forming the process image of this scan. Actuators without new data keep their values, and communication anomalies are reflected by `comm_OK` / `work_OK`. The scan of a periodic tick also adds 1 to the count of all running tickers (§6.3).
+2. **Evaluate**: runs all rules in the arranged order (§6), computing aggregated values, trigger bits, timing and interlock actions, and registering write requests.
+3. **Publish**: saves the values at the end of this scan (see below). Change events are not emitted here: a block detects and emits right after every write (§3.5), and event handlers only log (§6.6).
 4. **Output**: performs the write requests registered in this scan; the scan of a periodic tick also starts the next round of reads. Reads and writes are asynchronous; when they complete, the `on_update` of Binding requests a scan, by which time this scan has ended.
 
-"The values at the end of the previous scan" are saved after the publish phase: the writes made by rules and event handlers in this scan all count as part of this scan. tdata are saved by their Observers (3.5); Binding states (`connected`, `read_ok`) and registered variables (6.1) are saved in a copy each by the scheduler. From these the scheduler provides uniform values of the previous scan and edge checks:
+"The values at the end of the previous scan" are saved after the publish phase: the writes made by rules and event handlers in this scan all count as part of this scan. The scheduler itself keeps three kinds of values: the block tags used by rules (in `reads`, `writes`, `reads_previous`), Binding states (`connected`, `read_ok`), and registered variables (§6.1); a tag used by no rule has no value of the previous scan, and getting it is an error. From these the scheduler provides uniform values of the previous scan and edge checks:
 
 ```js
-scheduler.previous(owner, name);  // tdata: observer.previous(name); binding state or variable: saved by the scheduler
+scheduler.previous(owner, name);  // tag, binding state or variable: saved by the scheduler
 scheduler.rose(owner, name);      // !previous && current
 scheduler.fell(owner, name);      // previous && !current
 scheduler.changed(owner, name);   // previous differs from current (NaN equals NaN)
@@ -333,19 +249,19 @@ Scans have two kinds of triggers:
 | Trigger | Source | `tick` |
 | --- | --- | --- |
 | Periodic tick | Once every `MAIN_PERIOD` (500 ms) | true |
-| Scan request | `request_scan()`: writes of tdata (including HMI writes through Unit_Map), actuator data read back, Binding state changes and write completions | false |
+| Scan request | `request_scan()`: writes of blocks (including HMI writes through Unit_Map), actuator data read back, Binding state changes and write completions | false |
 
 - `request_scan()` merges with `setImmediate`: several requests in the same round of the event loop cause only one scan; when a periodic tick arrives while a request is pending, the scan of the tick handles it as well.
 - Requests during a scan come from the writes of the scan itself (the periodic tick never calls `request_scan()`, and external callbacks can only run between two scans):
-  - requests in the input and evaluate phases are ignored: the later rules of this scan already read these writes, and their changes are detected as well; derive rules write in every scan, and if they caused scans too, scanning would never stop;
-  - requests from the start of the publish phase on schedule the next scan: the tdata written by event handlers may already have been detected in this publish phase.
+  - requests in the input and evaluate phases are ignored: the later rules of this scan already read these writes; derive rules write in every scan, and if they caused scans too, scanning would never stop;
+  - requests from the start of the publish phase on schedule the next scan: these writes happened after evaluation, and the rules have not yet evaluated them.
 - When `scan()` is called during a scan (e.g. in a rule or an event handler), it does not run nested but is queued after the current scan.
-- Timing advances only when `tick` is true, and scans triggered by requests do not advance it, so the number of scans does not affect timing (6.3).
+- Timing advances only when `tick` is true, and scans triggered by requests do not advance it, so the number of scans does not affect timing (§6.3).
 
 ### 5.3 Timing
 
 - After actuator data is read back, an HMI write, or a connection state change, a scan runs immediately: derived states and interlock actions are completed in this scan, and the resulting commands are sent in the output phase of this scan.
-- Reads are started periodically, and the freshness of actuator data is limited by the read period; the acknowledgement of commands is in `response_code` of the node tdata, obtained by the periodic read.
+- Reads are started periodically, and the freshness of actuator data is limited by the read period; the acknowledgement of commands is in `response_code` of the node block, obtained by the periodic read.
 - Within one period several scans happen because of the read-backs of different actuators, and the begin and end data of a section may be read at different moments; the flow difference evaluation has a confirmation delay, so it is not affected by momentary inconsistencies.
 - The controller neither debounces nor filters the values reported by actuators; signal debouncing is done by the actuators.
 
@@ -353,8 +269,8 @@ Scans have two kinds of triggers:
 
 The controller is a safety system, and one defect must not stop the other interlocks:
 
-- Each rule runs on its own; when it throws, the exception is reported through `on_error(error, source)` injected when the scheduler is created, and the following rules continue; `source` is the failing rule, tdata or Binding;
-- In the publish phase the detection of each tdata (with its event handlers) is isolated on its own;
+- Each rule runs on its own; when it throws, the exception is reported through `on_error(error, source)` injected when the scheduler is created, and the following rules continue; `source` is the failing rule, block or Binding;
+- In the input phase the loading of each Binding is isolated on its own: an exception thrown by a change event handler during loading is reported under that Binding, and the other Bindings load as usual;
 - Failures of asynchronous reads and writes in the output phase are reported through `on_error` as well;
 - The controller wires `on_error` to the log; the scheduler itself does not log, and exceptions are ignored when it is not injected.
 
@@ -362,7 +278,7 @@ The controller is a safety system, and one defect must not stop the other interl
 
 ```js
 const scheduler = new Scheduler({ period: MAIN_PERIOD, on_error });
-scheduler.add_data(tdata);                    // detected in the publish phase, snapshot at the end of a scan
+scheduler.add_data(block);                    // every write to it requests a scan
 scheduler.add_binding(binding, input_group);  // loaded in the input phase, flushed and read in the output phase
 scheduler.add_binding(binding);               // output only: flushed in the output phase, never read nor loaded
 scheduler.add_var(owner, name);               // a shared variable: a property of an object (6.1)
@@ -376,7 +292,7 @@ scheduler.stop();
 - `prepare()` is called once before the first scan: it checks and orders all rules, assigns a ticker to each rule, and obtains a fixed execution table; nothing is registered afterwards.
 - A Binding registered without an input group is write-only, used for the command blocks of actuators: the controller only writes commands to actuators and never reads them back.
 - `scan(tick)` can be called directly, for tests to drive scans.
-- `trace_dependencies()` / `untrace_dependencies()`: the dependency tracing test mode (6.5).
+- `trace_dependencies()` / `untrace_dependencies()`: the dependency tracing test mode (§6.5).
 
 ## 6. Rules (`src/rules.js`)
 
@@ -384,11 +300,11 @@ scheduler.stop();
 
 The objects that rules read and write are uniformly expressed as "dependency keys", i.e. `(owner, name)` pairs:
 
-- when the owner is a TData, the name is a tag name, e.g. `(section.data, 'comm_OK')`;
+- when the owner is an Ldata, the name is a tag name, e.g. `(section.data, 'comm_OK')`;
 - when the owner is an ordinary object such as a section, line or actuator, the name is a property name of that object, e.g. `(section, 'press_SD_trigger')`. Such variables must be registered with `add_var`; a variable must be a property of some object, and a bare variable cannot be a dependency key;
 - when the owner is a Binding, the name is a state name, e.g. `(binding, 'connected')`, read-only.
 
-So TTags, variables (spec 3.6) and Binding states are ordered by the same rules.
+So Tags, variables (spec §3.6) and Binding states are ordered by the same rules.
 
 A combined word shares the same data with its component bits but has a different name, and dependencies built by name cannot see the relation between them. Therefore:
 
@@ -408,7 +324,7 @@ Each rule has a name `name`, used in the startup checks and error reports, e.g. 
 | --- | --- |
 | `reads` | Reads the values of this scan and forms dependencies: the writers are ordered before this rule |
 | `writes` | The keys written |
-| `reads_previous` | Reads the values at the end of the previous scan (`scheduler.previous()`), forming no dependency, used to break cycles (6.4) |
+| `reads_previous` | Reads the values at the end of the previous scan (`scheduler.previous()`), forming no dependency, used to break cycles (§6.4) |
 
 IO started by a rule (`request_write`) is only registered; the actual reads and writes are performed together in the output phase, forming no dependency, and are not declared.
 
@@ -416,10 +332,10 @@ Rules can use two kinds of state:
 
 | State | Use | Values of the previous scan, edge checks |
 | --- | --- | --- |
-| Dependency keys (tags, Binding states, registered variables) | State shared by several rules, taking part in ordering | Provided by the scheduler (5.1) |
+| Dependency keys (tags, Binding states, registered variables) | State shared by several rules, taking part in ordering | Provided by the scheduler (§5.1) |
 | Closure variables | State belonging to one rule only: latches, counts, the "previous value" it needs itself, and the like | Kept by the rule itself |
 
-Closure variables are not registered and take no part in ordering, and only the rule they belong to may read and write them. Timing does not accumulate in closure variables, but uses the ticker assigned by the scheduler (6.3).
+Closure variables are not registered and take no part in ordering, and only the rule they belong to may read and write them. Timing does not accumulate in closure variables, but uses the ticker assigned by the scheduler (§6.3).
 
 ```js
 derive({
@@ -447,7 +363,7 @@ The scheduler assigns a Ticker to each rule and passes it as the argument of `ru
 
 - `start()` starts timing from 0, and calling it while running has no effect, so a condition that keeps holding keeps counting; `stop()` stops and resets; `restart()` stops and then starts;
 - `count` is the number of periodic ticks since the start, `elapsed` is `count * MAIN_PERIOD`;
-- Advancing: in the input phase of a tick scan, the scheduler adds 1 to the `count` of the running tickers (5.1); scans triggered by requests do not advance them. Only running tickers are in the set, so the cost of advancing is proportional to the number of timings in progress;
+- Advancing: in the input phase of a tick scan, the scheduler adds 1 to the `count` of the running tickers (§5.1); scans triggered by requests do not advance them. Only running tickers are in the set, so the cost of advancing is proportional to the number of timings in progress;
 - Rules do not receive the `tick` flag and do not accumulate counts themselves, so the number of scans does not affect timing;
 - Each rule has only one ticker. Logic that needs two independent timings is split into two rules; e.g. the flow difference warning delay and the flow difference alarm delay of a section belong to two derive rules.
 
@@ -504,7 +420,7 @@ Timing semantics:
 - Keys in `reads_previous` form no dependency edges;
 - Several writers of the same key, and rules without dependencies between them, are ordered by declaration order, so the result is repeatable.
 
-Rules are declared after the whole object graph (all tdata, Bindings and variables) is built, because rules of upper levels reference tdata of lower levels, and rules of lower levels also reference tdata of upper levels (e.g. the section's `pre_stop_notice` reads the line's `pump_run`). The declaration order is actuators -> sections -> lines, objects of the same kind in configuration order, then the rule of the action record, and finally the command masking rule of each actuator (14.1).
+Rules are declared after the whole object graph (all blocks, Bindings and variables) is built, because rules of upper levels reference blocks of lower levels, and rules of lower levels also reference blocks of upper levels (e.g. the section's `pre_stop_notice` reads the line's `pump_run`). The declaration order is actuators -> sections -> lines, objects of the same kind in configuration order, then the rule of the action record, and finally the command masking rule of each actuator (§14.1).
 
 E.g. the section's `pre_stop_notice` reads the line's `pump_run`, the line's `pump_run` aggregates the `pump_run` of the sections, and the line's `pre_stop_notice` in turn aggregates the `pre_stop_notice` of the sections. Ordering by level (section -> line) cannot give a correct order; ordering by key gives:
 
@@ -526,7 +442,7 @@ At startup the following errors are checked; when found, all errors are reported
 - A rule declares a variable not registered with `add_var`;
 - A rule has no name, or two rules have the same name.
 
-**Breaking cycles.** The dependencies between rules must be acyclic. When the business really needs a cycle, the rule author picks one place on the cycle and reads the value at the end of the previous scan there, i.e. puts this key into `reads_previous` in the declaration and reads it with `scheduler.previous()` in `run`. This is a unit delay in control systems: this quantity is always one scan period behind the others on the cycle, with fixed semantics. Copying the actuator parameters is an example (7.3).
+**Breaking cycles.** The dependencies between rules must be acyclic. When the business really needs a cycle, the rule author picks one place on the cycle and reads the value at the end of the previous scan there, i.e. puts this key into `reads_previous` in the declaration and reads it with `scheduler.previous()` in `run`. This is a unit delay in control systems: this quantity is always one scan period behind the others on the cycle, with fixed semantics. Copying the actuator parameters is an example (§7.3).
 
 ```js
 derive({
@@ -543,27 +459,27 @@ The scheduler neither picks the breaking point automatically nor evaluates repea
 
 Dependencies rely on explicit declarations, and a missing read key leads to a wrong order without an error. So a check in test mode is provided:
 
-- `trace_dependencies()` of the scheduler sets the access tracing hook of the data layer (3.3) and records the accesses into the actual read and write sets of the "current rule"; after a test runs some scans, a tag actually accessed but not declared is an error; reads of combined words are compared by their expanded component bits (6.1), and a write of a combined word is an error in itself;
-- `scheduler.previous()` takes values from the snapshot and does not go through the accessors, so a tag declared only in `reads_previous` that is read directly is reported as an error too (it reads the value of this scan);
+- `trace_dependencies()` of the scheduler sets the access tracing hook of the data layer (§3.3) and records the accesses into the actual read and write sets of the "current rule"; after a test runs some scans, a tag actually accessed but not declared is an error; reads of combined words are compared by their expanded component bits (§6.1), and a write of a combined word is an error in itself;
+- `scheduler.previous()` takes the values saved by the scheduler and does not go through the accessors, so a tag declared only in `reads_previous` that is read directly is reported as an error too (it reads the value of this scan);
 - The hook can trace only tags; Binding states and variables do not go through accessors and are outside the check;
-- In the immediate detection mode, writes of a rule emit events during the execution of the rule, and accesses in event handlers are recorded under that rule; by the convention of 6.6, event handlers only log and take the values they need from the event arguments, causing no extra accesses;
+- Writes of a rule emit events during the execution of the rule, and accesses in event handlers are recorded under that rule; by the convention of §6.6, event handlers only log and take the values they need from the event arguments, causing no extra accesses;
 - The fixture of the system tests turns the check on in every test and requires no undeclared accesses.
 
 At run time the hook is not set. "Run once and infer the dependencies automatically" was not adopted, because the short-circuiting of `&&`, `||` and conditional branches mean one run cannot see all reads.
 
 ### 6.6 Coding conventions for event handlers
 
-This is a convention of the controller code, not a restriction of TData / TTag: TData / TTag prevent no writes.
+This is a convention of the controller code, not a restriction of Ldata / Ltag: Ldata / Ltag prevent no writes.
 
 - Derived logic such as interlocks and aggregations is written as rules, not in event handlers, so that a scan is based on one set of inputs and the result does not depend on the order of events;
 - Event handlers are for logging; writing tags in handlers is allowed, and such a write requests a scan and is read by the rules in the next scan;
-- Logic that needs asynchronous operations is written as act rules: the rule registers the request, Binding records the completion state and requests a scan, and the follow-up processing is done by the rule reading the completion state (4.5).
+- Logic that needs asynchronous operations is written as act rules: the rule registers the request, Binding records the completion state and requests a scan, and the follow-up processing is done by the rule reading the completion state (§4.5).
 
 ## 7. Actuator processing (`node_proc.js`)
 
 ### 7.1 IO binding
 
-The data and command of each actuator have a Binding each (4.5), kept in `actuator.data_binding` / `actuator.command_binding`.
+The data and command of each actuator have a Binding each (§4.5), kept in `actuator.data_binding` / `actuator.command_binding`.
 
 - data:
   - binds the whole structure, with the remote start `driver_info.data.start`;
@@ -576,7 +492,7 @@ The data and command of each actuator have a Binding each (4.5), kept in `actuat
 ### 7.2 Reads and writes
 
 - Reading the actuator data is done by the scan: the scan of a periodic tick starts the read in its output phase; when the data arrives, the `on_update` of Binding requests a scan, which loads `data_payload` in the input phase and detects the changes in the publish phase.
-- The command Binding is write-only (5.5): rules register writes, which are written out in the output phase of the scan; after a write completes, `on_update` requests a scan. While the driver is not connected, write requests are kept and written out once the connection recovers.
+- The command Binding is write-only (§5.5): rules register writes, which are written out in the output phase of the scan; after a write completes, `on_update` requests a scan. While the driver is not connected, write requests are kept and written out once the connection recovers.
 - Driver events are only logged; the connection and read results are recorded by Binding as `connected` / `read_ok`, for rules to read.
 
 ### 7.3 Rules (`node_rules`)
@@ -585,20 +501,20 @@ The data and command of each actuator have a Binding each (4.5), kept in `actuat
 | --- | --- |
 | `comm_OK` (derive) | `off_delay(connected, delay_protect_time)`: true while connected, and kept for `delay_protect_time` after a disconnection before becoming false; when never connected, kept for the same time after startup |
 | `work_OK` | Set to false when `off_delay(read_ok, delay_protect_time)` is false, i.e. when reads keep failing for longer than `delay_protect_time`; after a successful read, the loading restores the value reported by the actuator |
-| Parameter refresh | The rising edge of `connected` starts timing, and after 2 s the parameters of the node tdata are copied to the command block; a disconnection in between stops it |
+| Parameter refresh | The rising edge of `connected` starts timing, and after 2 s the parameters of the node block are copied to the command block; a disconnection in between stops it |
 | Withdrawing `stop_pumps` (actuators with pumps) | On the falling edge of `pump_run`, clears `stop_pumps` of the command block |
 | Acknowledgement handshake | When `response_code` changes and is not 0, for the bits set to 1 in `response_code`, the command bits of the same name in the command block are cleared bit by bit, and `executing` is cleared |
 | `pressure_SD_F` | On change, clears the corresponding enable or disable command bit |
-| `read_paras` | On the rising edge, copies the parameters of the node tdata to the command block and resets the bit |
-| `write_paras` | On the rising edge, copies the parameters of the command block to the node tdata and registers a write of `data_parameters`; after the write completes (the sequence number of `write_done` is reached), resets the bit |
+| `read_paras` | On the rising edge, copies the parameters of the node block to the command block and resets the bit |
+| `write_paras` | On the rising edge, copies the parameters of the command block to the node block and registers a write of `data_parameters`; after the write completes (the sequence number of `write_done` is reached), resets the bit |
 | `has_commands` (derive) | `commands` is not 0 |
 | Sending | When `commands` changes, or when `response_code` changes and is not 0 (so the actuator sees the acknowledged bits cleared), registers a write of `commands_payload` |
 | Resending | After `has_commands` has held for more than 3 ticks, registers a write again on every tick; timed per actuator |
 
-- `write_paras` writes the parameters of the command block into the node tdata, while the parameter refresh and `read_paras` copy the parameters of the node tdata to the command block, and `comm_OK` / `work_OK` read `delay_protect_time` of the node tdata, which forms a cycle. The latter break this cycle by reading the node parameters at the end of the previous scan (`reads_previous`, 6.4): the node parameters come from the actuator, and being one scan late does no harm; `write_paras`, on the other hand, must read the command parameters of this scan, since the HMI often writes the parameters and then `write_paras` in the same request.
-- Rules write only command bits, never the whole word `commands` (6.1).
+- `write_paras` writes the parameters of the command block into the node block, while the parameter refresh and `read_paras` copy the parameters of the node block to the command block, and `comm_OK` / `work_OK` read `delay_protect_time` of the node block, which forms a cycle. The latter break this cycle by reading the node parameters at the end of the previous scan (`reads_previous`, §6.4): the node parameters come from the actuator, and being one scan late does no harm; `write_paras`, on the other hand, must read the command parameters of this scan, since the HMI often writes the parameters and then `write_paras` in the same request.
+- Rules write only command bits, never the whole word `commands` (§6.1).
 - `pump_run` follows the value reported by the actuator (the actuator already ORs the states of its pumps), and the controller does not compute it separately.
-- State changes are only logged; the aggregation to the section is done by the rules of the section (section 8).
+- State changes are only logged; the aggregation to the section is done by the rules of the section (§8).
 
 ## 8. Section processing (`section_proc.js`)
 
@@ -609,7 +525,7 @@ The data and command of each actuator have a Binding each (4.5), kept in `actuat
 
 ### 8.2 Rules (`section_rules`)
 
-The variables and rules of a section are declared after the object graph is built (6.4). The variables on the section object (not TTags, see spec 3.6) are registered with `add_var`:
+The variables and rules of a section are declared after the object graph is built (§6.4). The variables on the section object (not Tags, see spec §3.6) are registered with `add_var`:
 
 - `press_SD_trigger`: the pressure interlock condition;
 - `countdown_expired`: the countdown has expired;
@@ -628,7 +544,7 @@ derive rules, run in every scan, ordered among themselves by the ordering:
 | `press_SD_trigger` | OR of `pressure_AH_F && pressure_SD_F` over the begin and end actuators, logged on change |
 | Protection state | `protect_prereq = comm_OK && work_OK && !pump_change_F`; `protect_F = protect_prereq && !flow_override && !line.flow_override`, i.e. no protection when either the `flow_override` of this section or that of its line is true; `hangon_AF = !protect_prereq` |
 | `flow_warning_F` / `flow_alarm_F` | One rule each: `on_delay(ticker, trigger bit, *_delay)` |
-| `pre_stop_notice` | `flow_alarm_F && line.pump_run && protect_F`: the pump running condition takes the line's (spec 5.2), while `stop_pumps` and the pressure action still take this section's |
+| `pre_stop_notice` | `flow_alarm_F && line.pump_run && protect_F`: the pump running condition takes the line's (spec §5.2), while `stop_pumps` and the pressure action still take this section's |
 | Countdown | Timing while `pre_stop_notice` is true, `countdown = (action_time - elapsed) / 1000`; when the result is below 0, `countdown` is set to 0 and `countdown_expired` is true |
 | `action_F` | `press_action \|\| flow_action` |
 | `stop_pumps` | `(section auto/man \|\| line auto/man) && pump_run` |
@@ -650,32 +566,32 @@ act rules, run in every scan:
 5. Action record: on a rising edge of either action variable, sets the line's `action_section_ID` to this section's ID and calls `add_action_record()` to create a record; when both happen in the same scan, only one record is created. When both action variables are false and the line's `action_section_ID` equals this section's ID, it is cleared, so as not to erase the action of another section.
 6. Pump commands: on changes of the section's `stop_pumps`, when true sets `command.stop_pumps = node.data.pump_run` for each actuator with pumps; when false sets `stop_pumps = false` and `cancel_stop = true`.
 
-The section layout is planned to change in a future transitional version dedicated to layout adjustments: `press_action` / `flow_action` then become TTags, and the action record will be triggered by their change events instead of checking rising edges in the action record rule.
+The section layout is planned to change in a future transitional version dedicated to layout adjustments: `press_action` / `flow_action` then become Tags, and the action record will be triggered by their change events instead of checking rising edges in the action record rule.
 
 ## 9. Line processing (`line_proc.js`)
 
 - Rules (`line_rules`, derive):
   - `pump_run`, `pre_stop_notice`: the OR of the properties of the same name of the sections;
   - `alarm_F`: the OR of `flow_alarm_F` and `press_alarm_F` of the sections.
-- The line's `flow_override` is only logged and does not overwrite any section; its effect shows as an AND in the `protect_F` rule of the sections (see 8.2).
+- The line's `flow_override` is only logged and does not overwrite any section; its effect shows as an AND in the `protect_F` rule of the sections (see §8.2).
 - act rule: on the falling edge of `pump_run`, clears the line's `autoStopCmd` / `manStopCmd`.
 
 ## 10. Action records (`action_record.js`)
 
-- The CSV columns are the TTags of RECORD except the Word types and `index`.
+- The CSV columns are the Tags of RECORD except the Word types and `index`.
 - At startup:
   1. writes the header when the file does not exist;
   2. reads all rows as a stream and keeps the latest `records_size` with `unshift`, the newest first;
   3. restores the types of the columns.
-- `update_record(fields)`: writes the record fields by TTag name, then calls `add_record()`; the mapping between the fields and the section is not in the action record.
+- `update_record(fields)`: writes the record fields by Tag name, then calls `add_record()`; the mapping between the fields and the section is not in the action record.
 - `add_record()`:
   1. writes the current time;
   2. puts the record at the head of the in-memory list;
   3. sets `index = 0`;
   4. appends a row with `appendFile`.
 - `index` is handled by an act rule (`action_record_rule` of `action_record_proc.js`), declared after the rules of all sections; the rule remembers the record currently shown in a closure:
-  - when `index` differs from the one shown: when -1, clears the time TTags; otherwise loads the corresponding record into data, and when out of range restores the previous value.
-- The record content is filled in by the section's `add_action_record()` through `update_record()` when a pressure action or a flow difference action occurs (see 8.3); `press_action` / `flow_action` take the action variables of the section; the rule for actuator positions is in section 13.
+  - when `index` differs from the one shown: when -1, clears the time Tags; otherwise loads the corresponding record into data, and when out of range restores the previous value.
+- The record content is filled in by the section's `add_action_record()` through `update_record()` when a pressure action or a flow difference action occurs (see §8.3); `press_action` / `flow_action` take the action variables of the section; the rule for actuator positions is in §13.
 
 ## 11. Logging
 
@@ -698,7 +614,9 @@ The section layout is planned to change in a future transitional version dedicat
 
 | Library | Use |
 | --- | --- |
-| `es-modbus` | Modbus TCP client (to the actuators) and server (to the HMI) |
+| `es-modbus` | Modbus TCP client (to the actuators); the server to the HMI uses it through `modbus-emulator` |
+| `modbus-emulator` | Creation of the data blocks and the upward Modbus TCP server (§4.4); forwards the API of `layout-data` (§3.1) |
+| `layout-data` | Data layer (§3), used through `modbus-emulator`; this project does not depend on it directly |
 | `@st-one-io/nodes7` | S7 client (to the actuators) |
 | `yaml` | Configuration and layout parsing (YAML 1.2) |
 | `csv-parser` | Reading the action record CSV |
@@ -724,14 +642,14 @@ Requirements of the spec that the current code does not implement yet:
 
 | Item | Spec requirement | Current code | Locations |
 | --- | --- | --- | --- |
-| ID uniqueness check | The IDs of lines, sections and actuators are all distinct (across types); several tdata of the same object share its ID (spec 4.1) | `config.js` only checks that an actuator `id` is a non-zero number; lines, sections and actuators are each indexed by `ID<id>`, and neither duplicates nor equal IDs across types are reported; a duplicate of the same type silently overwrites the earlier one | `add_conf` in `config.js` |
-| ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec 4.1, 5.5) | `build_runtime` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `build_runtime` in `runtime.js` |
-| Configuration check command | `tlms check` reads and validates the configuration and all layouts (`validate_structure` of 3.2), reports all errors, and does not start the controller (spec 3.6, 5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly; the layout validation already runs at startup (`main.js`) but is not yet wired into the command line | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
-| Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec 5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | `add_action_record` in `section_proc.js` |
+| ID uniqueness check | The IDs of lines, sections and actuators are all distinct (across types); several blocks of the same object share its ID (spec §4.1) | `config.js` only checks that an actuator `id` is a non-zero number; lines, sections and actuators are each indexed by `ID<id>`, and neither duplicates nor equal IDs across types are reported; a duplicate of the same type silently overwrites the earlier one | `add_conf` in `config.js` |
+| ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec §4.1, 5.5) | `build_runtime` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `build_runtime` in `runtime.js` |
+| Configuration check command | `tlms check` reads and validates the configuration and all layouts (§3.2), reports all errors, and does not start the controller (spec §3.6, §5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly; the layout validation already runs at startup, when the emulator registers the layouts (`register_layout`, §4.4), but is not yet wired into the command line | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
+| Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec §5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | `add_action_record` in `section_proc.js` |
 
 ## 14. Command processing
 
-All commands go through the common handshake of 7.3 (send the command word, clear the corresponding bits on receiving `response_code`); some commands also have local processing in the controller:
+All commands go through the common handshake of §7.3 (send the command word, clear the corresponding bits on receiving `response_code`); some commands also have local processing in the controller:
 
 | Command | Command word bit | Controller processing |
 | --- | --- | --- |
@@ -747,11 +665,10 @@ All commands go through the common handshake of 7.3 (send the command word, clea
 
 ### 14.1 Command masking
 
-Commands are masked by the `supported_commands` configured for each actuator (spec 5.1):
+Commands are masked by the `supported_commands` configured for each actuator (spec §5.1):
 
-- Parsing: when `config.js` parses an actuator, it converts the `supported_commands` array into a 16-bit mask word `command_mask`. For each command name of the array, the command word bit k is looked up in the command enumeration (`node_commands`), and bit k of the mask is set to 1; the bit numbers are the register bits (see 3.2).
+- Parsing: when `config.js` parses an actuator, it converts the `supported_commands` array into a 16-bit mask word `command_mask`. For each command name of the array, the command word bit k is looked up in the command enumeration (`node_commands`), and bit k of the mask is set to 1; the bit numbers are the register bits (see §3.2).
 - Validation: a name outside the command enumeration in the array is a configuration error; the program reports it at startup and exits, in the same way as the validation of the actuator `id`.
 - When the field is omitted, all commands are supported, and `command_mask` takes all bits 0-13 of the command enumeration, i.e. `0x3FFF`.
 - Use: `command_mask` is carried into the runtime with the actuator object. Each actuator has a masking rule, which in every scan resets by name, bit by bit, the command bits that are 0 in `command_mask`; bit 14 (`reserve`) and bit 15 (`executing`) are not commands and are not affected.
 - The masking rule is declared after all other rules: several writers of the same command bit are ordered by declaration order, so it comes after the other rules writing command bits; since it writes command bits, it comes before the sending rule that reads `commands`, so unsupported command bits are never sent.
-

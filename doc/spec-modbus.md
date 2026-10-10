@@ -3,7 +3,7 @@
 > English version of [spec-modbus.zh-cn.md](spec-modbus.zh-cn.md), the primary Chinese version. When the two differ, update both.
 >
 > This document is a sub-document of [spec.md](spec.md) and describes all the points the HMI/SCADA sees when it connects to the controller over Modbus TCP.
-> The point table is generated from the layouts in `src/layouts.yaml`; where it differs from the code, the code prevails. The descriptions follow `data_structure2025.xlsx`, and the terms follow section 3 of [spec.md](spec.md).
+> The point table is generated from the layouts in `src/layouts.yaml`; where it differs from the code, the code prevails. The descriptions follow `data_structure2025.xlsx`, and the terms follow [spec.md](spec.md) §3.
 
 ## 1. Access conventions
 
@@ -12,8 +12,7 @@
 - Addresses within a unit all start at 0:
   - line, section and action record units: the data area of the object starts at register 0;
   - actuator units: the node data area starts at register 0, the command block at register 200.
-- Holding registers and input registers have the same content; registers are readable and writable, and the controller processes a write as a change immediately.
-- Addresses of a unit without a data area read as 0 and writes to them are ignored, without an exception response (e.g. registers 73-199 of an actuator unit); a nonexistent unit id is answered with exception code 0x0B.
+- The general access rules of registers and coils (holding registers and input registers have the same content, they are readable and writable, unmapped addresses read as 0 / false and writes to them are ignored, a nonexistent unit id is answered with exception code 0x0B) are in `doc/spec.md` of the modbus-emulator package; this controller processes a write as a change immediately. E.g. registers 73-199 of an actuator unit have no data area.
 - Multi-register values (`Real`, `DInt`, `UDInt`) are big-endian, the high word at the lower address (ABCD order).
 - Bit addresses are written `register.bit`, bit 0 being the lowest bit of the register. E.g. `1.0` is the lowest bit of register 1.
 - Coils: each Bool can also be accessed as a coil, coil address = byte offset x 8 + bit. The tables give the coil addresses within the data area; the command block as a whole starts at register 200, so 3200 must be added to access its coils.

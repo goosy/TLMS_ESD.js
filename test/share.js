@@ -1,13 +1,12 @@
-// Shared helpers for the typed data tests.
+// Shared helpers for the tests.
 // Import this module before any module under src/ so that LOG_LEVEL is set
 // before src/util.js configures log4js.
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 
 process.env.LOG_LEVEL ??= "off";
-// imported after LOG_LEVEL is set: it loads src/util.js through TData
-const { build_structure } = await import("../src/typed_data/structure.js");
-const { TData } = await import("../src/typed_data/TData.js");
+import { get_layout, register_layout } from "modbus-emulator";
+import { layouts_file } from "../src/layouts.js";
 
 export class Exit_Called extends Error {
 	constructor(code) {
@@ -40,11 +39,20 @@ export async function assert_exits_async(t, fn) {
 }
 
 /**
- * Builds a data structure from a fresh copy of items,
- * because build_structure mutates the items it receives.
+ * Registers the layouts of the controller and the layouts of the test file
+ * (by name, from items) in one call, because register_layout succeeds once
+ * per process. A test file calls it once, at its top level.
+ *
+ * @param {Object<string, Object[]>} [layouts] - The items of the layouts of the test file.
  */
-export function make_struct(items, name = "TEST") {
-	return build_structure({ name }, structuredClone(items));
+export function register_test_layouts(layouts = {}) {
+	register_layout([layouts_file, { layouts }]);
+}
+
+/** Registers the layouts of the controller and returns them by name. */
+export function controller_layouts() {
+	register_test_layouts();
+	return Object.fromEntries(["LINE", "SECTION", "NODE", "COMMAND", "RECORD"].map((name) => [name, get_layout(name)]));
 }
 
 /**
@@ -74,15 +82,14 @@ export function create_fake_driver(write_unit = 1, remote_size = 256) {
 }
 
 /**
- * Reads the device of a binding group, loads the group and detects the
- * changes at once, as a scan would do over its phases.
+ * Reads the device of a binding group and loads the group, as the input
+ * phase of a scan would do.
  * @returns {Promise<boolean>} Whether the read succeeded.
  */
 export async function read_group(group) {
 	const { binding } = group;
 	if (!await binding.request_read()) return false;
 	binding.load(group);
-	binding.data.detect();
 	return true;
 }
 
@@ -90,13 +97,4 @@ export async function read_group(group) {
 export function write_group(group) {
 	group.binding.request_write(group);
 	return group.binding.flush_writes();
-}
-
-/** A data block of `size` bytes with one tag named "tag". */
-export function one_tag(type, init_value, offset = 0, size = 4) {
-	return new TData({
-		name: "T",
-		length: size * 8,
-		items: [{ name: "tag", type, offset, init_value }],
-	}, "t");
 }

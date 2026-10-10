@@ -8,7 +8,6 @@ export function line_init(line) {
 		data,
 	} = line;
 	data.ID = ID;
-	data.name = name;
 
 	data.on("change", (tagname, old_value, new_value) => {
 		logger.debug(`line_${name}: ${tagname} ${old_value} => ${new_value}`);

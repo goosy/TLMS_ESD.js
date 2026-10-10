@@ -1,5 +1,5 @@
 // Rules of the scan: declarations, timing and ordering (doc/design.md 6).
-import { TData } from "./typed_data/TData.js";
+import { Ldata } from "modbus-emulator";
 import { Binding } from "./drivers/binding.js";
 
 /** The states of a Binding a rule may read (doc/design.md 4.5). */
@@ -102,18 +102,14 @@ export function act(spec) {
  * 6.1): the Bool tags inside its bytes. Empty for any other tag.
  */
 export function component_bits(layout, name) {
-	const entry = layout.entries.get(name);
-	if (!entry || entry.type === "bool") return [];
-	const bits = [];
-	for (let i = entry.byte; i < entry.byte + entry.size; i++) {
-		for (const tag of layout.tags_at_byte[i]) if (tag.type === "bool") bits.push(tag.name);
-	}
-	return bits;
+	const item = layout.items.find((it) => it.name === name);
+	if (!item || item.type.toLowerCase() === "bool") return [];
+	return [...item.coupling];
 }
 
 /** A readable name of a dependency key owner. */
 function owner_label(owner) {
-	if (owner instanceof TData) return owner.name;
+	if (owner instanceof Ldata) return owner.name;
 	if (owner instanceof Binding) return `${owner.data.name} binding`;
 	return owner?.name ?? "object";
 }
@@ -145,8 +141,8 @@ export function order_rules(rules, is_var) {
 	// mode: "read", "write" or "previous"
 	const check_key = (rule, owner, name, mode) => {
 		const where = `rule ${rule.name}: ${owner_label(owner)}.${name}`;
-		if (owner instanceof TData) {
-			if (!owner.layout.entries.has(name)) errors.push(`${where}: no such tag`);
+		if (owner instanceof Ldata) {
+			if (!owner.get(name)) errors.push(`${where}: no such tag`);
 			else if (mode === "write" && component_bits(owner.layout, name).length > 0) {
 				errors.push(`${where}: a combined word is not written, write its bits`);
 			}
@@ -177,7 +173,7 @@ export function order_rules(rules, is_var) {
 		for (const [owner, name] of rule.reads) {
 			check_key(rule, owner, name, "read");
 			// a combined word is read through its bits
-			const bits = owner instanceof TData ? component_bits(owner.layout, name) : [];
+			const bits = owner instanceof Ldata ? component_bits(owner.layout, name) : [];
 			for (const read_name of [name, ...bits]) {
 				const key = key_of(owner, read_name);
 				// a read-modify-write of its own key is no dependency

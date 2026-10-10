@@ -1,14 +1,36 @@
-import { create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_fake_driver, register_test_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import test, { describe } from "node:test";
-import { TData } from "../src/typed_data/TData.js";
+import { Ldata } from "modbus-emulator";
 import { Binding } from "../src/drivers/binding.js";
 import { Ticker, on_delay, off_delay, derive, act, order_rules, component_bits } from "../src/rules.js";
 
-const block = (name, ...tags) => new TData(make_struct(
-	tags.map((tag, i) => ({ name: tag, type: "UInt", offset: i * 16, length: 16, init_value: 0 })),
-	name,
-), name);
+const uint_items = (tags) => tags.map((tag, i) => ({ name: tag, type: "UInt", offset: i * 16, length: 16, init_value: 0 }));
+// register_layout succeeds once per process: the tag sets of the blocks are registered together
+const TAG_SETS = [
+	["a"],
+	["a", "b"],
+	["a", "b", "c"],
+	["pump_run"],
+	["pump_run", "flow_alarm_F", "pre_stop_notice"],
+	["pump_run", "pre_stop_notice"],
+];
+const WORD = [
+	{
+		name: "word", type: "Word", offset: 0, length: 16, is_combined: true,
+		coupling: [
+			{ name: "b0", type: "Bool", offset: 8, length: 1, init_value: false },
+			{ name: "b1", type: "Bool", offset: 9, length: 1, init_value: false },
+		],
+	},
+	{ name: "n", type: "UInt", offset: 16, length: 16, init_value: 0 },
+];
+register_test_layouts({
+	WORD,
+	...Object.fromEntries(TAG_SETS.map((tags) => [tags.join("_"), uint_items(tags)])),
+});
+
+const block = (name, ...tags) => new Ldata(tags.join("_"), name);
 
 const noop = () => { };
 const names_of = (rules) => rules.map((rule) => rule.name);
@@ -160,16 +182,7 @@ describe("rule order", () => {
 });
 
 /** A block with a combined word "word" of the bits b0, b1, and a UInt "n". */
-const word_block = (name) => new TData(make_struct([
-	{
-		name: "word", type: "Word", offset: 0, length: 16, is_combined: true,
-		coupling: [
-			{ name: "b0", type: "Bool", offset: 8, length: 1, init_value: false },
-			{ name: "b1", type: "Bool", offset: 9, length: 1, init_value: false },
-		],
-	},
-	{ name: "n", type: "UInt", offset: 16, length: 16, init_value: 0 },
-], name), name);
+const word_block = (name) => new Ldata("WORD", name);
 
 describe("combined words (design 6.1)", () => {
 	test("the component bits of a combined word; none for other tags", () => {

@@ -8,20 +8,21 @@
 		"default": "./main.js"
 	},
 	"peerDependencies": {
-		"pm2": "^5.4.2"
+		"pm2": "^7.1.1"
 	},
 	"devDependencies": {
 		"@eslint/js": "10.0.1",
 		"@st-one-io/nodes7": "^1.1.2",
 		"@stylistic/eslint-plugin": "5.10.0",
 		"csv-parser": "^3.2.1",
-		"es-modbus": "^0.3.0-beta.2",
+		"es-modbus": "^0.3.0-beta.4",
 		"eslint": "10.12.0",
 		"globals": "17.13.0",
 		"log4js": "^6.9.1",
+		"modbus-emulator": "^0.1.0",
 		"mri": "^1.2.0",
 		"nodemon": "^3.1.14",
-		"rolldown": "^1.2.12",
+		"rolldown": "^1.2.15",
 		"yaml": "^2.9.1"
 	},
 	"directories": {

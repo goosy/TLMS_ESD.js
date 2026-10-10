@@ -6,8 +6,8 @@ import net from "node:net";
 import test, { describe } from "node:test";
 import { Modbus_Client } from "es-modbus";
 import { S7Endpoint } from "@st-one-io/nodes7";
-import { MTClient, createMTServer } from "../src/drivers/modbusTCP.js";
-import { Unit_Map } from "../src/typed_data/server.js";
+import { Unit_Map, create_tcp_server } from "modbus-emulator";
+import { MTClient } from "../src/drivers/modbusTCP.js";
 import { S7Client } from "../src/drivers/s7.js";
 
 const HOST = "127.0.0.1";
@@ -35,18 +35,29 @@ function next_event(emitter, name) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * A minimal TData stand-in: the server reads buffer and size, and writes
- * through write_register and write_bit; check_count counts the writes.
+ * A minimal Ldata stand-in: the server reads through read_bytes and read_bit,
+ * writes through write_bytes and write_bit, and groups the writes of one
+ * request in a transaction; check_count counts the writes. `buffer` is the
+ * content, for the assertions only.
  */
-function fake_tdata(size) {
+function fake_block(size) {
 	const buffer = Buffer.alloc(size);
 	for (let i = 0; i < size; i++) buffer[i] = i & 0xff;
 	return {
 		buffer,
 		size,
 		check_count: 0,
-		write_register(offset, value) {
-			buffer.writeUInt16BE(value, offset);
+		read_bytes(offset = 0, length = size - offset) {
+			return Buffer.from(buffer.subarray(offset, offset + length));
+		},
+		read_bit(offset, mask) {
+			return (buffer[offset] & mask) !== 0;
+		},
+		transaction(fn) {
+			return fn();
+		},
+		write_bytes(offset, source) {
+			buffer.set(source, offset);
 			this.check_count++;
 		},
 		write_bit(offset, mask, value) {
@@ -61,13 +72,13 @@ function fake_tdata(size) {
  * `command` at byte 400, as run_controller attaches an actuator.
  */
 async function start_server(t) {
-	const data = fake_tdata(32);
-	const command = fake_tdata(16);
+	const data = fake_block(32);
+	const command = fake_block(16);
 	const unit_map = new Unit_Map();
 	unit_map.attach_unit(UNIT, data, 0);
 	unit_map.attach_unit(UNIT, command, 400);
 	const port = await free_port();
-	const server = createMTServer(HOST, port, unit_map);
+	const server = create_tcp_server(unit_map, { host: HOST, port });
 	await server.start();
 	t.after(() => server.stop());
 	return { server, port, data, command };
@@ -154,11 +165,11 @@ describe("MTClient read/write", () => {
 	});
 
 	test("addresses registers beyond 9999", async (t) => {
-		const far = fake_tdata(8);
+		const far = fake_block(8);
 		const unit_map = new Unit_Map();
 		unit_map.attach_unit(UNIT, far, 20000); // register 10000
 		const port = await free_port();
-		const server = createMTServer(HOST, port, unit_map);
+		const server = create_tcp_server(unit_map, { host: HOST, port });
 		await server.start();
 		t.after(() => server.stop());
 		const client = await connect_client(t, port);
@@ -305,100 +316,5 @@ describe("Base_Driver IO state", () => {
 		t.after(() => s7.disconnect());
 		assert.equal(s7.connect, S7Endpoint.prototype.connect);
 		assert.equal(s7.disconnect, S7Endpoint.prototype.disconnect);
-	});
-});
-
-describe("createMTServer", () => {
-	/** Starts a server and an es-modbus client in the HMI role. */
-	async function setup(t) {
-		const ctx = await start_server(t);
-		const hmi = new Modbus_Client(HOST, { port: ctx.port, reconnect_time: 0 });
-		hmi.on("error", () => { });
-		t.after(() => hmi.disconnect());
-		return { ...ctx, hmi };
-	}
-
-	test("serves holding and input registers big-endian", async (t) => {
-		const { hmi, data } = await setup(t);
-
-		assert.deepEqual(await hmi.read([3, 1, 2], UNIT), data.buffer.subarray(2, 6));
-		assert.deepEqual(await hmi.read([4, 1, 2], UNIT), data.buffer.subarray(2, 6));
-	});
-
-	test("routes addresses to the TData attached at them", async (t) => {
-		const { hmi, data, command } = await setup(t);
-
-		// register 200 is byte 400, the start of command
-		assert.deepEqual(await hmi.read([3, 200, 2], UNIT), command.buffer.subarray(0, 4));
-		assert.equal(await hmi.write([16, 201, 1], Buffer.from([0x12, 0x34]), UNIT), true);
-
-		assert.deepEqual(command.buffer.subarray(2, 4), Buffer.from([0x12, 0x34]));
-		assert.equal(command.check_count, 1);
-		assert.equal(data.check_count, 0);
-	});
-
-	test("register writes update the buffer and check the tags", async (t) => {
-		const { hmi, data } = await setup(t);
-
-		assert.equal(await hmi.write([6, 3, 1], 0xbeef, UNIT), true);
-		assert.equal(await hmi.write([16, 4, 2], Buffer.from([1, 2, 3, 4]), UNIT), true);
-
-		assert.equal(data.buffer.readUInt16BE(6), 0xbeef);
-		assert.deepEqual(data.buffer.subarray(8, 12), Buffer.from([1, 2, 3, 4]));
-		assert.equal(data.check_count, 3); // one per register written
-	});
-
-	// The scan request of a write is coalesced with setImmediate
-	// (doc/design.md 3.4): it relies on es-modbus calling the vector for
-	// every register of an FC 16 request within one synchronous call.
-	test("an FC 16 request writes all its registers in one synchronous call", async (t) => {
-		const { hmi, data } = await setup(t);
-		let turn_ended = false;
-		const turns = [];
-		const write_register = data.write_register;
-		data.write_register = function (offset, value) {
-			if (turns.length === 0) setImmediate(() => { turn_ended = true; });
-			turns.push(turn_ended);
-			write_register.call(this, offset, value);
-		};
-
-		assert.equal(await hmi.write([16, 2, 3], Buffer.from([1, 2, 3, 4, 5, 6]), UNIT), true);
-
-		assert.deepEqual(turns, [false, false, false]);
-	});
-
-	test("coil addr maps to bit addr % 8 of byte addr >> 3", async (t) => {
-		const { hmi, data } = await setup(t);
-		data.buffer[1] = 0b0000_0010; // coil 9 set, coils 8 and 10..15 clear
-
-		assert.deepEqual(await hmi.read([1, 8, 8], UNIT), Buffer.from([0b0000_0010]));
-		assert.deepEqual(await hmi.read([2, 9, 1], UNIT), Buffer.from([1]));
-
-		assert.equal(await hmi.write([5, 12, 1], true, UNIT), true);
-		assert.equal(await hmi.write([5, 9, 1], false, UNIT), true);
-		assert.equal(data.buffer[1], 0b0001_0000);
-		assert.equal(data.check_count, 2);
-	});
-
-	test("a unit that is not attached is answered with exception 0x0B", async (t) => {
-		const { hmi } = await setup(t);
-
-		await assert.rejects(hmi.read([3, 0, 1], OTHER_UNIT), { message: "response error: 11" });
-	});
-
-	test("an unmapped address reads as 0 and ignores writes", async (t) => {
-		const { hmi, data, command } = await setup(t);
-		const data_before = Buffer.from(data.buffer);
-		const command_before = Buffer.from(command.buffer);
-
-		// registers 16..199 lie between data (bytes 0..31) and command (from byte 400)
-		assert.deepEqual(await hmi.read([3, 14, 4], UNIT), Buffer.concat([data.buffer.subarray(28, 32), Buffer.alloc(4)]));
-		assert.equal(await hmi.write([16, 100, 2], Buffer.from([1, 2, 3, 4]), UNIT), true);
-		assert.equal(await hmi.write([5, 1000, 1], true, UNIT), true);
-		assert.deepEqual(await hmi.read([1, 1000, 1], UNIT), Buffer.from([0]));
-
-		assert.deepEqual(data.buffer, data_before);
-		assert.deepEqual(command.buffer, command_before);
-		assert.equal(data.check_count + command.check_count, 0);
 	});
 });

@@ -5,8 +5,8 @@ import globals from "globals";
 // ESLint finds code problems; @stylistic normalizes whitespace without
 // re-wrapping lines, so hand-laid tables (e.g. the struct layouts) keep their layout.
 export default [
-	// build outputs
-	{ ignores: ["main.js", "cli.js"] },
+	// build outputs and packages installed from the yalc store
+	{ ignores: ["main.js", "cli.js", ".yalc/"] },
 	js.configs.recommended,
 	stylistic.configs.customize({
 		indent: "tab",
@@ -29,6 +29,10 @@ export default [
 			"@stylistic/indent-binary-ops": "off",
 			// Parameters prefixed with `_` are unused on purpose.
 			"no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
+			// layout-data is used through modbus-emulator, which forwards its API: one copy in the process.
+			"no-restricted-imports": ["error", {
+				paths: [{ name: "layout-data", message: "Import it from modbus-emulator, which forwards the API." }],
+			}],
 			// Use the Number namespace instead of the equivalent globals.
 			"no-restricted-globals": ["error",
 				{ name: "Infinity", message: "Use Number.POSITIVE_INFINITY." },

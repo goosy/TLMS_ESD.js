@@ -1,6 +1,6 @@
 // Behavior tests of the controller as a whole.
 // Inputs are set only through the actuator memory, the HMI (upward server
-// vector) and driver events; outputs are read from the data blocks and the
+// handler) and driver events; outputs are read from the data blocks and the
 // actuator command areas. See test/harness.js and test/fixtures/system/.
 import { create_system, MAIN_PERIOD } from "./harness.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
