@@ -1,4 +1,4 @@
-// Behavior baseline of the controller as a whole (doc/plan-scan.md step 0).
+// Behavior tests of the controller as a whole.
 // Inputs are set only through the actuator memory, the HMI (upward server
 // vector) and driver events; outputs are read from the data blocks and the
 // actuator command areas. See test/harness.js and test/fixtures/system/.

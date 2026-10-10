@@ -73,6 +73,25 @@ export function create_fake_driver(write_unit = 1, remote_size = 256) {
 	};
 }
 
+/**
+ * Reads the device of a binding group, loads the group and detects the
+ * changes at once, as a scan would do over its phases.
+ * @returns {Promise<boolean>} Whether the read succeeded.
+ */
+export async function read_group(group) {
+	const { binding } = group;
+	if (!await binding.request_read()) return false;
+	binding.load(group);
+	binding.data.detect();
+	return true;
+}
+
+/** Writes a binding group to the device at once, as the output phase of a scan. */
+export function write_group(group) {
+	group.binding.request_write(group);
+	return group.binding.flush_writes();
+}
+
 /** A data block of `size` bytes with one tag named "tag". */
 export function one_tag(type, init_value, offset = 0, size = 4) {
 	return new TData({

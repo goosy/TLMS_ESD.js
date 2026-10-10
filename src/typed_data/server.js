@@ -1,4 +1,4 @@
-// The upward Modbus server side of the data layer (doc/design-scan.md 1.1):
+// The upward Modbus server side of the data layer (doc/design.md 3.1):
 // the unit map that places data blocks at unit ids and byte offsets, and the
 // es-modbus server vector that serves them. Writes go through the TData
 // write methods, so that changes are detected or notified by the TData.

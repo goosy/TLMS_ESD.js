@@ -73,7 +73,7 @@ export function section_init(section) {
 }
 
 /**
- * Declares the variables and rules of a section (doc/design-scan.md 7.5).
+ * Declares the variables and rules of a section (doc/design.md 8.2).
  * Called once the whole object graph is built: the rules read the data
  * blocks of the nodes and of the line.
  *
@@ -89,7 +89,7 @@ export function section_rules(section, scheduler) {
 	const add = (spec) => scheduler.add_rule(derive({ ...spec, name: `section ${name} ${spec.name}` }));
 	const add_act = (spec) => scheduler.add_rule(act({ ...spec, name: `section ${name} ${spec.name}` }));
 
-	// variables passed between the rules (doc/design-scan.md 7.5)
+	// variables passed between the rules (doc/design.md 8.2)
 	for (const var_name of ["press_SD_trigger", "countdown_expired", "press_action", "flow_action"]) {
 		section[var_name] = false;
 		scheduler.add_var(section, var_name);

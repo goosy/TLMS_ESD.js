@@ -349,7 +349,7 @@ describe("createMTServer", () => {
 	});
 
 	// The scan request of a write is coalesced with setImmediate
-	// (doc/design-scan.md 3.2): it relies on es-modbus calling the vector for
+	// (doc/design.md 3.4): it relies on es-modbus calling the vector for
 	// every register of an FC 16 request within one synchronous call.
 	test("an FC 16 request writes all its registers in one synchronous call", async (t) => {
 		const { hmi, data } = await setup(t);

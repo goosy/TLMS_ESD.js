@@ -1,5 +1,5 @@
 // Expansion and validation of data block structures (doc/spec.md 3.6,
-// doc/design.md 3.1). Part of the data layer: no dependency on the controller.
+// doc/design.md 3.2). Part of the data layer: no dependency on the controller.
 import { TData } from "./TData.js";
 
 function add_item(data_struct, item, base_offset, name_prefix) {
@@ -119,7 +119,7 @@ function check_init_value(item, type) {
 
 /**
  * Validates a structure built by build_structure against the layout rules
- * (doc/spec.md section 3.6, doc/design.md section 3.1).
+ * (doc/spec.md section 3.6, doc/design.md section 3.2).
  *
  * @param {{name: string, length: number, items: Object[]}} data_struct
  * @returns {string[]} descriptions of all violations, empty when the layout is valid

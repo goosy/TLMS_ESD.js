@@ -1,5 +1,5 @@
 // The data block layouts of the controller, compiled from layouts.yaml
-// (doc/design-scan.md 2.1). The file sits next to this module in the source
+// (doc/design.md 3.2). The file sits next to this module in the source
 // tree and next to main.js in the build output.
 import { join } from "node:path";
 import { compile_layout } from "./typed_data/layout.js";

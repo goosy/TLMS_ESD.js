@@ -1,4 +1,4 @@
-// Codecs of the tag types on a big-endian buffer (doc/design-scan.md 2.3).
+// Codecs of the tag types on a big-endian buffer (doc/design.md 3.3).
 // `byte` is the byte offset of the tag; `mask` is the bit mask of a Bool.
 // Device byte order is handled at the IO boundary, not here.
 

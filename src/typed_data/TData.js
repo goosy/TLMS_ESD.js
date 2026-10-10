@@ -30,7 +30,7 @@ export class TData extends EventEmitter {
 
 	#layout;
 	/**
-	 * The compiled layout of this data block (doc/design-scan.md 2.2), read-only.
+	 * The compiled layout of this data block (doc/design.md 3.2), read-only.
 	 * The tag accessors are defined once on the prototype of layout.Data_Class.
 	 */
 	get layout() { return this.#layout; }
@@ -41,7 +41,7 @@ export class TData extends EventEmitter {
 	#detection;
 	/** called after each write, after its detection in the immediate mode */
 	#on_write;
-	/** The change detector of this data block (doc/design-scan.md 5). */
+	/** The change detector of this data block (doc/design.md 3.5). */
 	get observer() { return this.#observer; }
 
 	/**

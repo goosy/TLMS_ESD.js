@@ -30,7 +30,7 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 		period: MAIN_PERIOD,
 		on_error: (error, source) => logger.error(`scan: ${source?.name ?? "unknown"}: ${error.message}`),
 	});
-	// immediate detection; every write then requests a scan (doc/design-scan.md 3.3)
+	// immediate detection; every write then requests a scan (doc/design.md 3.5)
 	const data_options = { on_write: () => scheduler.request_scan() };
 	const lines = [];
 	const sections = [];
@@ -62,7 +62,7 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 		scheduler.add_data(data);
 		scheduler.add_data(command);
 		// the node data are read on periodic ticks and loaded when they arrive;
-		// the commands are only written (doc/design-scan.md 6.5)
+		// the commands are only written (doc/design.md 5.5)
 		scheduler.add_binding(node.data_binding, node.data_payload);
 		scheduler.add_binding(node.command_binding);
 		nodes.push(node);
@@ -90,12 +90,12 @@ export function build_runtime(controller, { get_drivers, action_record }) {
 	}
 
 	// rules are declared once the whole graph is built, nodes, sections, then
-	// lines (doc/design-scan.md 7.4)
+	// lines (doc/design.md 6.4)
 	for (const node of nodes) node_rules(node, scheduler);
 	for (const section of sections) section_rules(section, scheduler);
 	for (const line of lines) line_rules(line, scheduler);
 	scheduler.add_rule(action_record_rule(action_record));
-	// the command masks after every other writer of the command bits (doc/design.md 12.1)
+	// the command masks after every other writer of the command bits (doc/design.md 14.1)
 	for (const node of nodes) node_mask_rule(node, scheduler);
 	scheduler.prepare();
 

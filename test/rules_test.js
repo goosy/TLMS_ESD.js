@@ -137,7 +137,7 @@ describe("rule order", () => {
 		assert.deepEqual(names_of(order_rules(rules, no_vars)), ["writer 2", "writer 1", "reader"]);
 	});
 
-	test("dependencies across levels are ordered by key, not by level (design-scan 7.4)", () => {
+	test("dependencies across levels are ordered by key, not by level (design 6.4)", () => {
 		const node = block("node", "pump_run");
 		const section = block("section", "pump_run", "flow_alarm_F", "pre_stop_notice");
 		const line = block("line", "pump_run", "pre_stop_notice");
@@ -171,7 +171,7 @@ const word_block = (name) => new TData(make_struct([
 	{ name: "n", type: "UInt", offset: 16, length: 16, init_value: 0 },
 ], name), name);
 
-describe("combined words (design-scan 7.1)", () => {
+describe("combined words (design 6.1)", () => {
 	test("the component bits of a combined word; none for other tags", () => {
 		const d = word_block("W");
 		assert.deepEqual(component_bits(d.layout, "word"), ["b0", "b1"]);
@@ -211,7 +211,7 @@ describe("combined words (design-scan 7.1)", () => {
 	});
 });
 
-describe("rule checks (design-scan 7.4)", () => {
+describe("rule checks (design 6.4)", () => {
 	test("a dependency cycle names its rules and keys", () => {
 		const d = block("D", "a", "b", "c");
 		const rules = [

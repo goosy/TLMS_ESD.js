@@ -19,7 +19,7 @@ export function line_init(line) {
 }
 
 /**
- * Declares the rules of a line (doc/design-scan.md 7.5), once the whole
+ * Declares the rules of a line (doc/design.md 9), once the whole
  * object graph is built: they read the data blocks of the sections.
  *
  * @param {Object} line

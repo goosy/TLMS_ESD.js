@@ -122,7 +122,7 @@ function copy_parameters(from, to) {
 }
 
 /**
- * Declares the rules of an actuator (doc/design-scan.md 7.5): its
+ * Declares the rules of an actuator (doc/design.md 7.3): its
  * connection states and commands. Called once the whole object graph is
  * built.
  *
@@ -135,14 +135,14 @@ export function node_rules(actuator, scheduler) {
 	const keys = (owner, tags) => tags.map((tag) => [owner, tag]);
 	// write_paras copies the command parameters into the node data, and the
 	// rules below copy them back or read them: they read the node parameters
-	// as at the end of the last scan, which breaks the cycle (doc/design-scan.md 7.4)
+	// as at the end of the last scan, which breaks the cycle (doc/design.md 6.4)
 	const previous_parameters = keys(data, parameters_tags);
 	const copy_previous_parameters = () => {
 		for (const tag of parameters_tags) command[tag] = scheduler.previous(data, tag);
 	};
 	const delay_protect_time = () => scheduler.previous(data, "delay_protect_time");
 
-	// connection states (doc/design-scan.md 7.5): comm_OK holds for
+	// connection states (doc/design.md 7.3): comm_OK holds for
 	// delay_protect_time after the connection is lost
 	add(derive, {
 		name: "comm_OK",
@@ -281,7 +281,7 @@ export function node_rules(actuator, scheduler) {
 }
 
 /**
- * Declares the command mask of an actuator (doc/design.md 12.1): the
+ * Declares the command mask of an actuator (doc/design.md 14.1): the
  * unsupported command bits are reset on every scan, before the commands are
  * sent. Declared after all other rules, so that it runs after every other
  * writer of the command bits.

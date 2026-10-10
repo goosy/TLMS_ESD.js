@@ -279,7 +279,7 @@ export async function create_system(t) {
 	};
 
 	runtime = build_runtime(controller, { get_drivers, action_record });
-	// every system test checks the declared dependencies of the rules (doc/design-scan.md 7.6)
+	// every system test checks the declared dependencies of the rules (doc/design.md 6.5)
 	const undeclared = runtime.scheduler.trace_dependencies();
 	t.after(() => {
 		runtime.scheduler.untrace_dependencies();

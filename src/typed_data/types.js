@@ -1,5 +1,5 @@
 // Renders TypeScript declarations of compiled layouts, for editor completion
-// of the tag accessors (doc/design-scan.md 2.4).
+// of the tag accessors (doc/design.md 3.3).
 
 /** `NODE` -> `Node`, `my_block` -> `My_Block` */
 function type_name(layout_name) {

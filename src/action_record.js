@@ -113,7 +113,7 @@ export class Action_Record {
 const TIME_TAGS = ["year", "month", "day", "hour", "minute", "second"];
 
 /**
- * The rule showing the record selected by `index` (doc/design-scan.md 7.5):
+ * The rule showing the record selected by `index` (doc/design.md 10):
  * -1 clears the time, an index out of the records restores the previous one.
  *
  * @param {{data: TData, get: (index: number) => boolean}} action_record

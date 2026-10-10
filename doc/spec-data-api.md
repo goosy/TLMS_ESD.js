@@ -1,6 +1,6 @@
 # 数据对象接口规范（TData / TTag）
 
-> 本文规定 TData 和 TTag 对使用者承诺的编程接口，是 [spec.md](spec.md) 3.6 节的细化。实现见 [design-scan.md](design-scan.md)。
+> 本文规定 TData 和 TTag 对使用者承诺的编程接口，是 [spec.md](spec.md) 3.6 节的细化。实现见 [design.md](design.md) 第 3 节。
 > TData 和 TTag 是面向程序员的通用数据对象：任何时候都可以读写值，值发生变化时发出事件。它们不依赖控制器的调度方式；控制器的扫描式数据流只是使用它们的一种方式，不限制它们的能力。
 
 ## 1. 概念

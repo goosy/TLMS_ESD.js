@@ -1,14 +1,14 @@
-// Rules of the scan: declarations, timing and ordering (doc/design-scan.md 7).
+// Rules of the scan: declarations, timing and ordering (doc/design.md 6).
 import { TData } from "./typed_data/TData.js";
 import { Binding } from "./drivers/binding.js";
 
-/** The states of a Binding a rule may read (doc/design-scan.md 4.4). */
+/** The states of a Binding a rule may read (doc/design.md 4.5). */
 export const BINDING_STATES = ["connected", "read_ok", "write_done"];
 /** The binding states saved at the end of every scan (write_done takes a group). */
 export const PREVIOUS_BINDING_STATES = ["connected", "read_ok"];
 
 /**
- * Counts the periodic ticks since its rule started it (doc/design-scan.md 7.3).
+ * Counts the periodic ticks since its rule started it (doc/design.md 6.3).
  * The scheduler advances every running ticker once per periodic tick.
  */
 export class Ticker {
@@ -83,7 +83,7 @@ function rule_of(kind, { name, reads = [], writes = [], reads_previous = [], run
 
 /**
  * Declares a derive rule: the only writer of its keys, fully determining
- * their values on every scan (doc/design-scan.md 7.2).
+ * their values on every scan (doc/design.md 6.2).
  */
 export function derive(spec) {
 	return rule_of("derive", spec);
@@ -91,15 +91,15 @@ export function derive(spec) {
 
 /**
  * Declares an act rule: its keys may have other writers, and it may write
- * only when a condition holds (doc/design-scan.md 7.2).
+ * only when a condition holds (doc/design.md 6.2).
  */
 export function act(spec) {
 	return rule_of("act", spec);
 }
 
 /**
- * The component bits of a combined word of a layout (doc/design-scan.md
- * 7.1): the Bool tags inside its bytes. Empty for any other tag.
+ * The component bits of a combined word of a layout (doc/design.md
+ * 6.1): the Bool tags inside its bytes. Empty for any other tag.
  */
 export function component_bits(layout, name) {
 	const entry = layout.entries.get(name);
@@ -120,11 +120,11 @@ function owner_label(owner) {
 
 /**
  * Checks the rules and orders them by their dependencies
- * (doc/design-scan.md 7.4): a writer of a key runs before its readers; a
+ * (doc/design.md 6.4): a writer of a key runs before its readers; a
  * read of a key the rule also writes, and a read of the previous value
  * (reads_previous), is no dependency; otherwise the declaration order is kept.
  * A read of a combined word reads all its bits; a combined word must not be
- * written (doc/design-scan.md 7.1).
+ * written (doc/design.md 6.1).
  *
  * @param {Object[]} rules - Rules built by derive() / act(), in declaration order.
  * @param {(owner: Object, name: string) => boolean} is_var - Whether a key of a plain object is a registered variable.
