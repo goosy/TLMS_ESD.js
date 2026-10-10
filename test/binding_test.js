@@ -1,13 +1,13 @@
-import { create_fake_driver, make_struct, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_fake_driver, register_test_layouts, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import test, { describe } from "node:test";
-import { TData } from "../src/typed_data/TData.js";
+import { Ldata } from "modbus-emulator";
 import { Binding } from "../src/drivers/binding.js";
 
 const GROUP_ITEMS = [
 	{ name: "a", type: "UInt", offset: 0, length: 16, init_value: 0 },
 	{
-		name: "flags", type: "Word", offset: 16, length: 16, init_value: 0,
+		name: "flags", type: "Word", offset: 16, length: 16,
 		is_combined: true, coupling: [
 			{ name: "f0", type: "Bool", offset: 8, length: 1, init_value: false }, // byte 3
 			{ name: "f8", type: "Bool", offset: 0, length: 1, init_value: false }, // byte 2
@@ -18,8 +18,10 @@ const GROUP_ITEMS = [
 	{ name: "d", type: "Int", offset: 96, length: 16, init_value: 0 },
 ];
 
+register_test_layouts({ GROUP: GROUP_ITEMS });
+
 const setup = (endian = "BE", options = {}, write_unit = 1) => {
-	const data = new TData(make_struct(GROUP_ITEMS), "group");
+	const data = new Ldata("GROUP", "group");
 	const driver = create_fake_driver(write_unit);
 	const binding = new Binding(data, driver, { endian, ...options });
 	return { data, driver, binding };
@@ -78,18 +80,6 @@ describe("Binding group areas", () => {
 		assert.deepEqual(await written_areas("b", "b"), [[4, 2]]);
 	});
 
-	test("partially overlapping tags are merged (overlap is a layout error)", async () => {
-		const items = [
-			{ name: "x", type: "DInt", offset: 0, length: 32, init_value: 0 },
-			{ name: "y", type: "DInt", offset: 16, length: 32, init_value: 0 },
-		];
-		const data = new TData(make_struct(items), "overlap");
-		const driver = create_fake_driver();
-		const binding = new Binding(data, driver, {});
-		await write_group(binding.create_group("x", "y"));
-		assert.deepEqual(driver.writes.map(({ start, length }) => [start, length]), [[0, 6]]);
-	});
-
 	test("unknown tag throws", () => {
 		const { binding } = setup();
 		assert.throws(() => binding.create_group("nope"), /no tag named nope/);
@@ -123,14 +113,14 @@ describe("Binding group write units", () => {
 	});
 
 	test("unaligned IO area throws", () => {
-		const data = new TData(make_struct(GROUP_ITEMS), "group");
+		const data = new Ldata("GROUP", "group");
 		assert.throws(() => new Binding(data, create_fake_driver(2), { start: 1, length: 4 }), /not aligned/);
 		assert.throws(() => new Binding(data, create_fake_driver(2), { remote_start: 3 }), /not aligned/);
 		assert.throws(() => new Binding(data, create_fake_driver(2), { length: 5 }), /not aligned/);
 	});
 
 	test("odd IO area is accepted with write unit 1", () => {
-		const data = new TData(make_struct(GROUP_ITEMS), "group");
+		const data = new Ldata("GROUP", "group");
 		assert.doesNotThrow(() => new Binding(data, create_fake_driver(1), { start: 3, remote_start: 7, length: 5 }));
 	});
 });

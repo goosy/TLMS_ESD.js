@@ -1,9 +1,10 @@
 import { prepare_controller } from "./init.js";
 import { read_config } from "./config.js";
 import { Action_Record } from "./action_record.js";
-import { MTClient, createMTServer } from "./drivers/modbusTCP.js";
+import { MTClient } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
 import { build_runtime } from "./runtime.js";
+import { create_upward } from "./upward.js";
 import { logger } from "./util.js";
 
 const modbusTCP_clients = {};
@@ -48,30 +49,35 @@ function get_drivers(driver_info) {
 }
 
 async function run_controller(controller) {
-	// every data block requests a scan after a write (doc/design.md 3.5);
-	// the scheduler is created with the runtime, after the action record
-	let runtime;
-	const action_record = new Action_Record("action_records", {
-		on_write: () => runtime?.scheduler.request_scan(),
-	});
+	// the data blocks are built up front by the upward emulator; the runtime
+	// then makes every write to them request a scan (doc/design.md 3.5)
+	let emulator;
+	try {
+		emulator = create_upward(controller);
+	} catch (e) {
+		for (const error of e.errors ?? [e.message]) logger.error(`invalid upward description: ${error}`);
+		process.exit(1);
+	}
+	const action_record = new Action_Record("action_records", emulator.block(controller.record_block));
 	action_record.records_size = controller.records_size ?? 10;
 	action_record.init();
 
+	let runtime;
 	try {
-		runtime = build_runtime(controller, { get_drivers, action_record });
+		runtime = build_runtime(controller, { get_drivers, action_record, emulator });
 	} catch (e) {
 		// a configuration that cannot be built (e.g. an unaligned IO area): refuse to start
 		logger.error(`cannot build controller ${controller.name}: ${e.message}`);
 		process.exit(1);
 	}
 
-	// start modbus TCP server
+	// start the Modbus TCP server
 	// without its upward server the controller is useless: exit and let pm2 restart it
-	const server = createMTServer("0.0.0.0", controller.modbus_server.port, runtime.unit_map);
 	try {
-		await server.start();
+		await emulator.start();
 	} catch (e) {
-		logger.error(`cannot start the Modbus TCP server: ${e.message}`);
+		// an AggregateError names each server that failed
+		for (const error of e.errors ?? [e]) logger.error(`cannot start the Modbus TCP server: ${error.message}`);
 		process.exit(1);
 	}
 

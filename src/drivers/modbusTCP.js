@@ -1,7 +1,6 @@
-import { Modbus_Client, Modbus_Server } from "es-modbus";
+import { Modbus_Client } from "es-modbus";
 import { Base_Driver } from "./base.js";
 import { logger } from "../util.js";
-import { create_vector } from "../typed_data/server.js";
 
 // initial reconnect delay, doubled after each failed attempt up to RECONNECT_MAX
 const RECONNECT_TIME = 5000;
@@ -140,37 +139,4 @@ export class MTClient extends Modbus_Client {
 		}
 		return request.then(resolve, reject);
 	}
-}
-
-/**
- * @param {string} host the ip of the TCP Port - required.
- * @param {number} port the Port number - default 502.
- * @param {Unit_Map} unit_map - The data blocks served per unit id.
- */
-export function createMTServer(host = "0.0.0.0", port = 502, unit_map = {}) {
-	const vector = create_vector(unit_map, { logger });
-	const server = new Modbus_Server(vector, { host, port, unit_id: unit_map.unit_ids });
-	server.on("start", () => {
-		logger.info(`ModbusTCP server listening on modbus://${host}:${port}`);
-	});
-	server.on("socket_error", (err) => {
-		logger.error(`client error: ${err.message}`);
-	});
-	server.on("socket_connect", (socket) => {
-		logger.info(`client connected: ${socket.remoteAddress}:${socket.remotePort}`);
-	});
-	server.on("socket_disconnect", (socket) => {
-		logger.error(`client disconnected: ${socket.remoteAddress}:${socket.remotePort}`);
-	});
-	server.on("error", (err) => {
-		logger.error(`server error: ${err.message}`);
-	});
-	server.on("vector_error", (err) => {
-		logger.error(`server request failed: ${err.message}`);
-	});
-	server.on("stop", () => {
-		logger.error(`ModbusTCP server modbus://${host}:${port} stoped!`);
-	});
-
-	return server;
 }

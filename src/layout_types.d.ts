@@ -1,8 +1,11 @@
-// Generated from src/layouts.yaml by `pnpm gen:types`. Do not edit.
-import type { TData } from "./typed_data/TData.js";
+// Generated from src/layouts.yaml. Do not edit.
+import type { Ldata } from "modbus-emulator";
+//
+// In JavaScript, a JSDoc cast names the type of the value:
+//   const data = /** @type {import("<this file>").LINE_Ldata} */ (new Ldata("LINE", "data_1"));
 
 /** Tags of the LINE data block. */
-export interface Line_Data {
+export interface LINE_Tags {
 	/** status word */
 	status: number;
 	/** Manual hang-up of the whole line */
@@ -24,10 +27,12 @@ export interface Line_Data {
 	/** Flow difference bypass (reserved, not implemented) */
 	flow_diff: number;
 }
-export type Line_TData = TData & Line_Data;
+
+/** A LINE data block, with its tags as properties. */
+export type LINE_Ldata = Ldata & LINE_Tags;
 
 /** Tags of the SECTION data block. */
-export interface Section_Data {
+export interface SECTION_Tags {
 	/** Section ID */
 	ID: number;
 	/** Upward input area, writable by the upward clients (reserved) */
@@ -93,10 +98,12 @@ export interface Section_Data {
 	/** Whether this section has executed stop pump */
 	stop_pumps: boolean;
 }
-export type Section_TData = TData & Section_Data;
+
+/** A SECTION data block, with its tags as properties. */
+export type SECTION_Ldata = Ldata & SECTION_Tags;
 
 /** Tags of the NODE data block. */
-export interface Node_Data {
+export interface NODE_Tags {
 	ID: number;
 	/** the status of the node */
 	status: number;
@@ -242,10 +249,12 @@ export interface Node_Data {
 	/** Pump operation delay */
 	pump_change_delay: number;
 }
-export type Node_TData = TData & Node_Data;
+
+/** A NODE data block, with its tags as properties. */
+export type NODE_Ldata = Ldata & NODE_Tags;
 
 /** Tags of the COMMAND data block. */
-export interface Command_Data {
+export interface COMMAND_Tags {
 	/** No longer used */
 	response_code: number;
 	/** Response timeout setting (milliseconds) No longer used */
@@ -365,10 +374,12 @@ export interface Command_Data {
 	/** Pump operation delay */
 	pump_change_delay: number;
 }
-export type Command_TData = TData & Command_Data;
+
+/** A COMMAND data block, with its tags as properties. */
+export type COMMAND_Ldata = Ldata & COMMAND_Tags;
 
 /** Tags of the RECORD data block. */
-export interface Record_Data {
+export interface RECORD_Tags {
 	/** Year */
 	year: number;
 	/** Month */
@@ -422,4 +433,6 @@ export interface Record_Data {
 	/** The reverse order of the record, 0 for the latest */
 	index: number;
 }
-export type Record_TData = TData & Record_Data;
+
+/** A RECORD data block, with its tags as properties. */
+export type RECORD_Ldata = Ldata & RECORD_Tags;

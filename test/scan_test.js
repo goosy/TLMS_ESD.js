@@ -1,8 +1,8 @@
-import { create_fake_driver, make_struct } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_fake_driver, register_test_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test, { describe } from "node:test";
-import { TData } from "../src/typed_data/TData.js";
+import { Ldata } from "modbus-emulator";
 import { Binding } from "../src/drivers/binding.js";
 import { Scheduler } from "../src/scan.js";
 import { derive, act, on_delay } from "../src/rules.js";
@@ -25,19 +25,18 @@ const WORD = [
 	{ name: "n", type: "UInt", offset: 16, length: 16, init_value: 0 },
 ];
 
+register_test_layouts({ ITEMS, BOOLS, WORD });
+
 /** Lets pending setImmediate callbacks run. */
 const flush = async () => {
 	for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve));
 };
 
-/** A scheduler with deferred data blocks wired to request_scan, as the controller will. */
-function setup({ items = ITEMS, blocks = ["D"], on_error } = {}) {
+/** A scheduler with data blocks; add_data wires their writes to request_scan. */
+function setup({ layout = "ITEMS", blocks = ["D"], on_error } = {}) {
 	const errors = [];
 	const scheduler = new Scheduler({ period: PERIOD, on_error: on_error ?? ((error, source) => errors.push([error, source])) });
-	const data = blocks.map((name) => new TData(make_struct(items, name), name, {
-		detection: "deferred",
-		on_write: () => scheduler.request_scan(),
-	}));
+	const data = blocks.map((name) => new Ldata(layout, name));
 	for (const d of data) scheduler.add_data(d);
 	return { scheduler, data, errors };
 }
@@ -67,7 +66,7 @@ describe("Scheduler setup", () => {
 });
 
 describe("scan phases (design 5.1)", () => {
-	test("input loads fresh data, rules see it, publish emits after the rules, output writes", async () => {
+	test("input loads fresh data, rules see it, changes are emitted at the write, output writes", async () => {
 		const { scheduler, data: [d] } = setup();
 		const driver = create_fake_driver(2);
 		const binding = new Binding(d, driver);
@@ -93,7 +92,7 @@ describe("scan phases (design 5.1)", () => {
 		assert.equal(binding.fresh, true);
 		scheduler.scan(false);
 		assert.equal(binding.fresh, false);
-		assert.deepEqual(order, ["rule sees a=41", "event a=41", "event b=42"]);
+		assert.deepEqual(order, ["event a=41", "rule sees a=41", "event b=42"]);
 		await flush();
 		assert.deepEqual(driver.writes.map(({ start, bytes }) => [start, bytes]), [[2, [0, 42]]]);
 		// reads are started by periodic ticks only
@@ -129,7 +128,7 @@ describe("scan requests (design 5.2)", () => {
 		scheduler.prepare();
 		scheduler.request_scan();
 		scheduler.request_scan();
-		d.a = 1; // deferred: on_write requests a scan too
+		d.a = 1; // the write event requests a scan too
 		assert.equal(runs, 0);
 		await flush();
 		assert.equal(runs, 1);
@@ -153,16 +152,15 @@ describe("scan requests (design 5.2)", () => {
 		assert.equal(runs, 1);
 	});
 
-	test("a write by a change handler schedules the next scan", async () => {
+	test("a write by a change handler is seen by the triggered scan", async () => {
 		const { scheduler, data: [d] } = setup();
 		const seen = [];
 		scheduler.add_rule(act({ name: "see c", reads: [[d, "c"]], run: () => { seen.push(d.c); } }));
 		d.on("change", (name, _old, value) => { if (name === "a") d.c = value * 10; });
 		scheduler.prepare();
-		d.a = 2;
+		d.a = 2; // its handler writes c at once; both writes request one scan
 		await flush();
-		// the first scan publishes a, its handler writes c, the next scan sees it
-		assert.deepEqual(seen, [0, 20]);
+		assert.deepEqual(seen, [20]);
 	});
 
 	test("a periodic tick does a pending triggered scan", async (t) => {
@@ -203,7 +201,7 @@ describe("scan requests (design 5.2)", () => {
 
 describe("timing with tickers (design 6.3)", () => {
 	function setup_delay() {
-		const { scheduler, data: [d] } = setup({ items: BOOLS });
+		const { scheduler, data: [d] } = setup({ layout: "BOOLS" });
 		scheduler.add_rule(derive({
 			name: "delayed out",
 			reads: [[d, "flag"]],
@@ -278,17 +276,26 @@ describe("error isolation (design 5.4)", () => {
 		assert.equal(scheduler.phase, "idle");
 	});
 
-	test("a failing change handler is reported and the other data blocks are still detected", () => {
+	test("a failing change handler is reported with its binding and the other bindings are still loaded", async () => {
 		const { scheduler, data: [d1, d2], errors } = setup({ blocks: ["D1", "D2"] });
 		const events = [];
 		d1.on("change", () => { throw new Error("handler failed"); });
 		d2.on("change", (name) => events.push(name));
+		const bindings = [d1, d2].map((d) => {
+			const driver = create_fake_driver(2);
+			driver.remote.writeUInt16BE(1, 0);
+			const binding = new Binding(d, driver);
+			scheduler.add_binding(binding, binding.create_group("a"));
+			return binding;
+		});
 		scheduler.prepare();
-		d1.a = 1;
-		d2.a = 1;
+		await Promise.all(bindings.map((binding) => binding.request_read()));
 		scheduler.scan(false);
 		assert.deepEqual(events, ["a"]);
-		assert.equal(errors[0][1], d1);
+		assert.equal(errors.length, 1);
+		assert.equal(errors[0][1], bindings[0]);
+		assert.equal(d1.a, 1);
+		assert.equal(bindings[0].fresh, false);
 	});
 
 	test("a failing write is reported with its binding", async () => {
@@ -309,7 +316,7 @@ describe("error isolation (design 5.4)", () => {
 
 describe("previous values and edges (design 5.1)", () => {
 	test("a tag: the value at the end of the last scan", () => {
-		const { scheduler, data: [d] } = setup({ items: BOOLS });
+		const { scheduler, data: [d] } = setup({ layout: "BOOLS" });
 		const seen = [];
 		scheduler.add_rule(act({ name: "edge", reads: [[d, "flag"]], run: () => { seen.push(scheduler.rose(d, "flag")); } }));
 		scheduler.prepare();
@@ -377,7 +384,7 @@ describe("breaking a cycle by reads_previous (design 6.4)", () => {
 
 describe("dependency tracing (design 6.5)", () => {
 	test("a read of a combined word is declared by the word or all its bits", (t) => {
-		const { scheduler, data: [d] } = setup({ items: WORD });
+		const { scheduler, data: [d] } = setup({ layout: "WORD" });
 		scheduler.add_rule(act({ name: "by word", reads: [[d, "word"]], writes: [[d, "n"]], run: () => { d.n = d.word + d.b0; } }));
 		scheduler.add_rule(act({ name: "by bits", reads: [[d, "b0"], [d, "b1"]], run: () => d.word }));
 		scheduler.add_rule(act({ name: "one bit", reads: [[d, "b0"]], run: () => d.word }));

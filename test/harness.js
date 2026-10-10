@@ -1,11 +1,11 @@
 // System test harness: builds the controller runtime from a fixture
 // configuration with fake actuator drivers, drives HMI writes through the
-// upward server vector and advances mocked time.
+// upward server handler and advances mocked time.
 //
 // Tests written against this harness only set inputs (actuator memory,
 // HMI writes, driver events), advance time and check outputs, so that they
 // stay valid while the internal scheduling of the controller changes.
-import "./share.js"; // must be first: sets LOG_LEVEL
+import { register_test_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
@@ -13,11 +13,13 @@ import { join } from "node:path";
 import { read_config, MAIN_PERIOD } from "../src/config.js";
 import { prepare_controller } from "../src/init.js";
 import { build_runtime } from "../src/runtime.js";
-import { create_vector } from "../src/typed_data/server.js";
-import { TData } from "../src/typed_data/TData.js";
-import { LINE, SECTION, NODE, COMMAND, RECORD } from "../src/layouts.js";
+import { get_layout } from "modbus-emulator";
+import { create_upward } from "../src/upward.js";
 
 export { MAIN_PERIOD };
+
+// the layouts are registered once per process, so every system test shares them
+register_test_layouts();
 
 const FIXTURE_DIR = join(import.meta.dirname, "fixtures/system");
 // local byte where the command block is bound to the actuator (node_proc.js)
@@ -36,7 +38,7 @@ const load_config = () => config_loaded ??= read_config(FIXTURE_DIR);
 // ---------------------------------------------------------------------------
 // Device byte order: an oracle independent of src/typed_data
 
-const SWAP_REGISTER = ["LE", "little", "BEBS"];
+const SWAP_REGISTER = ["LE", "BEBS"];
 
 /**
  * Positions in a device-ordered area of the big-endian bytes of a value.
@@ -46,8 +48,7 @@ function io_positions(byte, size, endian) {
 	if (size === 1) return [SWAP_REGISTER.includes(endian) ? byte ^ 1 : byte];
 	if (size === 2) return SWAP_REGISTER.includes(endian) ? [byte + 1, byte] : [byte, byte + 1];
 	switch (endian) {
-		case "LE":
-		case "little": return [byte + 3, byte + 2, byte + 1, byte];
+		case "LE": return [byte + 3, byte + 2, byte + 1, byte];
 		case "BEBS": return [byte + 1, byte, byte + 3, byte + 2];
 		case "LEBS": return [byte + 2, byte + 3, byte, byte + 1];
 		default: return [byte, byte + 1, byte + 2, byte + 3];
@@ -195,7 +196,7 @@ class Device {
 	 * reports `pump_run` as the "or" of the states of its pumps.
 	 */
 	set(name, value) {
-		write_item(this.data_area, this.data_start, 0, this.endian, item_of(NODE, name), value);
+		write_item(this.data_area, this.data_start, 0, this.endian, item_of(get_layout("NODE"), name), value);
 		if (/^pump_run_\d$/.test(name)) {
 			const pumps = ["pump_run_1", "pump_run_2", "pump_run_3", "pump_run_4"];
 			this.set("pump_run", pumps.some((pump) => this.get(pump)));
@@ -203,14 +204,14 @@ class Device {
 	}
 
 	get(name) {
-		return read_item(this.data_area, this.data_start, 0, this.endian, item_of(NODE, name));
+		return read_item(this.data_area, this.data_start, 0, this.endian, item_of(get_layout("NODE"), name));
 	}
 
 	/** Reads a COMMAND item as last written by the controller. */
 	command(name) {
 		return read_item(
 			this.command_area, this.command_start, COMMAND_LOCAL_START,
-			this.endian, item_of(COMMAND, name),
+			this.endian, item_of(get_layout("COMMAND"), name),
 		);
 	}
 
@@ -254,15 +255,15 @@ export async function create_system(t) {
 	};
 
 	const records = [];
-	const record_names = RECORD.items.map((item) => item.name);
+	// like main.js: the data blocks come from the upward emulator
+	const emulator = create_upward(controller, { registered: true });
+	const record_names = get_layout("RECORD").items.map((item) => item.name);
 	// like Action_Record: the fields of a record, without the words and the index
-	const field_names = RECORD.items
+	const field_names = get_layout("RECORD").items
 		.filter((item) => item.type.toLowerCase() !== "word" && item.name !== "index")
 		.map((item) => item.name);
-	// like main.js: its writes request a scan of the runtime built below
-	let runtime;
 	const action_record = {
-		data: new TData(RECORD, "action_records", { on_write: () => runtime?.scheduler.request_scan() }),
+		data: emulator.block(controller.record_block),
 		update_record(fields) {
 			for (const [name, value] of Object.entries(fields)) this.data[name] = value;
 			this.add_record();
@@ -282,7 +283,7 @@ export async function create_system(t) {
 		},
 	};
 
-	runtime = build_runtime(controller, { get_drivers, action_record });
+	const runtime = build_runtime(controller, { get_drivers, action_record, emulator });
 	// every system test checks the declared dependencies of the rules (doc/design.md 6.5)
 	const undeclared = runtime.scheduler.trace_dependencies();
 	t.after(() => {
@@ -293,7 +294,7 @@ export async function create_system(t) {
 	const devices = new Map();
 	for (const node of runtime.nodes) {
 		const device = new Device(node, node.data_driver);
-		for (const item of NODE.items) {
+		for (const item of get_layout("NODE").items) {
 			if (item.coupling?.length && item.type.toLowerCase() === "word") continue;
 			device.set(item.name, item.init_value);
 		}
@@ -304,7 +305,7 @@ export async function create_system(t) {
 	runtime.start();
 	t.after(() => runtime.stop());
 
-	const vector = create_vector(runtime.unit_map);
+	const { handler } = emulator;
 	const unit_ids = controller.modbus_server.unit_id;
 	const find = (list, name) => {
 		const found = list.find((it) => it.name === name);
@@ -315,18 +316,18 @@ export async function create_system(t) {
 	/** Where a data block sits on the upward server. */
 	const target = (name, block = "data") => {
 		const unit_id = unit_ids[name];
-		if (name === "action_records") return { unit_id, struct: RECORD, start: 0 };
-		if (runtime.lines.some((it) => it.name === name)) return { unit_id, struct: LINE, start: 0 };
-		if (runtime.sections.some((it) => it.name === name)) return { unit_id, struct: SECTION, start: 0 };
+		if (name === "action_records") return { unit_id, struct: get_layout("RECORD"), start: 0 };
+		if (runtime.lines.some((it) => it.name === name)) return { unit_id, struct: get_layout("LINE"), start: 0 };
+		if (runtime.sections.some((it) => it.name === name)) return { unit_id, struct: get_layout("SECTION"), start: 0 };
 		return block === "command"
-			? { unit_id, struct: COMMAND, start: COMMAND_UNIT_START }
-			: { unit_id, struct: NODE, start: 0 };
+			? { unit_id, struct: get_layout("COMMAND"), start: COMMAND_UNIT_START }
+			: { unit_id, struct: get_layout("NODE"), start: 0 };
 	};
 
 	const hmi = {
-		vector,
+		handler,
 		/**
-		 * Writes a TTag as an HMI would: a Bool with FC 5 (one coil), any other
+		 * Writes a Tag as an HMI would: a Bool with FC 5 (one coil), any other
 		 * type with FC 16 (consecutive registers in one request).
 		 */
 		set(name, tag, value, block = "data") {
@@ -334,31 +335,31 @@ export async function create_system(t) {
 			const item = item_of(struct, tag);
 			const byte = start + (item.offset >> 3);
 			if (item.type.toLowerCase() === "bool") {
-				vector.set_coil(byte * 8 + item.offset % 8, Boolean(value), unit_id);
+				handler.set_coil(byte * 8 + item.offset % 8, Boolean(value), unit_id);
 				return;
 			}
 			const bytes = encode(item.type.toLowerCase(), value);
 			if (bytes.length === 1) throw new Error("single-byte tags are written through their register");
-			for (let k = 0; k < bytes.length; k += 2) {
-				vector.set_register((byte + k) >> 1, bytes.readUInt16BE(k), unit_id);
-			}
+			const values = [];
+			for (let k = 0; k < bytes.length; k += 2) values.push(bytes.readUInt16BE(k));
+			handler.set_holding_registers(byte >> 1, values, unit_id);
 		},
 		/** Writes raw registers as one FC 16 request. */
 		write_registers(name, addr, values, block = "data") {
 			const { unit_id, start } = target(name, block);
-			values.forEach((value, k) => vector.set_register((start >> 1) + addr + k, value, unit_id));
+			handler.set_holding_registers((start >> 1) + addr, values, unit_id);
 		},
 		get(name, tag, block = "data") {
 			const { unit_id, struct, start } = target(name, block);
 			const item = item_of(struct, tag);
 			const byte = start + (item.offset >> 3);
 			if (item.type.toLowerCase() === "bool") {
-				return Boolean(vector.get_coil(byte * 8 + item.offset % 8, unit_id));
+				return Boolean(handler.get_coil(byte * 8 + item.offset % 8, unit_id));
 			}
 			const size = CODEC[item.type.toLowerCase()][0];
 			const bytes = Buffer.alloc(Math.max(size, 2));
 			for (let k = 0; k < bytes.length; k += 2) {
-				bytes.writeUInt16BE(vector.get_holding_register((byte + k) >> 1, unit_id), k);
+				bytes.writeUInt16BE(handler.get_holding_register((byte + k) >> 1, unit_id), k);
 			}
 			return decode(item.type.toLowerCase(), bytes);
 		},

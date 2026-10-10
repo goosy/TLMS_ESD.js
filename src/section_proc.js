@@ -64,7 +64,6 @@ export function section_init(section) {
 		}
 	});
 	data.ID = ID;
-	data.name = name;
 	data.flow_diff_WH = flow_diff_WH;
 	data.flow_diff_WH_delay = flow_diff_WH_delay;
 	data.flow_diff_AH = flow_diff_AH;
@@ -262,7 +261,7 @@ export function section_rules(section, scheduler) {
 		writes: [
 			[line_data, "action_section_ID"],
 			// the record tags, the status word through its bits
-			...[...record_data.layout.entries.keys()]
+			...record_data.layout.items.map((item) => item.name)
 				.filter((tag) => component_bits(record_data.layout, tag).length === 0)
 				.map((tag) => [record_data, tag]),
 		],

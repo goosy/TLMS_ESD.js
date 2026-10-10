@@ -1,6 +1,5 @@
 // The scan scheduler of the controller (doc/design.md 5).
-import { TData } from "./typed_data/TData.js";
-import { set_access_tracer } from "./typed_data/layout.js";
+import { Ldata } from "modbus-emulator";
 import { Binding } from "./drivers/binding.js";
 import { Ticker, order_rules, component_bits, PREVIOUS_BINDING_STATES } from "./rules.js";
 
@@ -9,7 +8,6 @@ const same_value = (a, b) => a === b || (Number.isNaN(a) && Number.isNaN(b));
 export class Scheduler {
 	#period;
 	#on_error;
-	#data_blocks = [];
 	#bindings = [];
 	#vars = new Map();
 	#rules = [];
@@ -20,8 +18,13 @@ export class Scheduler {
 	#interval = null;
 	#binding_previous = new Map();
 	#var_previous = new Map();
+	// the tags of data blocks that the rules use, and their values at the end of the last scan
+	#tag_names = new Map();
+	#tag_previous = new Map();
 	// dependency tracing (doc/design.md 6.5)
 	#current_rule = null;
+	/** The class-level `access` listener of the dependency tracing. */
+	#tracer = null;
 
 	/**
 	 * @param {Object} options
@@ -42,10 +45,10 @@ export class Scheduler {
 		if (this.#ordered) throw new Error("the scheduler is prepared: nothing more can be added");
 	}
 
-	/** A data block detected in the publish phase, snapshot at the end of a scan. */
-	add_data(tdata) {
+	/** A data block; every write to it requests a scan. */
+	add_data(block) {
 		this.#check_open();
-		this.#data_blocks.push(tdata);
+		block.on("write", () => this.request_scan());
 	}
 
 	/**
@@ -81,6 +84,14 @@ export class Scheduler {
 		this.#check_open();
 		const ordered = order_rules(this.#rules, (owner, name) => this.#vars.get(owner)?.has(name) ?? false);
 		this.#ordered = ordered.map((rule) => ({ rule, ticker: new Ticker(this.#running_tickers, this.#period) }));
+		// the keys a rule reads, writes or declares in reads_previous have a previous value
+		for (const { reads, writes, reads_previous } of this.#rules) {
+			for (const [owner, name] of [...reads, ...writes, ...reads_previous]) {
+				if (!(owner instanceof Ldata)) continue;
+				if (!this.#tag_names.has(owner)) this.#tag_names.set(owner, new Set());
+				this.#tag_names.get(owner).add(name);
+			}
+		}
 		this.#take_snapshots();
 	}
 
@@ -106,7 +117,7 @@ export class Scheduler {
 	/**
 	 * Requests a triggered scan, coalesced with setImmediate (6.2). A request
 	 * made in the input or evaluate phase is ignored: the write behind it is
-	 * detected in this scan; a later one schedules the next scan.
+	 * seen by this scan; a later one schedules the next scan.
 	 */
 	request_scan() {
 		if (this.#phase === "input" || this.#phase === "evaluate") return;
@@ -165,7 +176,6 @@ export class Scheduler {
 			this.#current_rule = null;
 
 			this.#phase = "publish";
-			for (const data of this.#data_blocks) this.#guarded(() => data.detect(), data);
 			this.#take_snapshots();
 
 			this.#phase = "output";
@@ -181,7 +191,11 @@ export class Scheduler {
 	}
 
 	#take_snapshots() {
-		for (const data of this.#data_blocks) data.observer.take_scan_snapshot();
+		for (const [data, names] of this.#tag_names) {
+			const values = new Map();
+			for (const name of names) values.set(name, data[name]);
+			this.#tag_previous.set(data, values);
+		}
 		for (const { binding } of this.#bindings) {
 			const states = {};
 			for (const name of PREVIOUS_BINDING_STATES) states[name] = binding[name];
@@ -200,7 +214,11 @@ export class Scheduler {
 	 * @throws {Error} For any other key.
 	 */
 	previous(owner, name) {
-		if (owner instanceof TData) return owner.observer.previous(name);
+		if (owner instanceof Ldata) {
+			const values = this.#tag_previous.get(owner);
+			if (!values?.has(name)) throw new Error(`${owner.name}.${name}: not used by any rule`);
+			return values.get(name);
+		}
 		if (owner instanceof Binding) {
 			if (!PREVIOUS_BINDING_STATES.includes(name)) throw new Error(`binding state ${name} has no previous value`);
 			return this.#binding_previous.get(owner)?.[name] ?? owner[name];
@@ -235,27 +253,32 @@ export class Scheduler {
 			for (const [owner, name] of rule.reads) {
 				add(keys.read, owner, name);
 				// a combined word is read through its bits (doc/design.md 6.1)
-				if (owner instanceof TData) for (const bit of component_bits(owner.layout, name)) add(keys.read, owner, bit);
+				if (owner instanceof Ldata) for (const bit of component_bits(owner.layout, name)) add(keys.read, owner, bit);
 			}
 			declared.set(rule, keys);
 		}
 		const undeclared = [];
-		set_access_tracer((tdata, name, mode) => {
+		this.untrace_dependencies();
+		this.#tracer = (block, mode, tags) => {
 			const rule = this.#current_rule;
 			if (!rule) return;
-			const names = declared.get(rule)[mode].get(tdata);
-			if (names?.has(name)) return;
-			// a read of a combined word whose bits are all declared
-			const bits = component_bits(tdata.layout, name);
-			if (mode === "read" && bits.length > 0 && bits.every((bit) => names?.has(bit))) return;
-			const line = `${rule.name}: ${tdata.name}.${name} ${mode}`;
-			if (!undeclared.includes(line)) undeclared.push(line);
-		});
+			const names = declared.get(rule)[mode].get(block);
+			for (const { name } of tags) {
+				if (names?.has(name)) continue;
+				// a read of a combined word whose bits are all declared
+				const bits = component_bits(block.layout, name);
+				if (mode === "read" && bits.length > 0 && bits.every((bit) => names?.has(bit))) continue;
+				const line = `${rule.name}: ${block.name}.${name} ${mode}`;
+				if (!undeclared.includes(line)) undeclared.push(line);
+			}
+		};
+		Ldata.on_access(this.#tracer);
 		return undeclared;
 	}
 
 	/** Ends the test mode. */
 	untrace_dependencies() {
-		set_access_tracer(null);
+		if (this.#tracer) Ldata.off_access(this.#tracer);
+		this.#tracer = null;
 	}
 }

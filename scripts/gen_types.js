@@ -2,17 +2,18 @@
 // Run: pnpm gen:types
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { render_types } from "../src/typed_data/types.js";
+import { get_layout, register_layout, render_types } from "modbus-emulator";
+import { layouts_file } from "../src/layouts.js";
 
 export const types_file = join(import.meta.dirname, "../src/layout_types.d.ts");
 
 /** The declarations of the controller layouts. */
 export async function controller_types() {
-	const structs = await import("../src/layouts.js");
-	const { LINE, SECTION, NODE, COMMAND, RECORD } = structs;
+	register_layout(layouts_file);
+	const names = ["LINE", "SECTION", "NODE", "COMMAND", "RECORD"];
 	return render_types(
-		{ LINE, SECTION, NODE, COMMAND, RECORD },
-		{ source: "src/layouts.yaml", tdata_module: "./typed_data/TData.js" },
+		Object.fromEntries(names.map((name) => [name, get_layout(name)])),
+		{ source: "src/layouts.yaml", ldata_module: "modbus-emulator" },
 	);
 }
 

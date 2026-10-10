@@ -17,8 +17,6 @@ export function node_init(actuator) {
 		has_pumps,
 		data_driver, command_driver, driver_info,
 	} = actuator;
-	command.name = `${name}_CMD`;
-	data.name = name;
 
 	const endian = driver_info.endian;
 
@@ -116,7 +114,7 @@ export function node_init(actuator) {
 	command_driver.start();
 }
 
-/** Copies the parameter tags from one tdata to another. */
+/** Copies the parameter tags from one block to another. */
 function copy_parameters(from, to) {
 	for (const tag of parameters_tags) to[tag] = from[tag];
 }

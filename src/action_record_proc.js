@@ -6,12 +6,12 @@ const TIME_TAGS = ["year", "month", "day", "hour", "minute", "second"];
  * The rule showing the record selected by `index` (doc/design.md 10):
  * -1 clears the time, an index out of the records restores the previous one.
  *
- * @param {{data: import("./typed_data/TData.js").TData, get: (index: number) => boolean}} action_record
+ * @param {{data: import("modbus-emulator").Ldata, get: (index: number) => boolean}} action_record
  * @return {Object} An act rule.
  */
 export function action_record_rule(action_record) {
 	const { data } = action_record;
-	const tags = [...data.layout.entries.keys()];
+	const tags = data.layout.items.map((item) => item.name);
 	let shown;
 	return act({
 		name: `${data.name} index`,

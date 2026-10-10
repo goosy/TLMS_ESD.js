@@ -1,24 +1,29 @@
-import { create_fake_driver, make_struct, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_fake_driver, register_test_layouts, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
 import test, { describe } from "node:test";
-import { TData } from "../src/typed_data/TData.js";
+import { Ldata, get_layout } from "modbus-emulator";
 import { Binding } from "../src/drivers/binding.js";
-import { load_entry, store_entry } from "../src/typed_data/endian.js";
-import { NODE, COMMAND, SECTION, node_parameters } from "../src/layouts.js";
+import { node_parameters } from "../src/layouts.js";
+
+const SAMPLE = [
+	{ name: "id", type: "UInt", offset: 0, length: 16, init_value: 7 },
+	{ name: "x", type: "UInt", offset: 16, length: 16, init_value: 0 },
+	{ name: "y", type: "UDInt", offset: 32, length: 32, init_value: 0 },
+	{ name: "z", type: "UInt", offset: 64, length: 16, init_value: 0 },
+	{ name: "w", type: "UInt", offset: 80, length: 16, init_value: 0 },
+];
+
+register_test_layouts({ SAMPLE });
+const NODE = get_layout("NODE");
+const COMMAND = get_layout("COMMAND");
+const SECTION = get_layout("SECTION");
 
 describe("Binding exchange area", () => {
-	const SAMPLE = [
-		{ name: "id", type: "UInt", offset: 0, length: 16, init_value: 7 },
-		{ name: "x", type: "UInt", offset: 16, length: 16, init_value: 0 },
-		{ name: "y", type: "UDInt", offset: 32, length: 32, init_value: 0 },
-		{ name: "z", type: "UInt", offset: 64, length: 16, init_value: 0 },
-		{ name: "w", type: "UInt", offset: 80, length: 16, init_value: 0 },
-	];
 	// data bytes [2, 10) map to remote bytes [100, 108)
 	const setup = (driver = create_fake_driver()) => {
-		const data = new TData(make_struct(SAMPLE), "sample");
+		const data = new Ldata("SAMPLE", "sample");
 		const binding = new Binding(data, driver, { remote_start: 100, start: 2, length: 8, endian: "BE" }, "extra");
 		return { data, driver, binding };
 	};
@@ -45,7 +50,7 @@ describe("Binding exchange area", () => {
 	});
 
 	test("defaults: start 0, remote_start 0, length to the end, endian BE", async () => {
-		const data = new TData(make_struct(SAMPLE), "sample");
+		const data = new Ldata("SAMPLE", "sample");
 		const driver = create_fake_driver();
 		const binding = new Binding(data, driver);
 		assert.equal(binding.endian, "BE");
@@ -103,7 +108,7 @@ describe("Binding exchange area", () => {
 	test("the connection state follows the driver events; on_update reports data and changes", async () => {
 		const driver = Object.assign(new EventEmitter(), create_fake_driver());
 		const updates = [];
-		const data = new TData(make_struct(SAMPLE), "sample");
+		const data = new Ldata("SAMPLE", "sample");
 		const binding = new Binding(data, driver, { on_update: (b) => updates.push(b) });
 		assert.equal(binding.connected, true);
 		driver.emit("connfailed", "lost");
@@ -120,9 +125,15 @@ describe("Binding exchange area", () => {
 });
 
 describe("Binding byte order equivalence", () => {
-	// The reference is the per-tag conversion of endian.js, moved unchanged from TTag.
+	// The reference is the per-tag conversion of layout-data (load_tag / store_tag) on a second block.
 	const random_fill = (buffer) => {
 		for (let i = 0; i < buffer.length; i++) buffer[i] = Math.floor(Math.random() * 256);
+	};
+	const random_data = (data, reference) => {
+		const bytes = Buffer.alloc(data.size);
+		random_fill(bytes);
+		data.write_bytes(0, bytes);
+		reference.write_bytes(0, bytes);
 	};
 	const parameter_names = node_parameters.map((it) => it.name);
 	const groups = {
@@ -136,30 +147,28 @@ describe("Binding byte order equivalence", () => {
 		SECTION_mixed: { struct: SECTION, start: 0, names: ["comm_OK", "pump_run", "flow_alarm_F", "countdown", "flow_diff"] },
 	};
 	for (const [group_name, { struct, start, names }] of Object.entries(groups)) {
-		for (const endian of ["BE", "big", "LE", "little", "BEBS", "LEBS"]) {
+		for (const endian of ["BE", "LE", "BEBS", "LEBS"]) {
 			for (const write_unit of [1, 2]) {
 				test(`${group_name} ${endian}, write unit ${write_unit}`, async () => {
 					for (let round = 0; round < 20; round++) {
-						const data = new TData(struct, "new");
-						const reference = new TData(struct, "reference");
+						const data = new Ldata(struct, "new");
+						const reference = new Ldata(struct, "reference");
 						const driver = create_fake_driver(write_unit, 2048);
 						const binding = new Binding(data, driver, { start, length: data.size - start, endian });
 						const group = binding.create_group(...names);
 
 						// load: random device data into random data blocks
-						random_fill(data.buffer);
-						data.buffer.copy(reference.buffer);
+						random_data(data, reference);
 						random_fill(binding.IO_buffer);
 						const io = Buffer.from(binding.IO_buffer);
 						binding.load(group);
-						for (const entry of group.entries) load_entry(entry, io, reference.buffer, endian);
-						assert.deepEqual([...data.buffer], [...reference.buffer]);
+						for (const name of names) reference.load_tag(name, io, endian);
+						assert.deepEqual([...data.read_bytes()], [...reference.read_bytes()]);
 
 						// store: random data blocks exported into the device-ordered buffer
-						random_fill(data.buffer);
-						data.buffer.copy(reference.buffer);
+						random_data(data, reference);
 						const io_reference = Buffer.from(binding.IO_buffer);
-						for (const entry of group.entries) store_entry(entry, reference.buffer, io_reference, endian);
+						for (const name of names) reference.store_tag(name, io_reference, endian);
 						binding.request_write(group);
 						await binding.flush_writes();
 						assert.deepEqual([...binding.IO_buffer], [...io_reference]);

@@ -1,55 +1,60 @@
 import { access, writeFile, appendFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import csv_parser from "csv-parser";
-import { TData } from "./typed_data/TData.js";
-import { RECORD } from "./layouts.js";
 import { logger } from "./util.js";
 
-const HEADERS = RECORD.items
-	.filter((field) => field.type.toLowerCase() !== "word" && field.name !== "index")
-	.map((field) => field.name);
 const boolean_fields = ["press_action", "flow_action", "node1_pump_run", "node2_pump_run", "node3_pump_run", "node4_pump_run"];
-const number_fields = HEADERS.filter((field) => !boolean_fields.includes(field));
-function convertTypes(row) {
-	for (const field of number_fields) {
-		const value = row[field];
-		row[field] = value !== "" && value !== undefined ? Number.parseFloat(value) : null;
-	}
-	for (const field of boolean_fields) {
-		row[field] = row[field] === "true";
+
+/** The fields of a record: the tags of its layout, except the time words and the index. */
+function headers_of(data) {
+	return data.layout.items
+		.filter((field) => field.type.toLowerCase() !== "word" && field.name !== "index")
+		.map((field) => field.name);
+}
+
+function convertTypes(row, headers) {
+	for (const field of headers) {
+		if (boolean_fields.includes(field)) {
+			row[field] = row[field] === "true";
+		} else {
+			const value = row[field];
+			row[field] = value !== "" && value !== undefined ? Number.parseFloat(value) : null;
+		}
 	}
 }
 
-function set_current_time(tdata) {
+function set_current_time(block) {
 	const d = new Date();
-	tdata.year = d.getFullYear();
-	tdata.month = d.getMonth() + 1;
-	tdata.day = d.getDate();
-	tdata.hour = d.getHours();
-	tdata.minute = d.getMinutes();
-	tdata.second = d.getSeconds();
+	block.year = d.getFullYear();
+	block.month = d.getMonth() + 1;
+	block.day = d.getDate();
+	block.hour = d.getHours();
+	block.minute = d.getMinutes();
+	block.second = d.getSeconds();
 }
 
 export class Action_Record {
 	records = [];
 	records_size = 10;
 	data;
+	headers;
 	name;
 	file;
 	/**
 	 * @param {string} name - The name of the record, and of its CSV file.
-	 * @param {Object} [data_options] - Options of the record data block (detection, on_write).
+	 * @param {import("modbus-emulator").Ldata} data - The data block of the record, from the upward emulator.
 	 */
-	constructor(name, data_options) {
+	constructor(name, data) {
 		this.name = name;
 		this.file = `${name}.csv`;
-		this.data = new TData(RECORD, name, data_options);
+		this.data = data;
+		this.headers = headers_of(data);
 	}
 
 	get(index) {
 		const record = this.records[index];
 		if (!record) return false;
-		for (const key of HEADERS) {
+		for (const key of this.headers) {
 			this.data[key] = record[key];
 		}
 		return true;
@@ -61,7 +66,7 @@ export class Action_Record {
 			await access(this.file);
 			logger.info(`action record file is set to ${this.file}.`);
 		} catch {
-			await writeFile(this.file, `${HEADERS.join(",")}\n`);
+			await writeFile(this.file, `${this.headers.join(",")}\n`);
 			logger.info(`Empty action record file ${this.file} is created and used.`);
 		}
 		await this.read_records_from_csv();
@@ -88,7 +93,7 @@ export class Action_Record {
 					if (records.unshift(row) > this.records_size) records.pop();
 				})
 				.on("end", () => {
-					records.forEach(convertTypes);
+					records.forEach((row) => convertTypes(row, this.headers));
 					resolve(true);
 				});
 		});
@@ -109,14 +114,14 @@ export class Action_Record {
 	async add_record() {
 		set_current_time(this.data);
 		const record = {};
-		for (const key of HEADERS) {
+		for (const key of this.headers) {
 			record[key] = this.data[key];
 		}
 		// add record to records and ensure records' length does not exceed records_size
 		if (this.records.unshift(record) > this.records_size) this.records.pop();
 		this.data.index = 0;
 		// append record to csv
-		const row = HEADERS.map((key) => this.data[key]).join(",");
+		const row = this.headers.map((key) => this.data[key]).join(",");
 		await appendFile(this.file, `${row}\n`, { flags: "a" });
 	}
 }

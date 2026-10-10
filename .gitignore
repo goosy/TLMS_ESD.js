@@ -6,6 +6,8 @@ npm-debug.log*
 
 # Dependency directories
 node_modules/
+.yalc/
+yalc.lock
 
 # dotenv environment variables file
 .env

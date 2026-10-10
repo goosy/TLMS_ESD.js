@@ -1,25 +1,18 @@
-// The data block layouts of the controller, compiled from layouts.yaml
-// (doc/design.md 3.2). The file sits next to this module in the source
-// tree and next to main.js in the build output.
+// The layout sources of the controller (doc/design.md 3.2). The file sits
+// next to this module in the source tree and next to main.js in the build
+// output. The layouts are registered by modbus-emulator when the upward
+// emulator is created (src/upward.js); this module only reads the fragments
+// that the code needs by name before that.
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { compile_layout } from "./typed_data/layout.js";
-import { logger } from "./util.js";
+import { parse } from "yaml";
 
 export const layouts_file = join(import.meta.dirname, "layouts.yaml");
 
-let compiled;
-try {
-	compiled = compile_layout(layouts_file);
-} catch (e) {
-	// an invalid layout is a program error: refuse to start (doc/spec.md 3.6)
-	for (const error of e.errors ?? [e.message]) logger.error(`invalid layout: ${error}`);
-	process.exit(1);
-}
-
-export const { LINE, SECTION, NODE, COMMAND, RECORD } = compiled.layouts;
+const description = parse(readFileSync(layouts_file, "utf8"), { version: "1.2" });
 
 /** The items of the node parameter block, with offsets relative to the block. */
-export const node_parameters = compiled.fragments.node_parameters;
+export const node_parameters = description.node_parameters;
 
 /** The bits of a command word, with offsets relative to the word. */
-export const node_commands = compiled.fragments.node_commands;
+export const node_commands = description.node_commands;
