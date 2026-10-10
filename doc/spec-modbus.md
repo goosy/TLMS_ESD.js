@@ -10,14 +10,14 @@
 - The controller offers the Modbus TCP service on `controller.modbus_server.port` (listening on `0.0.0.0`).
 - Each line, each section, each actuator and the action record take one unit id each: the unit id of a line, section or actuator is its ID (see [spec.md](spec.md) 4.1), and the action record is fixed at unit id 0.
 - Addresses within a unit all start at 0:
-  - line, section and action record units: the data block starts at register 0;
-  - actuator units: the node data block starts at register 0, the command block at register 200.
+  - line, section and action record units: the data area of the object starts at register 0;
+  - actuator units: the node data area starts at register 0, the command block at register 200.
 - Holding registers and input registers have the same content; registers are readable and writable, and the controller processes a write as a change immediately.
-- Addresses of a unit without a data block read as 0 and writes to them are ignored, without an exception response (e.g. registers 73-199 of an actuator unit); a nonexistent unit id is answered with exception code 0x0B.
+- Addresses of a unit without a data area read as 0 and writes to them are ignored, without an exception response (e.g. registers 73-199 of an actuator unit); a nonexistent unit id is answered with exception code 0x0B.
 - Multi-register values (`Real`, `DInt`, `UDInt`) are big-endian, the high word at the lower address (ABCD order).
 - Bit addresses are written `register.bit`, bit 0 being the lowest bit of the register. E.g. `1.0` is the lowest bit of register 1.
-- Coils: each Bool can also be accessed as a coil, coil address = byte offset x 8 + bit. The tables give the coil addresses within the data block; the command block as a whole starts at register 200, so 3200 must be added to access its coils.
-- "Initial" in the tables is the value at controller startup. The `ID` of lines, sections and actuators, and the limits, delays and `action_time` of sections are overwritten by the configuration at startup; the node data block is overwritten by the values reported by the actuator once connected.
+- Coils: each Bool can also be accessed as a coil, coil address = byte offset x 8 + bit. The tables give the coil addresses within the data area; the command block as a whole starts at register 200, so 3200 must be added to access its coils.
+- "Initial" in the tables is the value at controller startup. The `ID` of lines, sections and actuators, and the limits, delays and `action_time` of sections are overwritten by the configuration at startup; the node data area is overwritten by the values reported by the actuator once connected.
 
 ## 2. Line (LINE, 5 registers)
 
@@ -73,9 +73,9 @@
 
 `inner_word` holds trigger bits used inside the controller; the HMI only needs to read them.
 
-## 4. Node data block (NODE, 73 registers, from register 0 of the actuator unit)
+## 4. Node data area (NODE, 73 registers, from register 0 of the actuator unit)
 
-The node data block comes from the actuator; the controller reads it periodically and publishes it. `comm_OK` and `work_OK` are maintained by the controller according to the communication.
+The node data area comes from the actuator; the controller reads it periodically and publishes it. `comm_OK` and `work_OK` are maintained by the controller according to the communication.
 
 | Register | Coil | Name | Type | Initial | Description |
 | --- | --- | --- | --- | --- | --- |
@@ -225,7 +225,7 @@ Registers 0-7 are the local area of the controller and are not exchanged with th
 
 ## 6. Action record (RECORD, 27 registers)
 
-The data block shows one record. Write `index` to select the record to view: 0 is the latest, 1 the one before, and so on; `-1` means no record.
+The data area shows one record. Write `index` to select the record to view: 0 is the latest, 1 the one before, and so on; `-1` means no record.
 
 | Register | Coil | Name | Type | Initial | Description |
 | --- | --- | --- | --- | --- | --- |
@@ -262,9 +262,9 @@ The code prevails for the following differences, and this document follows the c
 
 | Location | 2025 point table | Code |
 | --- | --- | --- |
-| Length of the section data block | 22 registers, register 20 also holds `action_F_edge`, `stop_edge` | 21 registers, without these two bits |
-| Node data block parameter area registers 55-58 | `reserve4` (Real), `delay_protect_time` (Real) | `invalid_value_of_AI` (Real), `delay_protect_time` (UDInt) |
-| Node data block raw span / overflow initial values | 20000 / 20500 | 27648 / 28000 |
-| Type of node data block `response_code` | UInt | Word (organized by command bits) |
+| Length of the section data area | 22 registers, register 20 also holds `action_F_edge`, `stop_edge` | 21 registers, without these two bits |
+| Parameter area registers 55-58 of the node data area | `reserve4` (Real), `delay_protect_time` (Real) | `invalid_value_of_AI` (Real), `delay_protect_time` (UDInt) |
+| Node data area raw span / overflow initial values | 20000 / 20500 | 27648 / 28000 |
+| Type of node data area `response_code` | UInt | Word (organized by command bits) |
 | Command block parameter `delay_hangup` | Named `delay_hangup` | Named `delay_protect_time` |
 | Action record status word | `node1..3_pump_run` | Also `node4_pump_run` |

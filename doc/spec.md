@@ -50,7 +50,7 @@ The system has only two kinds of runtime entities:
 - Simplification in the program: the controller treats each node as an independent actuator.
   - Each entry of `actuators` in the configuration and each actuator object in the code corresponds to one node;
   - Several nodes on the same actuator are written as several `actuators` entries, each with its own data area and command area; under Modbus TCP they share the IP and port;
-  - The controller keeps one node data block (NODE) and one command block (COMMAND) per node, both sharing the Modbus unit id of the node (the node ID, see 4.1).
+  - The controller keeps two tdata per node: the node data (NODE) and the command block (COMMAND), both sharing the Modbus unit id of the node (the node ID, see 4.1).
 - So both words, "node" and "actuator", appear in the configuration and the code, but they correspond essentially one to one. When this document describes the processing of the controller it says "actuator", meaning such an object with one node per actuator.
 - An actuator with `pumps` configured is called an actuator with pumps; it is the target of stop pump commands.
 
@@ -81,33 +81,33 @@ Relations: controller 1-N lines, line 1-N sections, section N-N actuators (the s
   - S7: data and commands are in different DBs, e.g. DB1 and DB2.
 - The `IP` of a controller in the configuration records the deployment address of the controller itself; the program does not read it, and the server always listens on all addresses.
 
-### 3.6 Data blocks, TTags and variables
+### 3.6 TData, TTags and variables
 
 The state inside the controller is of two kinds, which discussions and documents must keep clearly apart:
 
 | Term | Meaning | Nature |
 | --- | --- | --- |
-| Data block (TData) | The block of data of a line, section, node, command or action record, whose layout is given by the data structure definition | The bridge between actuators, HMI and controller |
-| TTag | A named entry of a data block, e.g. `press_alarm_F` of a section | External interface (API) |
-| Variable | An ordinary program variable on a controller object, belonging to no data block | Internal implementation, free to change |
+| TData / tdata | TData is the class that holds data in a fixed layout, and a tdata is an instance of it; lines, sections, nodes, commands and action records each have their own tdata, whose layout is given by the data structure definition | The bridge between actuators, HMI and controller |
+| TTag | A named entry of a tdata, e.g. `press_alarm_F` of a section | External interface (API) |
+| Variable | An ordinary program variable on a controller object, belonging to no tdata | Internal implementation, free to change |
 
-Data blocks must meet the following requirements:
+A tdata must meet the following requirements:
 
 - **Fixed layout**: each TTag has a definite type, byte offset and bit number; the same layout is both the memory image of the actuator data / command area and the register point table of the HMI (see [spec-modbus.md](spec-modbus.md)).
 - **Valid layout**: a layout must satisfy the following rules; an invalid layout is a program error:
-  - TTag names are distinct within a data block;
+  - TTag names are distinct within a tdata;
   - the bit length of each TTag matches its type; multi-byte types (Int, UInt, Word, DInt, UDInt, DWord, Real) start at an even byte, single-byte types (Byte, SInt, USInt) at a whole byte, and a Bool may be at any bit;
   - the byte ranges of non-Bool TTags do not overlap;
   - each bit belongs to at most one Bool TTag;
   - a Bool inside the byte range of a non-Bool TTag must be a component bit of that TTag (a combined word); conversely, each component bit of a combined word must lie within the range of the word;
-  - the total length of a data block is a whole number of registers (a multiple of 16 bits).
-- **Layout validation**: at startup the controller validates the layouts of all data blocks; on violations it reports all of them and refuses to start; the configuration check command (see 5.6) runs the same validation.
+  - the total length of a tdata is a whole number of registers (a multiple of 16 bits).
+- **Layout validation**: at startup the controller validates all layouts; on violations it reports all of them and refuses to start; the configuration check command (see 5.6) runs the same validation.
 - **Combined word bit numbers**: in a 16-bit combined word, bit k of the word value is bit k of the register, guaranteed by the offset numbering of the bits in the layout; neither inside the controller nor at the upward server or the driver boundary are bytes swapped additionally for combined words.
-- **Exchange with drivers**: a data block holds the buffer exchanged with the actuator, read and written as a whole or in groups through the Modbus TCP or S7 driver; the device byte order is converted only at this boundary, and inside the controller everything is big-endian.
+- **Exchange with drivers**: a tdata holds the buffer exchanged with the actuator, read and written as a whole or in groups through the Modbus TCP or S7 driver; the device byte order is converted only at this boundary, and inside the controller everything is big-endian.
   - For Bool and single-byte TTags, the device byte order applies per 16-bit register containing them: under byte orders that swap the two bytes of a register, a Bool or single-byte TTag lies in the other byte of the same register on the device, with the same bit number.
 - **Write unit**: the smallest unit written to an actuator is set by the protocol. Under Modbus TCP the controller uses only holding registers (function code 03 for reading, 06 / 16 for writing), and the write unit is one register; under S7 the write unit is one byte. A group write writes only the write units holding the TTags of the group.
 - **Write ownership**: TTags written by the controller and TTags written by the actuator must not share a write unit, so that a write of one side does not overwrite the data of the other. Adding or adjusting TTags must follow this rule.
-- **Upward publishing**: data blocks are mounted on the Modbus TCP server of the controller, and the HMI reads and writes their content directly.
+- **Upward publishing**: tdata are mounted on the Modbus TCP server of the controller, and the HMI reads and writes their content directly.
 - **Access by name**: the program reads and writes TTag values by name.
 - **Change events**: when the value of a TTag changes (whether read from the actuator, written by the HMI or assigned by the program), a change event is emitted after the new value takes effect; business logic implements its interplay by subscribing to events.
 - **Combined word linkage**: a status word / command word made of Bools is linked with its bits in both directions.
@@ -117,7 +117,7 @@ TTags are the interface:
 
 - Adding or removing a TTag, or changing the name, type, offset or meaning of a TTag, is a protocol change: the actuator programs and the HMI must change accordingly, and the point table must be updated.
 - Protocol changes should be concentrated in the version planning, to avoid repeated changes of the point table.
-- State used only inside the controller, which need not be exchanged with the actuators or the HMI, must be implemented as variables, and must not take space in a data block for that (including unused bits of internal bit words such as `inner_word`).
+- State used only inside the controller, which need not be exchanged with the actuators or the HMI, must be implemented as variables, and must not take space in a tdata for that (including unused bits of internal bit words such as `inner_word`).
 - A proposal for new state must say whether it is a TTag or a variable; unless a layout change has been confirmed, it is a variable by default.
 
 ## 4. Configuration requirements
@@ -147,7 +147,7 @@ TTags are the interface:
   - `endian`: byte order, default `BE`.
 - The configuration files are also the basis for programming the actuators; the controller takes only the parts relevant to itself:
   - Actuator fields taken by the controller: `id`, `name`, `IP`, the protocol with its data / command areas, whether `pumps` is configured, the list of supported commands;
-  - The IDs, limits, delays and `action_time` of sections and lines are the initial values of the corresponding data blocks;
+  - The IDs, limits, delays and `action_time` of sections and lines are the initial values of the corresponding tdata;
   - The other actuator fields (pressure / temperature ranges and limits, `pressure_SD`, `pressure_AI`, `temperature_AI`, `flows`, pump signal addresses) are for programming the actuators, and the controller does not take them directly;
   - Actuator parameters and states follow what the actuator reports; the controller publishes them and writes them back to the actuator on HMI commands (see 5.1).
 
@@ -155,7 +155,7 @@ TTags are the interface:
 
 - The `id` of all lines, sections and actuators (nodes) must be distinct.
 - The uniqueness applies across types: lines, sections and actuators must not repeat each other's IDs either; e.g. the ID of a section must not equal the ID of any actuator.
-- Several data blocks of the same object share the object's ID, which is not a duplicate. E.g. an actuator has both a node data block and a command block, and both share the ID of the actuator.
+- Several tdata of the same object share the object's ID, which is not a duplicate. E.g. an actuator has both a node tdata and a command block, and both share the ID of the actuator.
 - The ID is also the unit id of the object on the Modbus TCP server of the controller (see 5.5), so:
   - the ID must be a valid Modbus unit id, and at least 1;
   - unit id 0 is reserved for the action record.
@@ -273,11 +273,11 @@ TTags are the interface:
 
 - The controller listens on `controller.modbus_server.port` at address `0.0.0.0`.
 - Each line, each section, each actuator and the action record take one unit id each: the unit id of a line, section or actuator is its ID (see 4.1), and the action record is fixed at unit id 0.
-- In an actuator unit, the node data block starts at register 0 and the command block at register 200.
+- In an actuator unit, the node data area starts at register 0 and the command block at register 200.
 - Reading and writing holding registers, reading input registers, and reading and writing coils are supported. A write from the HMI triggers the processing of the resulting state changes immediately.
-- Addresses of a unit without a data block (e.g. the gap between the node data block and the command block in an actuator unit) read as 0 and writes to them are ignored, without an exception response, so a block read across the gap still succeeds.
+- Addresses of a unit without a data area (e.g. the gap between the node data area and the command block in an actuator unit) read as 0 and writes to them are ignored, without an exception response, so a block read across the gap still succeeds.
 - When the upward service cannot start (e.g. the port is in use), the controller logs an error and exits, to be restarted by the background process management; it does not keep running without the upward service.
-- The register layouts of the data blocks are defined by `src/structs/` and must stay consistent with the HMI and the actuator programs. The complete point table is in [spec-modbus.md](spec-modbus.md).
+- The layouts are defined by `src/structs/` and must stay consistent with the HMI and the actuator programs. The complete point table is in [spec-modbus.md](spec-modbus.md).
 
 ### 5.6 Running and operation
 
@@ -287,7 +287,7 @@ TTags are the interface:
   - stopping (`stop`);
   - listing the instances running in the background (`list`);
   - viewing the log (`log`) and clearing the logs (`flush`);
-  - checking whether the configuration is valid (`check`): reads and validates the configuration in the given configuration directory, reports all errors, and does not start the controller; the validation includes the ID rules of 4.1 and the data block layout rules of 3.6;
+  - checking whether the configuration is valid (`check`): reads and validates the configuration in the given configuration directory, reports all errors, and does not start the controller; the validation includes the ID rules of 4.1 and the layout rules of 3.6;
   - running in the foreground (`debug`) with log level debug, for debugging;
   - showing the version and help.
 - When the controller name is omitted, the first controller of the configuration runs.

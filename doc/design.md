@@ -47,7 +47,7 @@
 
 ## 3. Typed data layer
 
-The external requirements and terminology of data blocks (TData) and TTags are in section 3.6 of the spec; this section describes the implementation.
+The external requirements and terminology of TData (an instance written tdata) and TTags are in section 3.6 of the spec; this section describes the implementation.
 
 ### 3.1 Layout definitions (`src/structs/`)
 
@@ -60,7 +60,7 @@ The external requirements and terminology of data blocks (TData) and TTags are i
 - The point table in [spec-modbus.md](spec-modbus.md) is computed from these definitions by the rules above.
 - The bit numbers of a combined word are fully guaranteed by the offset numbering above; in `buffer` a combined word is big-endian like any other multi-byte type, and neither the upward server nor the drivers swap bytes for combined words separately (spec 3.6).
 - These layouts are the memory images of the Modbus register table and of the actuator data areas; changing any offset is a protocol change.
-- Write ownership (spec 3.6) is currently guaranteed by manual review: the layouts do not mark who writes a TTag, and the validation does not check this rule. The existing write paths all comply: the ID, command word and parameter block of the command block and the parameter block of the data block are written by the controller, all word aligned and contiguous; the rest of the data block is written by the actuator and only read by the controller.
+- Write ownership (spec 3.6) is currently guaranteed by manual review: the layouts do not mark who writes a TTag, and the validation does not check this rule. The existing write paths all comply: the ID, command word and parameter block of the command block and the parameter block of the node tdata are written by the controller, all word aligned and contiguous; the rest of the node tdata is written by the actuator and only read by the controller.
 
 #### Layout validation
 
@@ -167,7 +167,7 @@ Main layouts (byte offsets):
 - Register `addr` corresponds to byte `addr * 2`, read and written big-endian in `tdata.buffer`; coil `addr` corresponds to bit `addr % 8` of byte `addr >> 3`.
 - After every write, `tdata.check_all_tags()` is called, which turns the write of the HMI into tag change events.
 - The vector method names are the snake_case names required by es-modbus: `get_holding_register`, `get_input_register`, `set_register`, `get_coil` (used for both FC 1 and FC 2), `set_coil`.
-- Unmapped addresses (e.g. the gap between the node data block and the command block in an actuator unit) read as 0 / false and writes to them are ignored, so a block read of the HMI across the gap still succeeds. A warning is logged only once per (type, unit, address), to avoid flooding the log while polling.
+- Unmapped addresses (e.g. the gap between the node data area and the command block in an actuator unit) read as 0 / false and writes to them are ignored, so a block read of the HMI across the gap still succeeds. A warning is logged only once per (type, unit, address), to avoid flooding the log while polling.
 - Requests are validated by es-modbus first: an unregistered unit id is answered with exception 0x0B, an illegal function code, quantity or address out of range with 0x01 / 0x03 / 0x02; when the vector throws, 0x04 is answered and the `vector_error` event logs it.
 
 ## 5. Actuator processing (`node_proc.js`)
@@ -265,7 +265,7 @@ Runs every 500 ms:
    - `action_F = press_action || flow_action`; when the result is false and the line's `action_section_ID` equals this section's ID, it is cleared, so as not to erase the action of another section.
 8. Computes the stop command: `stop_pumps = (section auto/man || line auto/man) && pump_run`.
 
-When the section data block is next adjusted, `press_action` / `flow_action` are planned to become TTags; the action record will then be triggered by their change events instead of comparing old and new values in `section_loop`.
+The section layout is planned to change in a future transitional version dedicated to layout adjustments: `press_action` / `flow_action` then become TTags, and the action record will be triggered by their change events instead of comparing old and new values in `section_loop`.
 
 ## 7. Line processing (`line_proc.js`)
 
@@ -341,9 +341,9 @@ Requirements of the spec that the current code does not implement yet:
 | Item | Spec requirement | Current code | Locations |
 | --- | --- | --- | --- |
 | Command masking by actuator configuration | Each actuator lists its supported commands with `supported_commands` in the configuration; the controller sends only supported commands and resets the other command bits directly (spec 5.1); for the implementation see 12.1 | The configuration has no such field; `node_loop` runs `command.commands &= 0xB1` for all actuators alike, keeping only bits 0, 4, 5, 7 (`stop_pumps`, `enable_pressure_SD`, `disable_pressure_SD`, `write_paras`), so `cancel_stop` is reset too | Actuator parsing in `config.js`; `node_loop` in `node_proc.js` |
-| ID uniqueness check | The IDs of lines, sections and actuators are all distinct (across types); several data blocks of the same object share its ID (spec 4.1) | `config.js` only checks that an actuator `id` is a non-zero number; lines, sections and actuators are each indexed by `ID<id>`, and neither duplicates nor equal IDs across types are reported; a duplicate of the same type silently overwrites the earlier one | `add_conf` in `config.js` |
+| ID uniqueness check | The IDs of lines, sections and actuators are all distinct (across types); several tdata of the same object share its ID (spec 4.1) | `config.js` only checks that an actuator `id` is a non-zero number; lines, sections and actuators are each indexed by `ID<id>`, and neither duplicates nor equal IDs across types are reported; a duplicate of the same type silently overwrites the earlier one | `add_conf` in `config.js` |
 | ID as the upward unit id | The Modbus unit id of a line, section or actuator is its ID (at least 1), the action record is fixed at unit id 0, and the controller configuration no longer has `unit_id` (spec 4.1, 5.5) | `run_controller` looks up the unit id by name in `controller.modbus_server.unit_id[name]` (the action record in `unit_id.action_records`), and every object must be listed in the controller configuration | `run_controller` in `main.js` |
-| Configuration check command | `tlms check` reads and validates the configuration and the layouts of all data blocks (`validate_structure` of 3.1), reports all errors, and does not start the controller (spec 3.6, 5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly; the layout validation already runs at startup (`main.js`) but is not yet wired into the command line | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
+| Configuration check command | `tlms check` reads and validates the configuration and all layouts (`validate_structure` of 3.1), reports all errors, and does not start the controller (spec 3.6, 5.6) | No such command; configuration errors are found only at startup, and most of them exit or crash directly; the layout validation already runs at startup (`main.js`) but is not yet wired into the command line | `cli.js`; `config.js` needs a separately callable validation function that collects all errors |
 | Action record positions mapped to actuators (defect in the existing code) | Nodes 1-4 map to the actuators of the action section in order, begin actuators first, then end actuators; the pressure, ID and pump running state of each position come from the same actuator (spec 5.4) | Nodes 1-3 always take `begin_nodes[0..2]`, node 4 always takes `end_nodes[0]`; `node1..3_pump_run` come from `pump_nodes[0..2]` (actuators with pumps only, which may be misaligned with the node positions), and `node4_pump_run` is never assigned | `add_action_record` in `section_proc.js` |
 
 
