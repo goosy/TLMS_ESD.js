@@ -13,7 +13,8 @@
 | `src/config.js` | 合并多份配置文档，填充默认值，建立名称与 ID 索引，把执行器的 `supported_commands` 转换为命令屏蔽字。 |
 | `src/init.js` | `prepare_controller`：为选定的控制器构建运行时对象图。 |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | 执行器（节点）、段、线的初始化（日志处理器、IO 绑定）与规则声明。 |
-| `src/action_record.js` | 动作记录：CSV 读写，以及基于 index 浏览记录的规则。 |
+| `src/action_record.js` | 动作记录：CSV 读写。 |
+| `src/action_record_proc.js` | 动作记录的规则：基于 index 浏览记录。 |
 | `src/scan.js` | 扫描调度器 `Scheduler`（第 5 节）。 |
 | `src/rules.js` | 规则：`derive` / `act` 声明、排序与启动检查、`Ticker`、`on_delay` / `off_delay`（第 6 节）。 |
 | `src/drivers/` | `Base_Driver`、`MTClient`（Modbus TCP 客户端）、`S7Client`、`createMTServer`（对上服务端，使用数据层的 vector），以及 IO 绑定 `binding.js`（4.5 节）。 |
@@ -664,14 +665,15 @@ v0.7.0 调整段的布局时，计划把 `press_action` / `flow_action` 升级�
   1. 文件不存在就写入表头；
   2. 流式读取全部行，用 `unshift` 保留最近 `records_size` 条，最新的在前；
   3. 对各列做类型还原。
+- `update_record(fields)`：按 TTag 名写入记录字段，再调用 `add_record()`；字段与段的对应关系不在动作记录中。
 - `add_record()`：
   1. 写入当前时间；
   2. 把记录放到内存列表头部；
   3. 设置 `index = 0`；
   4. 用 `appendFile` 追加一行。
-- `index` 由一条 act 规则处理（`action_record_rule`），在全部段的规则之后声明；规则在闭包中记住当前显示的记录：
+- `index` 由一条 act 规则处理（`action_record_proc.js` 的 `action_record_rule`），在全部段的规则之后声明；规则在闭包中记住当前显示的记录：
   - `index` 与当前显示的不同时：为 -1 时清空时间 TTag；否则把对应记录装载到 data，越界时恢复为原值。
-- 记录内容由段的 `add_action_record()` 在压力动作或输差动作发生时填写（见 8.3 节）；`press_action` / `flow_action` 取段的动作变量；执行器位置的对应规则见第 13 节。
+- 记录内容由段的 `add_action_record()` 通过 `update_record()` 在压力动作或输差动作发生时填写（见 8.3 节）；`press_action` / `flow_action` 取段的动作变量；执行器位置的对应规则见第 13 节。
 
 ## 11. 日志
 

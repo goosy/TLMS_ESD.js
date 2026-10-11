@@ -263,6 +263,10 @@ export async function create_system(t) {
 	let runtime;
 	const action_record = {
 		data: new TData(RECORD, "action_records", { on_write: () => runtime?.scheduler.request_scan() }),
+		update_record(fields) {
+			for (const [name, value] of Object.entries(fields)) this.data[name] = value;
+			this.add_record();
+		},
 		add_record() {
 			const record = {};
 			for (const name of record_names) record[name] = this.data[name];
