@@ -325,25 +325,24 @@ export function section_rules(section, scheduler) {
 
 function add_action_record(section) {
 	const { data, line, begin_nodes, end_nodes, pump_nodes } = section;
-	const action_record = line.controller.action_record;
-	const AR_data = action_record.data;
-	AR_data.section_ID = data.ID;
-	AR_data.flow_begin = data.flow_begin;
-	AR_data.flow_end = data.flow_end;
-	AR_data.flow_diff = data.flow_diff;
-	AR_data.node1_press = begin_nodes[0]?.data?.pressure ?? 0;
-	AR_data.node2_press = begin_nodes[1]?.data?.pressure ?? 0;
-	AR_data.node3_press = begin_nodes[2]?.data?.pressure ?? 0;
-	AR_data.node4_press = end_nodes[0]?.data?.pressure ?? 0;
-	AR_data.node1_ID = begin_nodes[0]?.data?.ID ?? 0;
-	AR_data.node2_ID = begin_nodes[1]?.data?.ID ?? 0;
-	AR_data.node3_ID = begin_nodes[2]?.data?.ID ?? 0;
-	AR_data.node4_ID = end_nodes[0]?.data?.ID ?? 0;
-	// the causes are the action flags, not the alarm states (spec 5.4)
-	AR_data.press_action = section.press_action;
-	AR_data.flow_action = section.flow_action;
-	AR_data.node1_pump_run = pump_nodes[0]?.data?.pump_run ?? false;
-	AR_data.node2_pump_run = pump_nodes[1]?.data?.pump_run ?? false;
-	AR_data.node3_pump_run = pump_nodes[2]?.data?.pump_run ?? false;
-	action_record.add_record();
+	line.controller.action_record.update_record({
+		section_ID: data.ID,
+		flow_begin: data.flow_begin,
+		flow_end: data.flow_end,
+		flow_diff: data.flow_diff,
+		node1_press: begin_nodes[0]?.data?.pressure ?? 0,
+		node2_press: begin_nodes[1]?.data?.pressure ?? 0,
+		node3_press: begin_nodes[2]?.data?.pressure ?? 0,
+		node4_press: end_nodes[0]?.data?.pressure ?? 0,
+		node1_ID: begin_nodes[0]?.data?.ID ?? 0,
+		node2_ID: begin_nodes[1]?.data?.ID ?? 0,
+		node3_ID: begin_nodes[2]?.data?.ID ?? 0,
+		node4_ID: end_nodes[0]?.data?.ID ?? 0,
+		// the causes are the action flags, not the alarm states (spec 5.4)
+		press_action: section.press_action,
+		flow_action: section.flow_action,
+		node1_pump_run: pump_nodes[0]?.data?.pump_run ?? false,
+		node2_pump_run: pump_nodes[1]?.data?.pump_run ?? false,
+		node3_pump_run: pump_nodes[2]?.data?.pump_run ?? false,
+	});
 }

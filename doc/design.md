@@ -15,7 +15,8 @@
 | `src/config.js` | Merges several configuration documents, fills in defaults, builds the name and ID indexes, converts the `supported_commands` of actuators into command mask words. |
 | `src/init.js` | `prepare_controller`: builds the runtime object graph for the selected controller. |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | Initialization (log handlers, IO binding) and rule declarations of actuators (nodes), sections and lines. |
-| `src/action_record.js` | Action records: CSV reading and writing, and the rule browsing records by index. |
+| `src/action_record.js` | Action records: CSV reading and writing. |
+| `src/action_record_proc.js` | The rule of the action record: browsing records by index. |
 | `src/scan.js` | The scan scheduler `Scheduler` (section 5). |
 | `src/rules.js` | Rules: `derive` / `act` declarations, ordering and startup checks, `Ticker`, `on_delay` / `off_delay` (section 6). |
 | `src/drivers/` | `Base_Driver`, `MTClient` (Modbus TCP client), `S7Client`, `createMTServer` (upward server, using the vector of the data layer), and the IO binding `binding.js` (4.5). |
@@ -666,14 +667,15 @@ The section layout is planned to change in a future transitional version dedicat
   1. writes the header when the file does not exist;
   2. reads all rows as a stream and keeps the latest `records_size` with `unshift`, the newest first;
   3. restores the types of the columns.
+- `update_record(fields)`: writes the record fields by TTag name, then calls `add_record()`; the mapping between the fields and the section is not in the action record.
 - `add_record()`:
   1. writes the current time;
   2. puts the record at the head of the in-memory list;
   3. sets `index = 0`;
   4. appends a row with `appendFile`.
-- `index` is handled by an act rule (`action_record_rule`), declared after the rules of all sections; the rule remembers the record currently shown in a closure:
+- `index` is handled by an act rule (`action_record_rule` of `action_record_proc.js`), declared after the rules of all sections; the rule remembers the record currently shown in a closure:
   - when `index` differs from the one shown: when -1, clears the time TTags; otherwise loads the corresponding record into data, and when out of range restores the previous value.
-- The record content is filled in by the section's `add_action_record()` when a pressure action or a flow difference action occurs (see 8.3); `press_action` / `flow_action` take the action variables of the section; the rule for actuator positions is in section 13.
+- The record content is filled in by the section's `add_action_record()` through `update_record()` when a pressure action or a flow difference action occurs (see 8.3); `press_action` / `flow_action` take the action variables of the section; the rule for actuator positions is in section 13.
 
 ## 11. Logging
 

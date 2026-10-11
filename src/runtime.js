@@ -2,7 +2,7 @@ import { MAIN_PERIOD } from "./config.js";
 import { line_init, line_rules } from "./line_proc.js";
 import { section_init, section_rules } from "./section_proc.js";
 import { node_init, node_mask_rule, node_rules } from "./node_proc.js";
-import { action_record_rule } from "./action_record.js";
+import { action_record_rule } from "./action_record_proc.js";
 import { TData } from "./typed_data/TData.js";
 import { LINE, SECTION, NODE, COMMAND } from "./layouts.js";
 import { Unit_Map } from "./typed_data/server.js";
@@ -18,7 +18,7 @@ import { logger } from "./util.js";
  * @param {Object} options
  * @param {(driver_info: Object) => {data_driver: Object, command_driver: Object}} options.get_drivers
  *     Returns the drivers of a node, shared between nodes on the same connection.
- * @param {{data: TData, get: (index: number) => boolean, add_record: () => void}} options.action_record
+ * @param {{data: TData, get: (index: number) => boolean, update_record: (fields: Object) => void}} options.action_record
  *     The action record of the controller.
  * @return {{unit_map: Unit_Map, scheduler: Scheduler, lines: Object[], sections: Object[], nodes: Object[],
  *     start: () => void, stop: () => void}}

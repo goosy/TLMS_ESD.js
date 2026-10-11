@@ -2,7 +2,6 @@ import { access, writeFile, appendFile } from "node:fs/promises";
 import { createReadStream } from "node:fs";
 import csv_parser from "csv-parser";
 import { TData } from "./typed_data/TData.js";
-import { act, component_bits } from "./rules.js";
 import { RECORD } from "./layouts.js";
 import { logger } from "./util.js";
 
@@ -95,6 +94,18 @@ export class Action_Record {
 		});
 	}
 
+	/**
+	 * Sets the fields of a new record and adds it.
+	 *
+	 * @param {Object<string, number|boolean>} fields - The record fields by tag name.
+	 */
+	async update_record(fields) {
+		for (const [key, value] of Object.entries(fields)) {
+			this.data[key] = value;
+		}
+		await this.add_record();
+	}
+
 	async add_record() {
 		set_current_time(this.data);
 		const record = {};
@@ -108,36 +119,4 @@ export class Action_Record {
 		const row = HEADERS.map((key) => this.data[key]).join(",");
 		await appendFile(this.file, `${row}\n`, { flags: "a" });
 	}
-}
-
-const TIME_TAGS = ["year", "month", "day", "hour", "minute", "second"];
-
-/**
- * The rule showing the record selected by `index` (doc/design.md 10):
- * -1 clears the time, an index out of the records restores the previous one.
- *
- * @param {{data: TData, get: (index: number) => boolean}} action_record
- * @return {Object} An act rule.
- */
-export function action_record_rule(action_record) {
-	const { data } = action_record;
-	const tags = [...data.layout.entries.keys()];
-	let shown;
-	return act({
-		name: `${data.name} index`,
-		reads: [[data, "index"]],
-		// the record tags, the status word through its bits
-		writes: tags.filter((tag) => component_bits(data.layout, tag).length === 0).map((tag) => [data, tag]),
-		run: () => {
-			const index = data.index;
-			if (index === shown) return;
-			if (index === -1) {
-				for (const tag of TIME_TAGS) data[tag] = 0;
-			} else if (!action_record.get(index)) {
-				data.index = shown ?? -1;
-				return;
-			}
-			shown = index;
-		},
-	});
 }
