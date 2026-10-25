@@ -89,14 +89,6 @@ export interface SECTION_Tags {
 	action_time: number;
 	/** Linked action countdown (in seconds) */
 	countdown: number;
-	/** inner word */
-	inner_word: number;
-	/** Whether flow warning has been triggered */
-	flow_warning_trigger: boolean;
-	/** Whether flow alarm has been triggered */
-	flow_alarm_trigger: boolean;
-	/** Whether this section has executed stop pump */
-	stop_pumps: boolean;
 }
 
 /** A SECTION data block, with its tags as properties. */

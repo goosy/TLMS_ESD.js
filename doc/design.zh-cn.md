@@ -81,7 +81,7 @@ Ldata（实例记作 block）与 Ltag 的术语和控制器对它们的要求见
 | --- | --- |
 | NODE | 0 ID；2 status；4 temperature；8 pressure；12 flowmeter；16 response_code；18 起为参数块 |
 | COMMAND | 0 response_code（弃用）；2 overtime（弃用）；6 extra_commands（`has_commands`、`reset_paras`）；16 ID；18 commands；20 起为参数块 |
-| SECTION | 0 ID；2 upward_input（保留）；4 status；6 flow_begin；10 flow_end；14 flow_diff；18–34 限值与延时；38 countdown；40 inner_word（内部触发位） |
+| SECTION | 0 ID；2 upward_input（保留）；4 status；6 flow_begin；10 flow_end；14 flow_diff；18–34 限值与延时；38 countdown |
 | LINE | 0 status；2 ID；4 action_section_ID；6 flow_diff（保留） |
 | RECORD | 0–10 时间；12 section_ID；14–36 流量与压力；42–48 执行器 ID；50 status；52 index |
 
@@ -525,9 +525,11 @@ derive({
 
 段的变量和规则在对象图建好之后声明（§6.4）。段对象上的变量（不是 Tag，见规范 §3.6）用 `add_var` 登记：
 
+- `flow_warning_trigger` / `flow_alarm_trigger`：输差警告和报警的触发位；
 - `press_SD_trigger`：压力联锁条件；
 - `countdown_expired`：倒计时结束；
-- `press_action` / `flow_action`：压力动作和输差动作。
+- `press_action` / `flow_action`：压力动作和输差动作；
+- `stop_pumps`：本段执行停泵。
 
 derive 规则，每次扫描都执行，规则之间的顺序由排序决定：
 

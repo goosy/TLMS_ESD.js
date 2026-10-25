@@ -99,11 +99,6 @@ section_status:  # status word of a section
   - { name: pump_change_F, type: Bool, offset: 6, init_value: false, comment: "Whether there is a pump operation in the current time period" }
   - { name: pre_stop_notice, type: Bool, offset: 7, init_value: false, comment: "Whether this section is in the pre-stop status" }
 
-section_inner_tags:  # internal trigger bits of a section
-  - { name: flow_warning_trigger, type: Bool, offset: 8, init_value: false, comment: "Whether flow warning has been triggered" }
-  - { name: flow_alarm_trigger, type: Bool, offset: 9, init_value: false, comment: "Whether flow alarm has been triggered" }
-  - { name: stop_pumps, type: Bool, offset: 11, init_value: false, comment: "Whether this section has executed stop pump" }
-
 layouts:
   LINE:
     - name: status
@@ -139,11 +134,6 @@ layouts:
     - { name: flow_diff_AH_delay, type: DInt, offset: 240, init_value: 3000, comment: "Flow alarm tolerance time (in milliseconds)" }
     - { name: action_time, type: DInt, offset: 272, init_value: 60000, comment: "Linked action time (in milliseconds)" }
     - { name: countdown, type: Int, offset: 304, init_value: 0, comment: "Linked action countdown (in seconds)" }
-    - name: inner_word
-      type: Word
-      offset: 320
-      comment: "inner word"
-      coupling: section_inner_tags
   NODE:
     - { name: ID, type: UInt, offset: 0, init_value: 0 }
     - name: status

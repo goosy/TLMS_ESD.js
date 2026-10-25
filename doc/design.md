@@ -83,7 +83,7 @@ Main layouts (byte offsets):
 | --- | --- |
 | NODE | 0 ID; 2 status; 4 temperature; 8 pressure; 12 flowmeter; 16 response_code; parameter block from 18 |
 | COMMAND | 0 response_code (deprecated); 2 overtime (deprecated); 6 extra_commands (`has_commands`, `reset_paras`); 16 ID; 18 commands; parameter block from 20 |
-| SECTION | 0 ID; 2 upward_input (reserved); 4 status; 6 flow_begin; 10 flow_end; 14 flow_diff; 18-34 limits and delays; 38 countdown; 40 inner_word (internal trigger bits) |
+| SECTION | 0 ID; 2 upward_input (reserved); 4 status; 6 flow_begin; 10 flow_end; 14 flow_diff; 18-34 limits and delays; 38 countdown |
 | LINE | 0 status; 2 ID; 4 action_section_ID; 6 flow_diff (reserved) |
 | RECORD | 0-10 time; 12 section_ID; 14-36 flows and pressures; 42-48 actuator IDs; 50 status; 52 index |
 
@@ -527,9 +527,11 @@ The data and command of each actuator have a Binding each (§4.5), kept in `actu
 
 The variables and rules of a section are declared after the object graph is built (§6.4). The variables on the section object (not Tags, see spec §3.6) are registered with `add_var`:
 
+- `flow_warning_trigger` / `flow_alarm_trigger`: the trigger bits of the flow difference warning and alarm;
 - `press_SD_trigger`: the pressure interlock condition;
 - `countdown_expired`: the countdown has expired;
-- `press_action` / `flow_action`: the pressure action and the flow difference action.
+- `press_action` / `flow_action`: the pressure action and the flow difference action;
+- `stop_pumps`: this section executes a pump stop.
 
 derive rules, run in every scan, ordered among themselves by the ordering:
 

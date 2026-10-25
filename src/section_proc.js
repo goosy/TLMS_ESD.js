@@ -89,7 +89,7 @@ export function section_rules(section, scheduler) {
 	const add_act = (spec) => scheduler.add_rule(act({ ...spec, name: `section ${name} ${spec.name}` }));
 
 	// variables passed between the rules (doc/design.md 8.2)
-	for (const var_name of ["press_SD_trigger", "countdown_expired", "press_action", "flow_action"]) {
+	for (const var_name of ["flow_warning_trigger", "flow_alarm_trigger", "press_SD_trigger", "countdown_expired", "press_action", "flow_action", "stop_pumps"]) {
 		section[var_name] = false;
 		scheduler.add_var(section, var_name);
 	}
@@ -131,10 +131,10 @@ export function section_rules(section, scheduler) {
 	add({
 		name: "flow triggers",
 		reads: [[data, "flow_diff"], [data, "flow_diff_WH"], [data, "flow_diff_AH"]],
-		writes: [[data, "flow_warning_trigger"], [data, "flow_alarm_trigger"]],
+		writes: [[section, "flow_warning_trigger"], [section, "flow_alarm_trigger"]],
 		run: () => {
-			data.flow_warning_trigger = data.flow_diff > data.flow_diff_WH;
-			data.flow_alarm_trigger = data.flow_diff > data.flow_diff_AH;
+			section.flow_warning_trigger = data.flow_diff > data.flow_diff_WH;
+			section.flow_alarm_trigger = data.flow_diff > data.flow_diff_AH;
 		},
 	});
 	// Pressure interlock trigger: only actuators that allow the pressure
@@ -163,18 +163,18 @@ export function section_rules(section, scheduler) {
 	});
 	add({
 		name: "flow_warning_F",
-		reads: [[data, "flow_warning_trigger"], [data, "flow_diff_WH_delay"]],
+		reads: [[section, "flow_warning_trigger"], [data, "flow_diff_WH_delay"]],
 		writes: [[data, "flow_warning_F"]],
 		run: (ticker) => {
-			data.flow_warning_F = on_delay(ticker, data.flow_warning_trigger, data.flow_diff_WH_delay);
+			data.flow_warning_F = on_delay(ticker, section.flow_warning_trigger, data.flow_diff_WH_delay);
 		},
 	});
 	add({
 		name: "flow_alarm_F",
-		reads: [[data, "flow_alarm_trigger"], [data, "flow_diff_AH_delay"]],
+		reads: [[section, "flow_alarm_trigger"], [data, "flow_diff_AH_delay"]],
 		writes: [[data, "flow_alarm_F"]],
 		run: (ticker) => {
-			data.flow_alarm_F = on_delay(ticker, data.flow_alarm_trigger, data.flow_diff_AH_delay);
+			data.flow_alarm_F = on_delay(ticker, section.flow_alarm_trigger, data.flow_diff_AH_delay);
 		},
 	});
 	add({
@@ -295,21 +295,21 @@ export function section_rules(section, scheduler) {
 			[line_data, "autoStopCmd"], [line_data, "manStopCmd"],
 			[data, "pump_run"],
 		],
-		writes: [[data, "stop_pumps"]],
+		writes: [[section, "stop_pumps"]],
 		run: () => {
 			const stop_pumps = data.autoStopCmd || data.manStopCmd || line_data.autoStopCmd || line_data.manStopCmd;
-			data.stop_pumps = stop_pumps && data.pump_run;
+			section.stop_pumps = stop_pumps && data.pump_run;
 		},
 	});
 	// the stop command is sent to the pump nodes, and withdrawn with cancel_stop
 	add_act({
 		name: "pump commands",
-		reads: [[data, "stop_pumps"], ...node_keys(pump_nodes, "pump_run")],
+		reads: [[section, "stop_pumps"], ...node_keys(pump_nodes, "pump_run")],
 		writes: pump_nodes.flatMap((node) => [[node.command, "stop_pumps"], [node.command, "cancel_stop"]]),
 		run: () => {
-			if (!scheduler.changed(data, "stop_pumps")) return;
+			if (!scheduler.changed(section, "stop_pumps")) return;
 			for (const node of pump_nodes) {
-				if (data.stop_pumps) {
+				if (section.stop_pumps) {
 					node.command.stop_pumps = node.data.pump_run;
 					logger.info(`send stop_pumps command to ${node.name} actuator`);
 				} else {

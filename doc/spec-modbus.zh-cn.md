@@ -31,7 +31,7 @@
 | 2 |  | action_section_ID | UInt | 0 | 大流差动作管段的段号 |
 | 3 |  | flow_diff | Real | 0 | 越站流差（保留，不实现） |
 
-## 3. 段（SECTION，21 个寄存器）
+## 3. 段（SECTION，20 个寄存器）
 
 | 寄存器 | 线圈 | 名称 | 类型 | 初值 | 说明 |
 | --- | --- | --- | --- | --- | --- |
@@ -63,12 +63,6 @@
 | 15 |  | flow_diff_AH_delay | DInt | 3000 | 流量报警容错时间（单位毫秒） |
 | 17 |  | action_time | DInt | 60000 | 联锁动作时间（单位毫秒） |
 | 19 |  | countdown | Int | 0 | 联锁动作倒计时（单位秒） |
-| 20 |  | inner_word | Word | 0 | 内部位字 |
-| 20.0 | 328 | flow_warning_trigger | Bool | false | 流量触发警告 |
-| 20.1 | 329 | flow_alarm_trigger | Bool | false | 流量触发报警 |
-| 20.3 | 331 | stop_pumps | Bool | false | 本段执行停泵 |
-
-`inner_word` 为控制器内部使用的触发位，HMI 只需读取。
 
 ## 4. 节点数据区（NODE，73 个寄存器，执行器单元寄存器 0 起）
 
@@ -259,7 +253,7 @@
 
 | 位置 | 2025 版点表 | 代码 |
 | --- | --- | --- |
-| 段数据区长度 | 22 个寄存器，寄存器 20 另有 `action_F_edge`、`stop_edge` | 21 个寄存器，无这两个位 |
+| 段数据区长度 | 22 个寄存器，寄存器 20 为内部位字（含 `action_F_edge`、`stop_edge`） | 20 个寄存器，无内部位字 |
 | 节点数据区的参数区寄存器 55–58 | `reserve4`（Real）、`delay_protect_time`（Real） | `invalid_value_of_AI`（Real）、`delay_protect_time`（UDInt） |
 | 节点数据区 raw 量程 / 溢出初值 | 20000 / 20500 | 27648 / 28000 |
 | 节点数据区 `response_code` 类型 | UInt | Word（按命令位组织） |

@@ -33,7 +33,7 @@
 | 2 |  | action_section_ID | UInt | 0 | Section number of the section of the large flow difference action |
 | 3 |  | flow_diff | Real | 0 | Bypass flow difference (reserved, not implemented) |
 
-## 3. Section (SECTION, 21 registers)
+## 3. Section (SECTION, 20 registers)
 
 | Register | Coil | Name | Type | Initial | Description |
 | --- | --- | --- | --- | --- | --- |
@@ -65,12 +65,6 @@
 | 15 |  | flow_diff_AH_delay | DInt | 3000 | Flow alarm tolerance time (ms) |
 | 17 |  | action_time | DInt | 60000 | Interlock action time (ms) |
 | 19 |  | countdown | Int | 0 | Interlock action countdown (s) |
-| 20 |  | inner_word | Word | 0 | Internal bit word |
-| 20.0 | 328 | flow_warning_trigger | Bool | false | Flow triggers a warning |
-| 20.1 | 329 | flow_alarm_trigger | Bool | false | Flow triggers an alarm |
-| 20.3 | 331 | stop_pumps | Bool | false | This section executes a pump stop |
-
-`inner_word` holds trigger bits used inside the controller; the HMI only needs to read them.
 
 ## 4. Node data area (NODE, 73 registers, from register 0 of the actuator unit)
 
@@ -261,7 +255,7 @@ The code prevails for the following differences, and this document follows the c
 
 | Location | 2025 point table | Code |
 | --- | --- | --- |
-| Length of the section data area | 22 registers, register 20 also holds `action_F_edge`, `stop_edge` | 21 registers, without these two bits |
+| Length of the section data area | 22 registers, register 20 is an internal bit word (with `action_F_edge`, `stop_edge`) | 20 registers, without an internal bit word |
 | Parameter area registers 55-58 of the node data area | `reserve4` (Real), `delay_protect_time` (Real) | `invalid_value_of_AI` (Real), `delay_protect_time` (UDInt) |
 | Node data area raw span / overflow initial values | 20000 / 20500 | 27648 / 28000 |
 | Type of node data area `response_code` | UInt | Word (organized by command bits) |

@@ -276,7 +276,7 @@ describe("section and line", () => {
 		assert.equal(S1.data.line_action_source, true);
 		assert.equal(L1.data.autoStopCmd, true);
 		assert.equal(L1.data.action_section_ID, 11);
-		assert.equal(S1.data.stop_pumps, true);
+		assert.equal(S1.stop_pumps, true);
 		assert.equal(sys.device("A").command("stop_pumps"), true);
 		assert.equal(sys.records.length, 1);
 		assert.equal(sys.records[0].section_ID, 11);
@@ -332,7 +332,7 @@ describe("section and line", () => {
 		assert.equal(S1.data.flow_begin, 100);
 		assert.equal(S1.data.flow_end, 70);
 		assert.equal(S1.data.flow_diff, 30);
-		assert.equal(S1.data.flow_alarm_trigger, true);
+		assert.equal(S1.flow_alarm_trigger, true);
 		assert.equal(S1.data.press_alarm_F, true);
 		assert.equal(sys.line("L1").data.alarm_F, true);
 	});
@@ -343,7 +343,7 @@ describe("section and line", () => {
 		await sys.settle();
 		sys.hmi.set("S1", "manStopCmd", true);
 		await sys.flush();
-		assert.equal(sys.section("S1").data.stop_pumps, true);
+		assert.equal(sys.section("S1").stop_pumps, true);
 		assert.equal(sys.node("A").command.stop_pumps, true);
 	});
 
@@ -373,7 +373,7 @@ describe("section and line", () => {
 		await sys.settle();
 		assert.equal(S1.data.action_F, true);
 		assert.equal(S1.data.autoStopCmd, true);
-		assert.equal(S1.data.stop_pumps, true);
+		assert.equal(S1.stop_pumps, true);
 		assert.equal(L1.data.action_section_ID, 11);
 		assert.equal(sys.device("A").command("stop_pumps"), true);
 		assert.equal(sys.records.length, 1);
@@ -413,14 +413,14 @@ describe("section and line", () => {
 		await sys.settle();
 		sys.hmi.set("L1", "manStopCmd", true);
 		await sys.settle();
-		assert.equal(sys.section("S1").data.stop_pumps, true);
-		assert.equal(sys.section("S2").data.stop_pumps, false);
+		assert.equal(sys.section("S1").stop_pumps, true);
+		assert.equal(sys.section("S2").stop_pumps, false);
 		assert.equal(sys.device("A").command("stop_pumps"), true);
 
 		// withdrawn while the pump still runs
 		sys.hmi.set("L1", "manStopCmd", false);
 		await sys.settle();
-		assert.equal(sys.section("S1").data.stop_pumps, false);
+		assert.equal(sys.section("S1").stop_pumps, false);
 		assert.equal(sys.node("A").command.stop_pumps, false);
 		assert.equal(sys.device("A").command("stop_pumps"), false);
 		// the actuator is told to release its stop output (spec 5.1)
@@ -434,13 +434,13 @@ describe("section and line", () => {
 		sys.hmi.set("S1", "manStopCmd", true);
 		sys.hmi.set("L1", "manStopCmd", true);
 		await sys.settle();
-		assert.equal(sys.section("S1").data.stop_pumps, true);
+		assert.equal(sys.section("S1").stop_pumps, true);
 
 		run_pump(sys, false);
 		await sys.settle();
 		assert.equal(sys.section("S1").data.manStopCmd, false);
 		assert.equal(sys.line("L1").data.manStopCmd, false);
-		assert.equal(sys.section("S1").data.stop_pumps, false);
+		assert.equal(sys.section("S1").stop_pumps, false);
 	});
 
 	test("a section resetting its action keeps the action of another section", async (t) => {
