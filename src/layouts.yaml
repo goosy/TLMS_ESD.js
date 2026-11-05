@@ -60,11 +60,11 @@ item_tables:
   - { name: invalid_value_of_AI, type: Real, offset: 736, init_value: -100000, comment: "Value when AI is invalid" }
   - { name: delay_protect_time, type: UDInt, offset: 768, init_value: 5000, comment: "Communication interrupt delay protection time" }
   - { name: flow_smooth_factor, type: Real, offset: 800, init_value: 0.9, comment: "Flow smoothing factor" }
-  - { name: equS1, type: DInt, offset: 832, init_value: 10000, comment: "Flow 1 equivalent value" }
-  - { name: equS2, type: DInt, offset: 864, init_value: 10000, comment: "Flow 2 equivalent value" }
-  - { name: equS3, type: DInt, offset: 896, init_value: 10000, comment: "Flow 3 equivalent value" }
-  - { name: equS4, type: DInt, offset: 928, init_value: 10000, comment: "Flow 4 equivalent value" }
-  - { name: equS5, type: DInt, offset: 960, init_value: 10000, comment: "Flow 5 equivalent value" }
+  - { name: flow1_k_factor, type: DInt, offset: 832, init_value: 10000, comment: "Flow 1 K-factor (pulses/m3)" }
+  - { name: flow2_k_factor, type: DInt, offset: 864, init_value: 10000, comment: "Flow 2 K-factor (pulses/m3)" }
+  - { name: flow3_k_factor, type: DInt, offset: 896, init_value: 10000, comment: "Flow 3 K-factor (pulses/m3)" }
+  - { name: flow4_k_factor, type: DInt, offset: 928, init_value: 10000, comment: "Flow 4 K-factor (pulses/m3)" }
+  - { name: flow5_k_factor, type: DInt, offset: 960, init_value: 10000, comment: "Flow 5 K-factor (pulses/m3)" }
   - { name: pump_change_delay, type: UDInt, offset: 992, init_value: 180000, comment: "Pump operation delay" }
 
   node_status:  # status word of a node
@@ -96,8 +96,8 @@ item_tables:
   - { name: flow_alarm_F, type: Bool, offset: 15, init_value: false, comment: "Whether this section is in the flow alarm status" }
   - { name: press_warning_F, type: Bool, offset: 0, init_value: false, comment: "Whether this section is in the pressure warning status" }
   - { name: press_alarm_F, type: Bool, offset: 1, init_value: false, comment: "Whether this section is in the pressure alarm status" }
-  - { name: autoStopCmd, type: Bool, offset: 2, init_value: false, comment: "Whether this section is in the auto stop status" }
-  - { name: manStopCmd, type: Bool, offset: 3, init_value: false, comment: "Whether this section is in the manual stop status" }
+  - { name: auto_stop_cmd, type: Bool, offset: 2, init_value: false, comment: "Whether this section is in the auto stop status" }
+  - { name: man_stop_cmd, type: Bool, offset: 3, init_value: false, comment: "Whether this section is in the manual stop status" }
   - { name: line_action_source, type: Bool, offset: 4, init_value: false, comment: "Whether this section is the source of the line action" }
   - { name: pump_run, type: Bool, offset: 5, init_value: false, comment: "Whether this section has an open pump" }
   - { name: pump_change_F, type: Bool, offset: 6, init_value: false, comment: "Whether there is a pump operation in the current time period" }
@@ -113,8 +113,8 @@ item_tables:
     - { name: flow_override, type: Bool, offset: 8, init_value: false, comment: "Manual hang-up of the whole line" }
     - { name: pump_run, type: Bool, offset: 9, init_value: false, comment: "Whether this line pumps" }
     - { name: alarm_F, type: Bool, offset: 10, init_value: false, comment: "Whether this line alarms" }
-    - { name: autoStopCmd, type: Bool, offset: 11, init_value: false, comment: "Auto stop command" }
-    - { name: manStopCmd, type: Bool, offset: 12, init_value: false, comment: "Manual stop command" }
+    - { name: auto_stop_cmd, type: Bool, offset: 11, init_value: false, comment: "Auto stop command" }
+    - { name: man_stop_cmd, type: Bool, offset: 12, init_value: false, comment: "Manual stop command" }
     - { name: pre_stop_notice, type: Bool, offset: 13, init_value: false, comment: "Stop notice" }
   - { name: ID, type: UInt, offset: 16, init_value: 0, comment: "Line ID" }
   - { name: action_section_ID, type: UInt, offset: 32, init_value: 0, comment: "Section ID of the flow difference action" }

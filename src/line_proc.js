@@ -43,12 +43,12 @@ export function line_rules(line, scheduler) {
 	scheduler.add_rule(act({
 		name: `line ${name} stop commands reset`,
 		reads: [[data, "pump_run"]],
-		writes: [[data, "autoStopCmd"], [data, "manStopCmd"]],
+		writes: [[data, "auto_stop_cmd"], [data, "man_stop_cmd"]],
 		run: () => {
 			if (!scheduler.fell(data, "pump_run")) return;
-			data.autoStopCmd = false;
-			data.manStopCmd = false;
-			logger.info(`line ${name}: reset autoStopCmd and manStopCmd`);
+			data.auto_stop_cmd = false;
+			data.man_stop_cmd = false;
+			logger.info(`line ${name}: reset auto_stop_cmd and man_stop_cmd`);
 		},
 	}));
 }

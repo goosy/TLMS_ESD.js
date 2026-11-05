@@ -222,14 +222,14 @@ Tags are the interface:
   - When the countdown ends and the conditions still hold, the flow interlock is executed;
   - When any condition disappears during the countdown (e.g. a manual hang-on clears `protect_F`), the countdown is reset and the shutdown is interrupted.
 - Interlock actions: a section records two kinds of action separately, the pressure action and the flow difference action, each set and reset on its own; the section's `action_F` is their OR.
-  - Flow difference interlock (stop the line): when the countdown expires, a flow difference action occurs, which records the line's `action_section_ID`, sets the line's `autoStopCmd`, and marks this section as the line action source (`line_action_source`). The stop command of the line applies to all sections of the line, and every section with a pump running stops its pumps;
-  - Pressure interlock (stop the section): when `pressure_AH_F` is true for any actuator of the section whose `pressure_SD_F` is true, and a pump of this section is running, a pressure action occurs, which records the line's `action_section_ID` and sets the section's `autoStopCmd`. An actuator whose `pressure_SD_F` is false only raises an alarm and does not trigger a pump stop. The pressure interlock is not restricted by hang-on (`protect_F`). For now the pressure interlock stops only this section; it may be extended to stop the line in the future;
+  - Flow difference interlock (stop the line): when the countdown expires, a flow difference action occurs, which records the line's `action_section_ID`, sets the line's `auto_stop_cmd`, and marks this section as the line action source (`line_action_source`). The stop command of the line applies to all sections of the line, and every section with a pump running stops its pumps;
+  - Pressure interlock (stop the section): when `pressure_AH_F` is true for any actuator of the section whose `pressure_SD_F` is true, and a pump of this section is running, a pressure action occurs, which records the line's `action_section_ID` and sets the section's `auto_stop_cmd`. An actuator whose `pressure_SD_F` is false only raises an alarm and does not trigger a pump stop. The pressure interlock is not restricted by hang-on (`protect_F`). For now the pressure interlock stops only this section; it may be extended to stop the line in the future;
   - The section's `press_alarm_F` still aggregates `pressure_AH_F` of all actuators, for the alarm display, whether the pressure interlock is allowed or not.
 - Pump stop: when an automatic / manual stop command exists on the section or its line and a pump of this section is running, a stop pump command is issued to all actuators with pumps of this section; when the command is withdrawn, a cancel stop command is issued.
 - Reset:
-  - After all pumps of this section stop, the section's `autoStopCmd` / `manStopCmd` are cleared;
+  - After all pumps of this section stop, the section's `auto_stop_cmd` / `man_stop_cmd` are cleared;
   - The action state is kept during the stop, so the HMI can see the reason of the shutdown;
-  - Pressure action: reset when a pump of this section runs, the pressure interlock condition has disappeared, and the section's `autoStopCmd` has been cleared;
+  - Pressure action: reset when a pump of this section runs, the pressure interlock condition has disappeared, and the section's `auto_stop_cmd` has been cleared;
   - Flow difference action: reset when a pump of its line runs, this section's `flow_alarm_F` has disappeared, and this section is no longer the line action source;
   - The reset conditions are evaluated in each processing and not latched: if the alarm is still present when the pumps restart and disappears later, the action is reset all the same;
   - After both kinds of action are reset, `action_F` is cleared; the line's `action_section_ID` is cleared if it is still this section's ID, and left alone if another section has overwritten it.
@@ -241,8 +241,8 @@ Tags are the interface:
 - `alarm_F`: true when any section has a flow alarm or a pressure alarm;
 - `pre_stop_notice`: true when any section is in the stop pump notice;
 - `flow_override` (manual hang-on of the whole line): a line-level master switch; while set, no section of the line is protected, and after it is reset protection resumes; it does not overwrite any section's own `flow_override`, so a hang-on set on a single section stays after the line master switch is reset; the HMI should show the `flow_override` of both the line and the sections;
-- After all pumps of the line stop, the line's `autoStopCmd` / `manStopCmd` are cleared;
-- `manStopCmd` is written by the HMI, for a manual pump stop.
+- After all pumps of the line stop, the line's `auto_stop_cmd` / `man_stop_cmd` are cleared;
+- `man_stop_cmd` is written by the HMI, for a manual pump stop.
 
 ### 5.4 Action records
 

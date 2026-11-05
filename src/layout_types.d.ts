@@ -15,9 +15,9 @@ export interface LINE_Tags {
 	/** Whether this line alarms */
 	alarm_F: boolean;
 	/** Auto stop command */
-	autoStopCmd: boolean;
+	auto_stop_cmd: boolean;
 	/** Manual stop command */
-	manStopCmd: boolean;
+	man_stop_cmd: boolean;
 	/** Stop notice */
 	pre_stop_notice: boolean;
 	/** Line ID */
@@ -60,9 +60,9 @@ export interface SECTION_Tags {
 	/** Whether this section is in the pressure alarm status */
 	press_alarm_F: boolean;
 	/** Whether this section is in the auto stop status */
-	autoStopCmd: boolean;
+	auto_stop_cmd: boolean;
 	/** Whether this section is in the manual stop status */
-	manStopCmd: boolean;
+	man_stop_cmd: boolean;
 	/** Whether this section is the source of the line action */
 	line_action_source: boolean;
 	/** Whether this section has an open pump */
@@ -228,16 +228,16 @@ export interface NODE_Tags {
 	delay_protect_time: number;
 	/** Flow smoothing factor */
 	flow_smooth_factor: number;
-	/** Flow 1 equivalent value */
-	equS1: number;
-	/** Flow 2 equivalent value */
-	equS2: number;
-	/** Flow 3 equivalent value */
-	equS3: number;
-	/** Flow 4 equivalent value */
-	equS4: number;
-	/** Flow 5 equivalent value */
-	equS5: number;
+	/** Flow 1 K-factor (pulses/m3) */
+	flow1_k_factor: number;
+	/** Flow 2 K-factor (pulses/m3) */
+	flow2_k_factor: number;
+	/** Flow 3 K-factor (pulses/m3) */
+	flow3_k_factor: number;
+	/** Flow 4 K-factor (pulses/m3) */
+	flow4_k_factor: number;
+	/** Flow 5 K-factor (pulses/m3) */
+	flow5_k_factor: number;
 	/** Pump operation delay */
 	pump_change_delay: number;
 }
@@ -353,16 +353,16 @@ export interface COMMAND_Tags {
 	delay_protect_time: number;
 	/** Flow smoothing factor */
 	flow_smooth_factor: number;
-	/** Flow 1 equivalent value */
-	equS1: number;
-	/** Flow 2 equivalent value */
-	equS2: number;
-	/** Flow 3 equivalent value */
-	equS3: number;
-	/** Flow 4 equivalent value */
-	equS4: number;
-	/** Flow 5 equivalent value */
-	equS5: number;
+	/** Flow 1 K-factor (pulses/m3) */
+	flow1_k_factor: number;
+	/** Flow 2 K-factor (pulses/m3) */
+	flow2_k_factor: number;
+	/** Flow 3 K-factor (pulses/m3) */
+	flow3_k_factor: number;
+	/** Flow 4 K-factor (pulses/m3) */
+	flow4_k_factor: number;
+	/** Flow 5 K-factor (pulses/m3) */
+	flow5_k_factor: number;
 	/** Pump operation delay */
 	pump_change_delay: number;
 }

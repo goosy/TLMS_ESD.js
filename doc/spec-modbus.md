@@ -26,8 +26,8 @@
 | 0.0 | 8 | flow_override | Bool | false | Manual hang-on of the whole line; a master switch that does not overwrite the flow_override of the sections |
 | 0.1 | 9 | pump_run | Bool | false | Whether this line has pumps running |
 | 0.2 | 10 | alarm_F | Bool | false | This line has an alarm |
-| 0.3 | 11 | autoStopCmd | Bool | false | Automatic shutdown command |
-| 0.4 | 12 | manStopCmd | Bool | false | Manual shutdown command |
+| 0.3 | 11 | auto_stop_cmd | Bool | false | Automatic shutdown command |
+| 0.4 | 12 | man_stop_cmd | Bool | false | Manual shutdown command |
 | 0.5 | 13 | pre_stop_notice | Bool | false | Stop pump notice |
 | 1 |  | ID | UInt | 0 | ID of this line |
 | 2 |  | action_section_ID | UInt | 0 | Section number of the section of the large flow difference action |
@@ -50,8 +50,8 @@
 | 2.7 | 47 | flow_alarm_F | Bool | false | Flow alarm of this section (pre-action) |
 | 2.8 | 32 | press_warning_F | Bool | false | Pressure warning of this section |
 | 2.9 | 33 | press_alarm_F | Bool | false | Pressure alarm of this section (pre-action) |
-| 2.10 | 34 | autoStopCmd | Bool | false | Automatic pump stop of this section |
-| 2.11 | 35 | manStopCmd | Bool | false | Manual pump stop of this section |
+| 2.10 | 34 | auto_stop_cmd | Bool | false | Automatic pump stop of this section |
+| 2.11 | 35 | man_stop_cmd | Bool | false | Manual pump stop of this section |
 | 2.12 | 36 | line_action_source | Bool | false | Whether this section is the source of the whole-line shutdown |
 | 2.13 | 37 | pump_run | Bool | false | Whether this section has pumps running |
 | 2.14 | 38 | pump_change_F | Bool | false | Whether a pump operation is in progress in the current period |
@@ -140,11 +140,11 @@ The node data area comes from the actuator; the controller reads it periodically
 | 55 |  | invalid_value_of_AI | Real | -100000 | Preset value when an analog input is invalid (not implemented yet) |
 | 57 |  | delay_protect_time | UDInt | 5000 | Delay before hang-on after a communication failure |
 | 59 |  | flow_smooth_factor | Real | 0.9 | Flow smoothing weight |
-| 61 |  | equS1 | DInt | 10000 | Flow 1 equivalent |
-| 63 |  | equS2 | DInt | 10000 | Flow 2 equivalent |
-| 65 |  | equS3 | DInt | 10000 | Flow 3 equivalent |
-| 67 |  | equS4 | DInt | 10000 | Flow 4 equivalent |
-| 69 |  | equS5 | DInt | 10000 | Flow 5 equivalent |
+| 61 |  | flow1_k_factor | DInt | 10000 | Flow 1 K factor (pulses/m³) |
+| 63 |  | flow2_k_factor | DInt | 10000 | Flow 2 K factor (pulses/m³) |
+| 65 |  | flow3_k_factor | DInt | 10000 | Flow 3 K factor (pulses/m³) |
+| 67 |  | flow4_k_factor | DInt | 10000 | Flow 4 K factor (pulses/m³) |
+| 69 |  | flow5_k_factor | DInt | 10000 | Flow 5 K factor (pulses/m³) |
 | 71 |  | pump_change_delay | UDInt | 180000 | Pump operation delay |
 
 ## 5. Command block (COMMAND, 74 registers, from register 200 of the actuator unit)
@@ -209,11 +209,11 @@ Registers 0-7 are the local area of the controller and are not exchanged with th
 | 56 |  | invalid_value_of_AI | Real | -100000 | Preset value when an analog input is invalid (not implemented yet) |
 | 58 |  | delay_protect_time | UDInt | 5000 | Delay before hang-on after a communication failure |
 | 60 |  | flow_smooth_factor | Real | 0.9 | Flow smoothing weight |
-| 62 |  | equS1 | DInt | 10000 | Flow 1 equivalent |
-| 64 |  | equS2 | DInt | 10000 | Flow 2 equivalent |
-| 66 |  | equS3 | DInt | 10000 | Flow 3 equivalent |
-| 68 |  | equS4 | DInt | 10000 | Flow 4 equivalent |
-| 70 |  | equS5 | DInt | 10000 | Flow 5 equivalent |
+| 62 |  | flow1_k_factor | DInt | 10000 | Flow 1 K factor (pulses/m³) |
+| 64 |  | flow2_k_factor | DInt | 10000 | Flow 2 K factor (pulses/m³) |
+| 66 |  | flow3_k_factor | DInt | 10000 | Flow 3 K factor (pulses/m³) |
+| 68 |  | flow4_k_factor | DInt | 10000 | Flow 4 K factor (pulses/m³) |
+| 70 |  | flow5_k_factor | DInt | 10000 | Flow 5 K factor (pulses/m³) |
 | 72 |  | pump_change_delay | UDInt | 180000 | Pump operation delay |
 
 ## 6. Action record (RECORD, 27 registers)

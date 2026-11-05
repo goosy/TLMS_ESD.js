@@ -274,7 +274,7 @@ describe("section and line", () => {
 		await sys.advance(ACTION_TIME + 3 * MAIN_PERIOD);
 		assert.equal(S1.data.action_F, true);
 		assert.equal(S1.data.line_action_source, true);
-		assert.equal(L1.data.autoStopCmd, true);
+		assert.equal(L1.data.auto_stop_cmd, true);
 		assert.equal(L1.data.action_section_ID, 11);
 		assert.equal(S1.stop_pumps, true);
 		assert.equal(sys.device("A").command("stop_pumps"), true);
@@ -300,7 +300,7 @@ describe("section and line", () => {
 		assert.equal(S1.data.pre_stop_notice, false);
 		assert.equal(S1.data.countdown, 0);
 		assert.equal(S1.data.action_F, false);
-		assert.equal(sys.line("L1").data.autoStopCmd, false);
+		assert.equal(sys.line("L1").data.auto_stop_cmd, false);
 		assert.equal(sys.device("A").command("stop_pumps"), false);
 		assert.equal(sys.records.length, 0);
 	});
@@ -341,7 +341,7 @@ describe("section and line", () => {
 		const sys = await create_system(t);
 		run_pump(sys, true);
 		await sys.settle();
-		sys.hmi.set("S1", "manStopCmd", true);
+		sys.hmi.set("S1", "man_stop_cmd", true);
 		await sys.flush();
 		assert.equal(sys.section("S1").stop_pumps, true);
 		assert.equal(sys.node("A").command.stop_pumps, true);
@@ -372,7 +372,7 @@ describe("section and line", () => {
 		sys.device("A").set("pressure_AH_F", true);
 		await sys.settle();
 		assert.equal(S1.data.action_F, true);
-		assert.equal(S1.data.autoStopCmd, true);
+		assert.equal(S1.data.auto_stop_cmd, true);
 		assert.equal(S1.stop_pumps, true);
 		assert.equal(L1.data.action_section_ID, 11);
 		assert.equal(sys.device("A").command("stop_pumps"), true);
@@ -386,7 +386,7 @@ describe("section and line", () => {
 		await sys.settle();
 		assert.equal(sys.node("A").command.stop_pumps, false);
 		assert.equal(sys.device("A").command("stop_pumps"), false);
-		assert.equal(S1.data.autoStopCmd, false);
+		assert.equal(S1.data.auto_stop_cmd, false);
 		assert.equal(S1.data.action_F, true);
 
 		run_pump(sys, true);
@@ -411,14 +411,14 @@ describe("section and line", () => {
 		const sys = await create_system(t);
 		run_pump(sys, true);
 		await sys.settle();
-		sys.hmi.set("L1", "manStopCmd", true);
+		sys.hmi.set("L1", "man_stop_cmd", true);
 		await sys.settle();
 		assert.equal(sys.section("S1").stop_pumps, true);
 		assert.equal(sys.section("S2").stop_pumps, false);
 		assert.equal(sys.device("A").command("stop_pumps"), true);
 
 		// withdrawn while the pump still runs
-		sys.hmi.set("L1", "manStopCmd", false);
+		sys.hmi.set("L1", "man_stop_cmd", false);
 		await sys.settle();
 		assert.equal(sys.section("S1").stop_pumps, false);
 		assert.equal(sys.node("A").command.stop_pumps, false);
@@ -431,15 +431,15 @@ describe("section and line", () => {
 		const sys = await create_system(t);
 		run_pump(sys, true);
 		await sys.settle();
-		sys.hmi.set("S1", "manStopCmd", true);
-		sys.hmi.set("L1", "manStopCmd", true);
+		sys.hmi.set("S1", "man_stop_cmd", true);
+		sys.hmi.set("L1", "man_stop_cmd", true);
 		await sys.settle();
 		assert.equal(sys.section("S1").stop_pumps, true);
 
 		run_pump(sys, false);
 		await sys.settle();
-		assert.equal(sys.section("S1").data.manStopCmd, false);
-		assert.equal(sys.line("L1").data.manStopCmd, false);
+		assert.equal(sys.section("S1").data.man_stop_cmd, false);
+		assert.equal(sys.line("L1").data.man_stop_cmd, false);
 		assert.equal(sys.section("S1").stop_pumps, false);
 	});
 

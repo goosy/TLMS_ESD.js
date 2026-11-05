@@ -357,11 +357,11 @@ derive({
 act({
     name: `section ${section.name} stop commands reset`,
     reads: [[section.data, 'pump_run']],
-    writes: [[section.data, 'autoStopCmd'], [section.data, 'manStopCmd']],
+    writes: [[section.data, 'auto_stop_cmd'], [section.data, 'man_stop_cmd']],
     run: () => {
         if (!scheduler.fell(section.data, 'pump_run')) return;
-        section.data.autoStopCmd = false;
-        section.data.manStopCmd = false;
+        section.data.auto_stop_cmd = false;
+        section.data.man_stop_cmd = false;
     },
 });
 ```
@@ -425,7 +425,7 @@ act({
 `prepare()` 对全部规则做一次拓扑排序（Kahn 算法），得到固定的执行顺序：
 
 - 有向边：写入键 K 的规则 → 读取键 K 的规则；同一个键的多个写入者全部排在它的读取者之前；
-- 一条规则读取自己也写入的键（读改写，例如 `line_action_source &&= line.autoStopCmd` 所在的规则），这次读取不构成依赖边；
+- 一条规则读取自己也写入的键（读改写，例如 `line_action_source &&= line.auto_stop_cmd` 所在的规则），这次读取不构成依赖边；
 - `reads_previous` 中的键不构成依赖边；
 - 同一个键的多个写入者之间、以及没有依赖关系的规则之间，按声明顺序排列，保证结果可重复。
 
@@ -566,13 +566,13 @@ derive 规则，每次扫描都执行，规则之间的顺序由排序决定：
 
 act 规则，每次扫描都执行：
 
-1. 停泵命令复位：`pump_run` 下降沿时清除段的 `autoStopCmd` / `manStopCmd`。它在压力动作之前声明，两者都写 `autoStopCmd`，按声明顺序排列。
+1. 停泵命令复位：`pump_run` 下降沿时清除段的 `auto_stop_cmd` / `man_stop_cmd`。它在压力动作之前声明，两者都写 `auto_stop_cmd`，按声明顺序排列。
 2. 压力动作（变量 `press_action`）：
-   - `press_SD_trigger && pump_run` 时置位，同时置位段的 `autoStopCmd`。不检查 `protect_F`，所以不受挂起约束；
-   - 否则在 `pump_run && !autoStopCmd` 时复位：本段泵在运行（必然是停泵后重新启动的），联锁条件已消失。
+   - `press_SD_trigger && pump_run` 时置位，同时置位段的 `auto_stop_cmd`。不检查 `protect_F`，所以不受挂起约束；
+   - 否则在 `pump_run && !auto_stop_cmd` 时复位：本段泵在运行（必然是停泵后重新启动的），联锁条件已消失。
 3. 输差动作（变量 `flow_action`）：
-   - `countdown_expired` 时置位，同时置位线的 `autoStopCmd` 和本段的 `line_action_source`；
-   - 否则先执行 `line_action_source &&= line.autoStopCmd`，再在 `line.pump_run && !flow_alarm_F && !line_action_source` 时复位。泵运行条件取线的，与停泵预告一致，否则没有泵的段永远无法复位。
+   - `countdown_expired` 时置位，同时置位线的 `auto_stop_cmd` 和本段的 `line_action_source`；
+   - 否则先执行 `line_action_source &&= line.auto_stop_cmd`，再在 `line.pump_run && !flow_alarm_F && !line_action_source` 时复位。泵运行条件取线的，与停泵预告一致，否则没有泵的段永远无法复位。
 4. 复位条件每次扫描都判断，不锁存；停泵期间两个泵运行条件都不成立，所以动作状态保留到泵重新运行。
 5. 动作记录：任一动作变量出现上升沿时，把线的 `action_section_ID` 设为本段 ID，并调用 `add_action_record()` 生成一条记录；同一次扫描两者同时发生只生成一条。两个动作变量都为 false 且线的 `action_section_ID` 等于本段 ID 时，把它清零，避免抹掉其他段的动作。
 6. 泵命令：段的 `stop_pumps` 变化时，为真则对每个带泵执行器设置 `command.stop_pumps = node.data.pump_run`；为假则设置 `stop_pumps = false` 和 `cancel_stop = true`。
@@ -585,7 +585,7 @@ act 规则，每次扫描都执行：
   - `pump_run`、`pre_stop_notice`：取各段同名属性的“或”；
   - `alarm_F`：取各段 `flow_alarm_F` 与 `press_alarm_F` 的“或”。
 - 线的 `flow_override` 只记日志，不改写任何段；其作用在段的 `protect_F` 规则中以与运算体现（见§8.2）。
-- act 规则：`pump_run` 下降沿时，清除线的 `autoStopCmd` / `manStopCmd`。
+- act 规则：`pump_run` 下降沿时，清除线的 `auto_stop_cmd` / `man_stop_cmd`。
 
 ## 10. 动作记录（`action_record.js`）
 

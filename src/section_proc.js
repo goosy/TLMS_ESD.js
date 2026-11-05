@@ -206,23 +206,23 @@ export function section_rules(section, scheduler) {
 	add_act({
 		name: "stop commands reset",
 		reads: [[data, "pump_run"]],
-		writes: [[data, "autoStopCmd"], [data, "manStopCmd"]],
+		writes: [[data, "auto_stop_cmd"], [data, "man_stop_cmd"]],
 		run: () => {
 			if (!scheduler.fell(data, "pump_run")) return;
-			data.autoStopCmd = false;
-			data.manStopCmd = false;
+			data.auto_stop_cmd = false;
+			data.man_stop_cmd = false;
 		},
 	});
 	// pressure action: stops this section only, not gated by protect_F
 	add_act({
 		name: "pressure action",
-		reads: [[section, "press_SD_trigger"], [data, "pump_run"], [data, "autoStopCmd"]],
-		writes: [[section, "press_action"], [data, "autoStopCmd"]],
+		reads: [[section, "press_SD_trigger"], [data, "pump_run"], [data, "auto_stop_cmd"]],
+		writes: [[section, "press_action"], [data, "auto_stop_cmd"]],
 		run: () => {
 			if (section.press_SD_trigger && data.pump_run) {
 				section.press_action = true;
-				data.autoStopCmd = true;
-			} else if (data.pump_run && !data.autoStopCmd) {
+				data.auto_stop_cmd = true;
+			} else if (data.pump_run && !data.auto_stop_cmd) {
 				// the section runs again without the trigger
 				section.press_action = false;
 			}
@@ -233,16 +233,16 @@ export function section_rules(section, scheduler) {
 		name: "flow action",
 		reads: [
 			[section, "countdown_expired"], [data, "flow_alarm_F"], [data, "line_action_source"],
-			[line_data, "pump_run"], [line_data, "autoStopCmd"],
+			[line_data, "pump_run"], [line_data, "auto_stop_cmd"],
 		],
-		writes: [[section, "flow_action"], [data, "line_action_source"], [line_data, "autoStopCmd"]],
+		writes: [[section, "flow_action"], [data, "line_action_source"], [line_data, "auto_stop_cmd"]],
 		run: () => {
 			if (section.countdown_expired) {
 				section.flow_action = true;
-				line_data.autoStopCmd = true;
+				line_data.auto_stop_cmd = true;
 				data.line_action_source = true;
 			} else {
-				data.line_action_source &&= line_data.autoStopCmd;
+				data.line_action_source &&= line_data.auto_stop_cmd;
 				if (line_data.pump_run && !data.flow_alarm_F && !data.line_action_source) {
 					// the line runs again without the alarm
 					section.flow_action = false;
@@ -291,13 +291,13 @@ export function section_rules(section, scheduler) {
 	add({
 		name: "stop_pumps",
 		reads: [
-			[data, "autoStopCmd"], [data, "manStopCmd"],
-			[line_data, "autoStopCmd"], [line_data, "manStopCmd"],
+			[data, "auto_stop_cmd"], [data, "man_stop_cmd"],
+			[line_data, "auto_stop_cmd"], [line_data, "man_stop_cmd"],
 			[data, "pump_run"],
 		],
 		writes: [[section, "stop_pumps"]],
 		run: () => {
-			const stop_pumps = data.autoStopCmd || data.manStopCmd || line_data.autoStopCmd || line_data.manStopCmd;
+			const stop_pumps = data.auto_stop_cmd || data.man_stop_cmd || line_data.auto_stop_cmd || line_data.man_stop_cmd;
 			section.stop_pumps = stop_pumps && data.pump_run;
 		},
 	});

@@ -220,14 +220,14 @@ Tag 即接口：
   - 倒计时结束仍满足条件时，执行流量联锁；
   - 倒计时期间任一条件消失（例如人工挂起使 `protect_F` 失效），倒计时清零，停输被中断。
 - 联锁动作：段分别记录两类动作，即压力动作和输差动作，两者各自置位、各自复位；段的 `action_F` 取两者的“或”。
-  - 输差联锁（停线）：倒计时结束时发生输差动作，记录线的 `action_section_ID`，置位线的 `autoStopCmd`，并标记本段为线动作源（`line_action_source`）。线的停泵命令作用于线内所有段，凡有泵运行的段都会停泵；
-  - 压力联锁（停段）：段内任一 `pressure_SD_F` 为真的执行器 `pressure_AH_F` 为真，且本段有泵运行时，发生压力动作，记录线的 `action_section_ID`，置位段的 `autoStopCmd`。`pressure_SD_F` 为假的执行器只报警，不触发停泵。压力联锁不受挂起（`protect_F`）约束。目前压力联锁只停本段，将来可能扩展为停线；
+  - 输差联锁（停线）：倒计时结束时发生输差动作，记录线的 `action_section_ID`，置位线的 `auto_stop_cmd`，并标记本段为线动作源（`line_action_source`）。线的停泵命令作用于线内所有段，凡有泵运行的段都会停泵；
+  - 压力联锁（停段）：段内任一 `pressure_SD_F` 为真的执行器 `pressure_AH_F` 为真，且本段有泵运行时，发生压力动作，记录线的 `action_section_ID`，置位段的 `auto_stop_cmd`。`pressure_SD_F` 为假的执行器只报警，不触发停泵。压力联锁不受挂起（`protect_F`）约束。目前压力联锁只停本段，将来可能扩展为停线；
   - 段的 `press_alarm_F` 仍汇总全部执行器的 `pressure_AH_F`，用于报警显示，不论是否允许压力联锁。
 - 停泵：段或所属线上存在自动 / 手动停泵命令，且本段有泵运行时，向本段所有带泵执行器下发停泵命令；命令撤销时下发取消停泵命令。
 - 复位：
-  - 本段泵全部停止后，清除段的 `autoStopCmd` / `manStopCmd`；
+  - 本段泵全部停止后，清除段的 `auto_stop_cmd` / `man_stop_cmd`；
   - 停泵期间保留动作状态，便于 HMI 查看停输原因；
-  - 压力动作：本段有泵运行、压力联锁条件已消失、且段的 `autoStopCmd` 已清除时复位；
+  - 压力动作：本段有泵运行、压力联锁条件已消失、且段的 `auto_stop_cmd` 已清除时复位；
   - 输差动作：所属线有泵运行、本段 `flow_alarm_F` 已消失、且本段不再是线动作源时复位；
   - 复位条件每次处理都判断，不锁存：泵重新启动时报警仍在，之后报警消失，动作同样复位；
   - 两类动作都复位后，`action_F` 清除；线的 `action_section_ID` 仍为本段 ID 时清零，已被其他段改写时不动。
@@ -239,8 +239,8 @@ Tag 即接口：
 - `alarm_F`：任一段流量报警或压力报警时为 true；
 - `pre_stop_notice`：任一段处于停泵预告时为 true；
 - `flow_override`（全线人工挂起）：线级总闸，置位时线内所有段均不保护，复位后恢复；它不改写任何段自己的 `flow_override`，因此各段单独设置的挂起在线总闸复位后依然保持；HMI 应同时显示线与段的 `flow_override`；
-- 线内泵全部停止后，清除线的 `autoStopCmd` / `manStopCmd`；
-- `manStopCmd` 由 HMI 写入，用于手动停泵。
+- 线内泵全部停止后，清除线的 `auto_stop_cmd` / `man_stop_cmd`；
+- `man_stop_cmd` 由 HMI 写入，用于手动停泵。
 
 ### 5.4 动作记录
 

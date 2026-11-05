@@ -139,12 +139,12 @@ describe("rule order", () => {
 
 	test("a read of a key the rule also writes is no dependency", () => {
 		const d = block("D", "a", "b");
-		const line = { name: "line", autoStopCmd: false };
+		const line = { name: "line", auto_stop_cmd: false };
 		const rules = [
-			act({ name: "s1", reads: [[line, "autoStopCmd"]], writes: [[line, "autoStopCmd"], [d, "a"]], run: noop }),
-			act({ name: "s2", reads: [[line, "autoStopCmd"]], writes: [[line, "autoStopCmd"], [d, "b"]], run: noop }),
+			act({ name: "s1", reads: [[line, "auto_stop_cmd"]], writes: [[line, "auto_stop_cmd"], [d, "a"]], run: noop }),
+			act({ name: "s2", reads: [[line, "auto_stop_cmd"]], writes: [[line, "auto_stop_cmd"], [d, "b"]], run: noop }),
 		];
-		const is_var = (owner, name) => owner === line && name === "autoStopCmd";
+		const is_var = (owner, name) => owner === line && name === "auto_stop_cmd";
 		assert.deepEqual(names_of(order_rules(rules, is_var)), ["s1", "s2"]);
 	});
 

@@ -359,11 +359,11 @@ derive({
 act({
     name: `section ${section.name} stop commands reset`,
     reads: [[section.data, 'pump_run']],
-    writes: [[section.data, 'autoStopCmd'], [section.data, 'manStopCmd']],
+    writes: [[section.data, 'auto_stop_cmd'], [section.data, 'man_stop_cmd']],
     run: () => {
         if (!scheduler.fell(section.data, 'pump_run')) return;
-        section.data.autoStopCmd = false;
-        section.data.manStopCmd = false;
+        section.data.auto_stop_cmd = false;
+        section.data.man_stop_cmd = false;
     },
 });
 ```
@@ -427,7 +427,7 @@ Timing semantics:
 `prepare()` topologically sorts all rules once (Kahn's algorithm), giving a fixed execution order:
 
 - Directed edge: rule writing key K -> rule reading key K; all writers of the same key are ordered before its readers;
-- When a rule reads a key it also writes (read-modify-write, e.g. the rule containing `line_action_source &&= line.autoStopCmd`), that read forms no dependency edge;
+- When a rule reads a key it also writes (read-modify-write, e.g. the rule containing `line_action_source &&= line.auto_stop_cmd`), that read forms no dependency edge;
 - Keys in `reads_previous` form no dependency edges;
 - Several writers of the same key, and rules without dependencies between them, are ordered by declaration order, so the result is repeatable.
 
@@ -568,13 +568,13 @@ derive rules, run in every scan, ordered among themselves by the ordering:
 
 act rules, run in every scan:
 
-1. Stop command reset: on the falling edge of `pump_run`, clears the section's `autoStopCmd` / `manStopCmd`. It is declared before the pressure action; both write `autoStopCmd` and are ordered by declaration order.
+1. Stop command reset: on the falling edge of `pump_run`, clears the section's `auto_stop_cmd` / `man_stop_cmd`. It is declared before the pressure action; both write `auto_stop_cmd` and are ordered by declaration order.
 2. Pressure action (variable `press_action`):
-   - set when `press_SD_trigger && pump_run`, together with the section's `autoStopCmd`. `protect_F` is not checked, so it is not restricted by hang-on;
-   - otherwise reset when `pump_run && !autoStopCmd`: a pump of this section is running (necessarily restarted after the stop), and the interlock condition has disappeared.
+   - set when `press_SD_trigger && pump_run`, together with the section's `auto_stop_cmd`. `protect_F` is not checked, so it is not restricted by hang-on;
+   - otherwise reset when `pump_run && !auto_stop_cmd`: a pump of this section is running (necessarily restarted after the stop), and the interlock condition has disappeared.
 3. Flow difference action (variable `flow_action`):
-   - set on `countdown_expired`, together with the line's `autoStopCmd` and this section's `line_action_source`;
-   - otherwise first runs `line_action_source &&= line.autoStopCmd`, then resets when `line.pump_run && !flow_alarm_F && !line_action_source`. The pump running condition takes the line's, as for the stop pump notice; otherwise a section without pumps could never reset.
+   - set on `countdown_expired`, together with the line's `auto_stop_cmd` and this section's `line_action_source`;
+   - otherwise first runs `line_action_source &&= line.auto_stop_cmd`, then resets when `line.pump_run && !flow_alarm_F && !line_action_source`. The pump running condition takes the line's, as for the stop pump notice; otherwise a section without pumps could never reset.
 4. The reset conditions are evaluated in every scan and not latched; during the stop neither pump running condition holds, so the action state is kept until pumps run again.
 5. Action record: on a rising edge of either action variable, sets the line's `action_section_ID` to this section's ID and calls `add_action_record()` to create a record; when both happen in the same scan, only one record is created. When both action variables are false and the line's `action_section_ID` equals this section's ID, it is cleared, so as not to erase the action of another section.
 6. Pump commands: on changes of the section's `stop_pumps`, when true sets `command.stop_pumps = node.data.pump_run` for each actuator with pumps; when false sets `stop_pumps = false` and `cancel_stop = true`.
@@ -587,7 +587,7 @@ The section layout is planned to change in a future transitional version dedicat
   - `pump_run`, `pre_stop_notice`: the OR of the properties of the same name of the sections;
   - `alarm_F`: the OR of `flow_alarm_F` and `press_alarm_F` of the sections.
 - The line's `flow_override` is only logged and does not overwrite any section; its effect shows as an AND in the `protect_F` rule of the sections (see §8.2).
-- act rule: on the falling edge of `pump_run`, clears the line's `autoStopCmd` / `manStopCmd`.
+- act rule: on the falling edge of `pump_run`, clears the line's `auto_stop_cmd` / `man_stop_cmd`.
 
 ## 10. Action records (`action_record.js`)
 

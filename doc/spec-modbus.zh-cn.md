@@ -24,8 +24,8 @@
 | 0.0 | 8 | flow_override | Bool | false | 全线人工挂起；总闸，不改写各段的 flow_override |
 | 0.1 | 9 | pump_run | Bool | false | 本线是否起泵输油 |
 | 0.2 | 10 | alarm_F | Bool | false | 本线有报警 |
-| 0.3 | 11 | autoStopCmd | Bool | false | 自动停输命令 |
-| 0.4 | 12 | manStopCmd | Bool | false | 人工停输命令 |
+| 0.3 | 11 | auto_stop_cmd | Bool | false | 自动停输命令 |
+| 0.4 | 12 | man_stop_cmd | Bool | false | 人工停输命令 |
 | 0.5 | 13 | pre_stop_notice | Bool | false | 停泵预告 |
 | 1 |  | ID | UInt | 0 | 本线ID号 |
 | 2 |  | action_section_ID | UInt | 0 | 大流差动作管段的段号 |
@@ -48,8 +48,8 @@
 | 2.7 | 47 | flow_alarm_F | Bool | false | 本段流量报警（预动作） |
 | 2.8 | 32 | press_warning_F | Bool | false | 本段压力警告 |
 | 2.9 | 33 | press_alarm_F | Bool | false | 本段压力报警（预动作） |
-| 2.10 | 34 | autoStopCmd | Bool | false | 本段自动停泵 |
-| 2.11 | 35 | manStopCmd | Bool | false | 本段人工停泵 |
+| 2.10 | 34 | auto_stop_cmd | Bool | false | 本段自动停泵 |
+| 2.11 | 35 | man_stop_cmd | Bool | false | 本段人工停泵 |
 | 2.12 | 36 | line_action_source | Bool | false | 本段是否为全线停输来源 |
 | 2.13 | 37 | pump_run | Bool | false | 本段是否起泵输油 |
 | 2.14 | 38 | pump_change_F | Bool | false | 当前时间段是否有泵操作 |
@@ -138,11 +138,11 @@
 | 55 |  | invalid_value_of_AI | Real | -100000 | 模拟量无效时的预置值（暂时没实现） |
 | 57 |  | delay_protect_time | UDInt | 5000 | 通讯中断延后挂起时间 |
 | 59 |  | flow_smooth_factor | Real | 0.9 | 流量平滑权值 |
-| 61 |  | equS1 | DInt | 10000 | 流量1当量 |
-| 63 |  | equS2 | DInt | 10000 | 流量2当量 |
-| 65 |  | equS3 | DInt | 10000 | 流量3当量 |
-| 67 |  | equS4 | DInt | 10000 | 流量4当量 |
-| 69 |  | equS5 | DInt | 10000 | 流量5当量 |
+| 61 |  | flow1_k_factor | DInt | 10000 | 流量1 K 系数（脉冲/m³） |
+| 63 |  | flow2_k_factor | DInt | 10000 | 流量2 K 系数（脉冲/m³） |
+| 65 |  | flow3_k_factor | DInt | 10000 | 流量3 K 系数（脉冲/m³） |
+| 67 |  | flow4_k_factor | DInt | 10000 | 流量4 K 系数（脉冲/m³） |
+| 69 |  | flow5_k_factor | DInt | 10000 | 流量5 K 系数（脉冲/m³） |
 | 71 |  | pump_change_delay | UDInt | 180000 | 泵操作延时 |
 
 ## 5. 命令块（COMMAND，74 个寄存器，执行器单元寄存器 200 起）
@@ -207,11 +207,11 @@
 | 56 |  | invalid_value_of_AI | Real | -100000 | 模拟量无效时的预置值（暂时没实现） |
 | 58 |  | delay_protect_time | UDInt | 5000 | 通讯中断延后挂起时间 |
 | 60 |  | flow_smooth_factor | Real | 0.9 | 流量平滑权值 |
-| 62 |  | equS1 | DInt | 10000 | 流量1当量 |
-| 64 |  | equS2 | DInt | 10000 | 流量2当量 |
-| 66 |  | equS3 | DInt | 10000 | 流量3当量 |
-| 68 |  | equS4 | DInt | 10000 | 流量4当量 |
-| 70 |  | equS5 | DInt | 10000 | 流量5当量 |
+| 62 |  | flow1_k_factor | DInt | 10000 | 流量1 K 系数（脉冲/m³） |
+| 64 |  | flow2_k_factor | DInt | 10000 | 流量2 K 系数（脉冲/m³） |
+| 66 |  | flow3_k_factor | DInt | 10000 | 流量3 K 系数（脉冲/m³） |
+| 68 |  | flow4_k_factor | DInt | 10000 | 流量4 K 系数（脉冲/m³） |
+| 70 |  | flow5_k_factor | DInt | 10000 | 流量5 K 系数（脉冲/m³） |
 | 72 |  | pump_change_delay | UDInt | 180000 | 泵操作延时 |
 
 ## 6. 动作记录（RECORD，27 个寄存器）
