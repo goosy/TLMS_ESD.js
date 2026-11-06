@@ -655,6 +655,7 @@ act 规则，每次扫描都执行：
 | 项 | 规范要求 | 代码现状 | 涉及位置 |
 | --- | --- | --- | --- |
 | ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个 block 共用 ID（规范 §4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
+| 名称唯一性校验 | 控制器与执行器的 `name` 互不相同，同类型之间和跨类型都不能重复（规范 §4.2） | 不校验；`cfg_controllers`、`cfg_actuators` 按 `name` 建索引，同类型重复时后者静默覆盖前者，控制器与执行器同名不报错 | `config.js` 的 `add_conf` |
 | ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 §4.1、5.5） | `build_description` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `description.js` 的 `build_description` |
 | 配置检查命令 | `tlms check` 读取并校验配置和全部布局（§3.2）、报告全部错误，不启动控制器（规范 §3.6、§5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃；布局校验已在启动时由模拟器加载描述文件时执行（`init_controller`，§4.4），尚未接入命令行 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
 | 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 §5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 的 `add_action_record` |

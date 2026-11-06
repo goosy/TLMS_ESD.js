@@ -151,6 +151,12 @@ Tags are the interface:
   - unit id 0 is reserved for the action record.
 - These rules are validated by the configuration check (see §5.6); a violation is a configuration error.
 
+### 4.2 Name rules
+
+- The `name`s of controllers and actuators are all distinct: no repetition among controllers, among actuators, or between controllers and actuators.
+- The name is also the name of the subdirectory of the object's files (such as the emulator description `<controller name>/emulator.yaml` of a controller, see §5.5), and repeated names would make the subdirectories collide.
+- These rules are validated by the configuration check (see §5.6); a violation is a configuration error.
+
 ## 5. Functional requirements
 
 ### 5.1 Actuators
