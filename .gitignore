@@ -27,3 +27,7 @@ yarn.lock
 /main.js
 /emulator.js
 /cli.js
+
+# agent & local
+AGENTS.md
+.local/
