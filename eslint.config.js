@@ -30,8 +30,10 @@ export default [
 			// Parameters prefixed with `_` are unused on purpose.
 			"no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
 			// layout-data is used through modbus-emulator, which forwards its API: one copy in the process.
+			// It is a dev dependency only for its layout-types command (pnpm gen:types).
 			"no-restricted-imports": ["error", {
 				paths: [{ name: "layout-data", message: "Import it from modbus-emulator, which forwards the API." }],
+				patterns: [{ group: ["layout-data/*"], message: "Use the layout-types command of layout-data, not its modules." }],
 			}],
 			// Use the Number namespace instead of the equivalent globals.
 			"no-restricted-globals": ["error",

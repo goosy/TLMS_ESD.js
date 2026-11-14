@@ -7,22 +7,20 @@ import { Scheduler } from "./scan.js";
 import { logger } from "./util.js";
 
 /**
- * Builds the runtime object graph of a prepared controller: takes the data blocks
- * of its lines, sections and nodes from the upward emulator (create_upward),
- * the event wiring of the *_init functions, the scan scheduler and its rules.
+ * Builds the runtime of a controller whose data blocks are mounted
+ * (init_controller): the event wiring of the *_init functions, the scan
+ * scheduler and its rules.
  *
- * @param {Object} controller - The controller returned by prepare_controller.
+ * @param {Object} controller - The controller returned by init_controller.
  * @param {Object} options
  * @param {(driver_info: Object) => {data_driver: Object, command_driver: Object}} options.get_drivers
  *     Returns the drivers of a node, shared between nodes on the same connection.
- * @param {import("modbus-emulator").Modbus_Emulator} options.emulator
- *     The upward emulator of the controller, holding the data blocks.
  * @param {{data: import("modbus-emulator").Ldata, get: (index: number) => boolean, update_record: (fields: Object) => void}} options.action_record
  *     The action record of the controller.
  * @return {{scheduler: Scheduler, lines: Object[], sections: Object[], nodes: Object[],
  *     start: () => void, stop: () => void}}
  */
-export function build_runtime(controller, { get_drivers, action_record, emulator }) {
+export function build_runtime(controller, { get_drivers, action_record }) {
 	const scheduler = new Scheduler({
 		period: MAIN_PERIOD,
 		on_error: (error, source) => logger.error(`scan: ${source?.name ?? "unknown"}: ${error.message}`),
@@ -41,11 +39,9 @@ export function build_runtime(controller, { get_drivers, action_record, emulator
 		node.scheduler = scheduler;
 
 		/** @type {import("./layout_types").NODE_Ldata} */
-		const data = emulator.block(node.block);
-		node.data = data;
+		const data = node.data;
 		/** @type {import("./layout_types").COMMAND_Ldata} */
-		const command = emulator.block(node.command_block);
-		node.command = command;
+		const command = node.command;
 
 		node_init(node);
 		scheduler.add_data(data);
@@ -59,15 +55,13 @@ export function build_runtime(controller, { get_drivers, action_record, emulator
 
 	for (const line of controller.lines) {
 		/** @type {import("./layout_types").LINE_Ldata} */
-		const data = emulator.block(line.block);
-		line.data = data;
+		const data = line.data;
 		line_init(line);
 		scheduler.add_data(data);
 		lines.push(line);
 		for (const section of line.sections) {
 			/** @type {import("./layout_types").SECTION_Ldata} */
-			const data = emulator.block(section.block);
-			section.data = data;
+			const data = section.data;
 			for (const node of section.begin_nodes) add_node(node);
 			for (const node of section.end_nodes) add_node(node);
 			section_init(section);

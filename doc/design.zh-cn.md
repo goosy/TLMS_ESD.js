@@ -8,10 +8,11 @@
 | --- | --- |
 | `src/cli.js` | `tlms` 命令行，解析参数，调用 pm2 或直接 `import('./main.js')`。 |
 | `src/main.js` | 进程入口：读取配置，构建控制器，提供按连接复用的真实驱动，启动 Modbus 服务端和扫描。 |
-| `src/runtime.js` | `build_runtime`：为控制器创建 Ldata、挂到 `Unit_Map`、调用各 `*_init`，创建扫描调度器并声明全部规则，提供 `start` / `stop`。驱动由调用方经 `get_drivers` 提供。 |
+| `src/runtime.js` | `build_runtime`：使用对象图上已挂好的 Ldata，调用各 `*_init`，创建扫描调度器并声明全部规则，提供 `start` / `stop`。驱动由调用方经 `get_drivers` 提供。 |
 | `src/gcl.js` | YAML 加载器（`yaml` 库，YAML 1.2），保留源码行号信息。 |
 | `src/config.js` | 合并多份配置文档，填充默认值，建立名称与 ID 索引，把执行器的 `supported_commands` 转换为命令屏蔽字。 |
-| `src/init.js` | `prepare_controller`：为选定的控制器构建运行时对象图。 |
+| `src/init.js` | `prepare_controller`：为选定的控制器构建运行时对象图；`init_controller`：建对象图、写出模拟器描述文件、构造模拟器并把 Ldata 挂到对象图上（§4.4）。 |
+| `src/description.js` | `build_description`：由对象图生成模拟器描述；`write_description`：把描述写成文件（§4.4）。 |
 | `src/node_proc.js` / `src/section_proc.js` / `src/line_proc.js` | 执行器（节点）、段、线的初始化（日志处理器、IO 绑定）与规则声明。 |
 | `src/action_record.js` | 动作记录：CSV 读写。 |
 | `src/action_record_proc.js` | 动作记录的规则：基于 index 浏览记录。 |
@@ -20,7 +21,7 @@
 | `src/drivers/` | `Base_Driver`、`MTClient`（Modbus TCP 客户端）、`S7Client`，以及 IO 绑定 `binding.js`（§4.5）。对上服务端来自 `modbus-emulator` 包（§4.4）。 |
 | `layout-data`（外部包） | 数据层（§3）：`Ldata` / `Ltag`、布局编译与校验、变化检测、字节序转换。 |
 | `src/layouts.yaml` | LINE、SECTION、NODE、COMMAND、RECORD 的布局描述。 |
-| `src/layouts.js` | 编译 `layouts.yaml` 并导出这些布局和业务需要的片段。 |
+| `src/layouts.js` | 导出 `layouts.yaml` 的路径、布局的登记域名和业务需要的片段。 |
 | `src/layout_types.d.ts` | 由布局生成的类型声明（`pnpm gen:types`）。 |
 | `src/util.js` | log4js 日志、`Object.mixin`。 |
 
@@ -30,7 +31,7 @@
    - `start`：`pm2 delete tlms_esd`，然后 `pm2 start main.js -- <controller>`，并设置 `TLMS=controller`，使日志不输出到控制台；
    - `debug`：改写 `process.argv[2]`，设置 `LOG_LEVEL=debug`，然后动态 import `main.js`。
 2. `main.js` 调用 `read_config(process.cwd())`：
-   1. `readdir` 列出工作目录下所有 `*.ya?ml`；
+   1. `readdir` 列出工作目录本层的所有 `*.ya?ml`，不读子目录（§4.4 生成的描述文件在子目录中）；
    2. 每个文件经 `GCL.load` 解析为 JS 对象；
    3. 每份文档经 `add_conf` 处理。
 3. `add_conf` 把每类对象同时存进数组（`push`）和同一数组的属性（`[name]`，线 / 段 / 执行器另有 `[ID<id>]`），因此 `cfg_*` 既能遍历，也能按键查找。执行器的处理：
@@ -39,15 +40,21 @@
    - 压力和温度限值缺省时，取量程上下限；
    - 由 `supported_commands` 算出命令屏蔽字 `command_mask`（§14.1）。
 4. 全部文档合并后，用名称把线关联到控制器，把段关联到线（对象互相引用）。
-5. `prepare_controller(name)`：
-   1. 选出控制器（为空或 0 时取第一个）；
-   2. 重新生成精简的运行时对象 `line` / `section` / `actuator`；
-   3. 执行器的 `driver_info` 携带协议、地址和数据 / 命令区；
-   4. 同时按首端、末端、泵站分别放入 `section.begin_nodes` / `end_nodes` / `pump_nodes`。
+5. `init_controller(name, process.cwd())`（§4.4）：
+   1. `prepare_controller(name)`：
+      1. 选出控制器（为空或 0 时取第一个）；
+      2. 重新生成精简的运行时对象 `line` / `section` / `actuator`；
+      3. 执行器的 `driver_info` 携带协议、地址和数据 / 命令区；
+      4. 同时按首端、末端、泵站分别放入 `section.begin_nodes` / `end_nodes` / `pump_nodes`；
+      5. 定下各数据块的块名；
+   2. 由对象图生成模拟器描述，写成工作目录下的 `<控制器名>/emulator.yaml`；
+   3. 构造模拟器并加载该文件，模拟器登记布局、创建全部 Ldata；
+   4. 把 Ldata 挂到对象图上；
+   5. 找不到控制器时返回 `undefined`，`main.js` 记录错误；描述不合法时抛出带 `errors` 的错误，`main.js` 逐条写入错误日志并以退出码 1 退出。
 6. `run_controller`：
-   1. 初始化动作记录；
+   1. 用挂好的记录块初始化动作记录；
    2. 调用 `build_runtime`（`runtime.js`）：
-      1. 把动作记录挂到 `unit_id.action_records`，按 线 → 段 → 执行器 的顺序创建 Ldata 并 `attach_unit`，再调用各自的 `*_init`；执行器的驱动由 `main.js` 的 `get_drivers` 按连接复用提供；
+      1. 按 线 → 段 → 执行器 的顺序调用各自的 `*_init`；执行器的驱动由 `main.js` 的 `get_drivers` 按连接复用提供；
       2. 创建扫描调度器（§5），登记全部 block、执行器的数据 Binding（输入分组为 `data_payload`）和只写的命令 Binding；
       3. 对象图建好后，按执行器 → 段 → 线的顺序调用 `node_rules` / `section_rules` / `line_rules` 声明规则（§7、§8、§9），再声明动作记录的规则（§10）和各执行器的命令屏蔽规则（§14.1），然后 `prepare()` 排序检查；
       4. 登记到调度器的 block，其 `write` 事件接到 `request_scan()`（§3.5）；
@@ -60,20 +67,20 @@ Ldata（实例记作 block）与 Ltag 的术语和控制器对它们的要求见
 
 ### 3.1 组件边界
 
-- 本项目通过 `import ... from "modbus-emulator"` 取得 `layout-data` 的接口（`Ldata`、`Ltag`、`register_layout`、`get_layout`、`io_index_table`、`render_types` 及其类型）：modbus-emulator 转发这些接口，本项目不直接依赖 `layout-data`，进程里只有一份（`register_layout` 每个进程只能成功调用一次）；ESLint 禁止直接导入 `layout-data`。不再有 `src/typed_data/`；rolldown 构建时把 modbus-emulator 连同它依赖的 `layout-data` 打进 `main.js`；
-- 该包不依赖本项目的配置、业务处理、布局和日志器，出错时抛出异常：`src/layouts.js` 捕获布局错误后写日志并退出；
+- 本项目通过 `import ... from "modbus-emulator"` 取得 `layout-data` 的接口（`Ldata`、`Ltag`、`create_scope`、`get_scope`、`yaml`、`desc_file` 及其类型）：modbus-emulator 转发这些接口，源码和测试不导入 `layout-data`，进程里只有一份，登记域（scope）也只有一套；ESLint 禁止导入 `layout-data` 及其子路径。类型生成是 layout-data 的开发工具（`layout-types` 命令），modbus-emulator 不转发它，所以 `layout-data` 以与 modbus-emulator 所依赖版本相同的精确版本列入开发依赖，只用于这个命令和生成文件中 `Ldata` 的类型导入。不再有 `src/typed_data/`；rolldown 构建时把 modbus-emulator 连同它依赖的 `layout-data` 打进 `main.js`；
+- 该包不依赖本项目的配置、业务处理、布局和日志器，出错时抛出异常：布局错误在模拟器加载描述时抛出，`main.js` 写日志并退出（§3.2）；
 - 对上服务端（`Unit_Map`、handler、Modbus TCP 服务）在独立的 `modbus-emulator` 包中（§4.4）。
 
 ### 3.2 布局定义（`src/layouts.yaml`）
 
-- 布局描述的格式（YAML 1.2、片段、`coupling`、`includes`、条目字段、类型、初值规则、Bool 定位规则、布局校验）见 layout-data 的设计文档；本项目的布局文件是 `src/layouts.yaml`，根键 `layouts` 下为 `LINE`、`SECTION`、`NODE`、`COMMAND`、`RECORD`，其余根键是片段（如 `node_commands`、`node_parameters`、`node_status`）。
-- `src/layouts.js` 只提供布局来源：导出同目录 `layouts.yaml` 的路径 `layouts_file`（路径按模块位置解析；构建时 rolldown 配置中的复制插件把它作为独立文件输出到 `main.js` 同目录，不打进 `main.js`），并读出参数块条目 `node_parameters` 和命令位条目 `node_commands`（这两个片段的条目列表，供配置和节点规则按名使用）。布局由 modbus-emulator 在创建对上模拟器时注册（`register_layout`，每个进程一次），之后用 `get_layout(名字)` 取得 `LINE`、`SECTION`、`NODE`、`COMMAND`、`RECORD`；布局不合法时，`create_upward` 抛出带 `errors` 的错误，由 `main.js` 逐条写入错误日志并退出。
+- 布局描述的格式（YAML 1.2、条目表、`coupling`、`includes`、条目字段、类型、初值规则、Bool 定位规则、布局校验）见 layout-data 的规范和设计文档；本项目的布局文件是 `src/layouts.yaml`：根键 `layouts` 列出布局名 `LINE`、`SECTION`、`NODE`、`COMMAND`、`RECORD`，根键 `item_tables` 下是这些布局和它们引用的片段（如 `node_commands`、`node_parameters`、`node_status`）的条目表。
+- `src/layouts.js` 只提供布局来源：导出同目录 `layouts.yaml` 的路径 `layouts_file`（路径按模块位置解析；构建时 rolldown 把它作为独立文件输出到 `main.js` 同目录），导出布局的登记域名 `LAYOUT_SCOPE`（`tlms`），并从 `item_tables` 读出参数块条目 `node_parameters` 和命令位条目 `node_commands`（这两个片段的条目列表，供配置和节点规则按名使用）。布局由 modbus-emulator 登记：生成的模拟器描述文件内联 `layouts.yaml` 的 `layouts` 和 `item_tables`（§4.4），模拟器加载它时，把布局登记到登记域 `LAYOUT_SCOPE`，并创建描述中全部数据块的 Ldata；同一布局下块名不能重复。登记之后用 `get_scope(LAYOUT_SCOPE).get_layout(名字)` 取得 `LINE`、`SECTION`、`NODE`、`COMMAND`、`RECORD`；布局不合法时，模拟器抛出带 `errors` 的错误，由 `main.js` 逐条写入错误日志并退出。
 - coupling 中偏移 8–15 对应寄存器的 bit0–7，偏移 0–7 对应 bit8–15；定义文件按 8–15、0–7 的顺序列出，就是按寄存器 bit0 到 bit15 的顺序排列；字值的第 k 位即寄存器 bit k，命令屏蔽字 `command_mask` 按这个位号计算（§14.1）。
 - [spec-modbus.zh-cn.md](spec-modbus.zh-cn.md) 中的点表就是按这些规则从布局计算出来的。
 - 组合字的位号完全由偏移编号保证，block 内部的组合字与其他多字节类型一样按大端存放；对上服务端和驱动都不为组合字单独交换字节（layout-data 规范）。
 - 这些布局就是 Modbus 寄存器表和执行器数据区的内存映像，修改任何偏移都属于协议变更。
 - 写入所有权（规范 §3.6）目前靠人工审查保证：布局中没有标注 Tag 由谁写入，校验不检查这一规则。现有写入路径都符合：命令块的 ID、命令字、参数块和节点 block 的参数块由控制器写入，均按字对齐且连续；节点 block 的其余部分由执行器写入，控制器只读。
-- 布局校验由 `register_layout` 对文件中的全部布局执行；`tlms check` 与配置校验的错误一起报告（未实现，见§13）。
+- 布局校验由登记域加载描述（`scope.load`）时对全部布局执行；`tlms check` 与配置校验的错误一起报告（未实现，见§13）。
 
 主要布局（字节偏移）：
 
@@ -88,7 +95,7 @@ Ldata（实例记作 block）与 Ltag 的术语和控制器对它们的要求见
 ### 3.3 访问追踪与类型声明
 
 - 调度器的 `trace_dependencies()` 用 `Ldata.on_access` 订阅所有数据块的 `access` 事件，把规则对 tag 的读写记入“当前规则”的实际读写集合，`untrace_dependencies()` 取消订阅（§6.5）。
-- 由布局生成类型声明 `src/layout_types.d.ts`（`pnpm gen:types`，调用 layout-data 的 `render_types`）：每个布局一个接口，tag 为属性，`comment` 作为注释，为按名访问提供编辑器补全；生成物纳入版本库，由测试检查它与布局文件一致。
+- 由布局生成类型声明 `src/layout_types.d.ts`（`pnpm gen:types`，即 layout-data 的命令 `layout-types src/layouts.yaml --scope tlms -o src/layout_types.d.ts`，需要 Node.js 24.2 以上；生成文件从 `layout-data` 导入 `Ldata` 类型，只用于类型检查，不进入运行时）：每个布局一个接口，tag 为属性，`comment` 作为注释，为按名访问提供编辑器补全；生成物纳入版本库，由测试以同样的参数运行该命令，检查它与布局文件一致。
 
 ### 3.4 数据块内容的读写
 
@@ -117,7 +124,7 @@ Ldata（实例记作 block）与 Ltag 的术语和控制器对它们的要求见
 
 ### 3.6 字节序转换
 
-设备字节序（`BE`、`LE`、`BEBS`、`LEBS`，没有别名）与内部大端之间的转换由 layout-data 实现（规则见其设计文档）：按 tag 转换用 `tag.load` / `tag.store`，IO 绑定用 `io_index_table` 得到整个 block 的字节映射（§4.5），本包不自己实现转换；测试用 block 的 `load_tag` / `store_tag` 作为对照，核对 Binding 与它们逐字节一致。
+设备字节序（`BE`、`LE`、`BEBS`、`LEBS`，没有别名）与内部大端之间的转换由 layout-data 实现（规则见其设计文档）：按 tag 转换用 `tag.load` / `tag.store`，IO 绑定用布局的 `io_index_table(endian)` 得到整个 block 的字节映射（§4.5），本包不自己实现转换；测试用 block 的 `load_tag` / `store_tag` 作为对照，核对 Binding 与它们逐字节一致。
 
 ## 4. 驱动
 
@@ -138,6 +145,7 @@ Ldata（实例记作 block）与 Ltag 的术语和控制器对它们的要求见
 
 ### 4.2 MTClient（es-modbus）
 
+- 连接：以 es-modbus 的 `tcp` 选项选择 Modbus TCP 传输，目标为 `<host>:<port>`（配置的 `host` 缺省 `127.0.0.1`，`port` 缺省 502），IPv6 主机加方括号。
 - 地址换算：配置和 Ldata 中的区域都以字节计，字节起点 `start` 对应保持寄存器 PDU 地址 `start >> 1`（0 基），长度为 `length >> 1` 个寄存器；以 es-modbus 的结构化范围 `[func_code, pdu_addr, length]` 传入，不使用 Modicon 写法。
 - es-modbus 对非法参数（范围、数量上限、unit_id）同步抛出；`read` / `write` 捕获后记录错误日志，并按读写失败处理（`emit_io_error`）。
 - 只访问保持寄存器：功能码由 MTClient 显式给出，03 读，06（单个寄存器）/ 16（多个寄存器）写。不使用线圈、离散输入和输入寄存器。
@@ -155,13 +163,16 @@ Ldata（实例记作 block）与 Ltag 的术语和控制器对它们的要求见
 
 ### 4.4 对上服务端（modbus-emulator）
 
-- 数据块的创建和对上服务由独立的 `modbus-emulator` 包提供（规范和设计见该包的 `doc/`）。`src/upward.js#create_upward(controller)` 把控制器对象图描述成模拟器的对象形式描述：`layouts_file` 指向 `src/layouts.yaml`，`blocks` 为全部数据块，`servers` 为监听 `0.0.0.0:<modbus_server.port>` 的一个 TCP 服务。模拟器自身不输出日志：`create_upward` 把构造时的 `warnings` 写入日志，并订阅它转发的服务事件（`server_<name>`：启停、客户端连接与断开、各类错误）和 handler 事件（`unmapped`、`unmapped_limit`、`listener_error`），写入项目日志。
-- 数据块（单元号来自 `controller.modbus_server.unit_id`）：动作记录（`RECORD`，字节 0）；每条线（`LINE`）、每个段（`SECTION`）各一个；每个执行器的 data（`NODE`，字节 0）和 command（`COMMAND`，字节 400，即寄存器 200 起）共用执行器的单元。数据块名即线、段、执行器的名称（command 加后缀 ` command`）。
-- 数据块名存回对象图（`controller.record_block`、`line.block`、`section.block`、`node.block`、`node.command_block`），`main.js`、`runtime.js` 据此用 `emulator.block(name)` 取回 Ldata；Ldata 的显示名由各 `*_init` 重新设置。
+- 数据块的创建和对上服务由独立的 `modbus-emulator` 包提供（规范和设计见该包的 `doc/`）。控制器把模拟器描述生成为文件，再由模拟器加载这个文件；描述文件是运行方可以查看的完整描述（规范 §5.5）。
+- 块名：`prepare_controller` 建对象图时定下，存在对象上。线、段、执行器的数据块名就是对象的 `name`；执行器命令块的块名存在 `node.command_name`（`<执行器名> command`），动作记录的块名存在 `controller.record_name`（`action_records`）。块名只出现在描述文件和诊断信息里，不影响 Modbus 地址。
+- 数据块（单元号来自 `controller.modbus_server.unit_id`）：动作记录（`RECORD`，字节 0）；每条线（`LINE`）、每个段（`SECTION`）各一个；每个执行器的 data（`NODE`，字节 0）和 command（`COMMAND`，字节 400，即寄存器 200 起）共用执行器的单元。
+- `src/description.js#build_description(controller)` 是只读对象图的纯函数，返回描述对象：`layouts` 和 `item_tables` 取自 `layouts.yaml`，`blocks` 为全部数据块（块名、布局），`units` 为每个单元号一个单元条目，在其中放置该单元的数据块及其起始字节，`servers` 为监听 `0.0.0.0:<modbus_server.port>` 的一个 TCP 服务。单元的字节序、未映射地址的应答和放置的只读点都取模拟器的默认值：大端，未映射地址读为 0、写入被忽略，全部点可写。描述不写登记域：登记域由代码选定（`new Modbus_Emulator(LAYOUT_SCOPE)`）。`write_description(file, description)` 把它写成 YAML 文件，文件头注明由控制器生成。
+- `src/init.js#init_controller(name, dir)` 是 `main.js` 和测试共用的主调度函数：`prepare_controller` → `build_description` → 写出 `<dir>/<控制器名>/emulator.yaml`（子目录不存在时创建）→ `new Modbus_Emulator(LAYOUT_SCOPE)` → 接日志 → `emulator.load(文件)` → 挂载 Ldata。返回 `{ controller, emulator }`，`main.js` 还要用模拟器启动服务。`main.js` 传入工作目录，测试传入临时目录。
+- 挂载：加载后遍历一次对象图，`line.data`、`section.data`、`node.data` 为各自块名的 Ldata，`node.command` 为命令块，`controller.record_data` 为动作记录块。对象图上不存放模拟器，`build_runtime` 直接使用挂好的 Ldata。
+- 日志：模拟器自身不输出日志。`init_controller` 在加载前订阅它的 `warning` 事件（加载时发现的诊断）、转发的服务事件（`server_<name>`：启停、客户端连接与断开、各类错误）和 handler 事件（`unmapped`，带读写操作 `operation`；`unmapped_limit`；`listener_error`），写入项目日志。
 - 写入通知：不经模拟器传递。数据块创建时调度器还不存在，`build_runtime` 把数据块登记到调度器（`add_data`）时，调度器监听该 block 的 `write` 事件，请求扫描；其他需要知道写入的使用方同样各自监听。
-- 寄存器和线圈的地址映射、未映射地址的处理、异常应答见 modbus-emulator 的规范；读经 Ldata 的 `read_bytes` / `read_bit`，写经 `write_bytes` / `write_bit`，由 Ldata 在每次写入后检测变化；一个 FC 15 / FC 16 请求在一个事务内写入同一 block。测试经 `emulator.handler` 模拟 HMI 请求。
-- `src/layouts.js` 只读出 `layouts.yaml` 里需要按名使用的片段；布局的校验和登记由模拟器按 `layouts_file` 一次完成，动作记录字段等布局元数据从登记后的 `Layout`（`block.layout`、`get_layout`）取得。
-
+- 寄存器和线圈的地址映射、未映射地址的处理、异常应答见 modbus-emulator 的规范；读经 Ldata 的 `read_bytes` / `read_bit`，写经 `write_bytes` / `write_bit`，由 Ldata 在每次写入后检测变化；一个 FC 15 / FC 16 请求在一个事务内写入同一 block。测试经 `emulator.handler` 模拟 HMI 请求；`emulator.stop()` 把块名交还给布局，同一进程中可以再次加载同名数据块。
+- `src/layouts.js` 读出 `layouts.yaml` 的布局描述（`layouts`、`item_tables`）供生成描述文件，并导出按名使用的片段；布局的校验和登记由模拟器加载描述文件时完成，动作记录字段等布局元数据从登记后的 `Layout`（`block.layout`、登记域的 `get_layout`）取得。
 
 ### 4.5 IO 绑定（`src/drivers/binding.js`）
 
@@ -169,7 +180,7 @@ IO 绑定不属于数据层：它只通过 Ldata 和 Ltag 的接口按 tag 与�
 
 - `new Binding(data, driver, { start, remote_start, length, endian, on_update }, ...extras)` 把 block 的交换区 `[start, start + length)` 对应到远端 `remote_start` 起的同长度区域；`extras` 原样传给驱动（Modbus 为 `unit_id`，S7 为 `area, db`）。交换区三项参数必须是驱动写入单元 `driver.write_unit`（缺省为 1）的整数倍，否则抛出异常，保证扩展后的写区间不越出交换区，且本地写入单元与远端写入单元对齐。
 - Binding 持有按设备字节序存放的 `IO_buffer`（与 block 同长、同下标），驱动读入的数据只写入它。
-- 字节映射 `io_index`：创建时由 layout-data 的 `io_index_table(layout, endian)` 为 block 的每个字节算出它在 `IO_buffer` 中的下标（规则：设备字节序以 16 位寄存器和 32 位值为单位生效，见规范 §3.6 和 layout-data 的设计文档）。布局校验保证非 Bool 条目不重叠、Bool 只落在组合字内，所以每个字节的映射唯一。
+- 字节映射 `io_index`：创建时由 block 布局的 `io_index_table(endian)`（`data.layout.io_index_table(endian)`）为 block 的每个字节算出它在 `IO_buffer` 中的下标（规则：设备字节序以 16 位寄存器和 32 位值为单位生效，见规范 §3.6 和 layout-data 的设计文档）。布局校验保证非 Bool 条目不重叠、Bool 只落在组合字内，所以每个字节的映射唯一。
 - `create_group(...names)` 返回一组需要一起与设备同步的 tag（`Binding_Group`）：
   - 名称不存在、tag 落在交换区以外时抛出异常；同一 tag 重复添加时忽略；
   - 创建时一次性取得组内每个 tag 的 Ltag，装载和导出不再按名查找；
@@ -616,7 +627,7 @@ act 规则，每次扫描都执行：
 | --- | --- |
 | `es-modbus` | Modbus TCP 客户端（连接执行器）；对 HMI 的服务端经 `modbus-emulator` 使用它 |
 | `modbus-emulator` | 数据块的创建和对上 Modbus TCP 服务端（§4.4），并转发 `layout-data` 的接口（§3.1） |
-| `layout-data` | 数据层（§3），经 `modbus-emulator` 使用，本项目不直接依赖它 |
+| `layout-data` | 数据层（§3），经 `modbus-emulator` 使用；本项目直接使用的只有类型生成命令（§3.3） |
 | `@st-one-io/nodes7` | S7 客户端（连接执行器） |
 | `yaml` | 配置与布局解析（YAML 1.2） |
 | `csv-parser` | 读取动作记录 CSV |
@@ -626,6 +637,7 @@ act 规则，每次扫描都执行：
 ### 12.3 开发工具
 
 - 包管理：pnpm。
+- 类型生成：layout-data 的 `layout-types` 命令（§3.3）。
 - 测试：`node --test`。
 - 代码检查：ESLint 加 `@stylistic/eslint-plugin`（`eslint.config.js`，`pnpm lint`），JS 用 tab 缩进。ESLint 查找代码问题，@stylistic 只规范空白、引号、分号等，不重新折行，手工对齐的布局表得以保留。不使用会重新折行的格式化工具（Biome、Prettier）。另外禁止使用与 `Number` 命名空间等价的全局量（`isNaN`、`isFinite`、`parseInt`、`parseFloat`、`NaN`、`Infinity`），改用 `Number.isNaN` 等。
 
@@ -643,8 +655,8 @@ act 规则，每次扫描都执行：
 | 项 | 规范要求 | 代码现状 | 涉及位置 |
 | --- | --- | --- | --- |
 | ID 唯一性校验 | 线、段、执行器的 ID 全局互不相同（跨类型），同一对象的多个 block 共用 ID（规范 §4.1） | `config.js` 只校验执行器 `id` 为非零数字；线、段、执行器各自按 `ID<id>` 建索引，重复或跨类型相同都不报错，同类型重复时后者静默覆盖前者 | `config.js` 的 `add_conf` |
-| ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 §4.1、5.5） | `build_runtime` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `runtime.js` 的 `build_runtime` |
-| 配置检查命令 | `tlms check` 读取并校验配置和全部布局（§3.2）、报告全部错误，不启动控制器（规范 §3.6、§5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃；布局校验已在启动时由模拟器登记布局时执行（`register_layout`，§4.4），尚未接入命令行 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
+| ID 作为对上单元号 | 线、段、执行器的 Modbus 单元号直接取各自的 ID（不小于 1），动作记录固定为单元号 0，控制器配置中不再有 `unit_id`（规范 §4.1、5.5） | `build_description` 按名称从 `controller.modbus_server.unit_id[name]` 查单元号（动作记录查 `unit_id.action_records`），每个对象都要在控制器配置中逐项列出 | `description.js` 的 `build_description` |
+| 配置检查命令 | `tlms check` 读取并校验配置和全部布局（§3.2）、报告全部错误，不启动控制器（规范 §3.6、§5.6） | 无此命令；配置错误只在启动时发现，且多数直接退出或崩溃；布局校验已在启动时由模拟器加载描述文件时执行（`init_controller`，§4.4），尚未接入命令行 | `cli.js`；`config.js` 需拆出可单独调用、收集全部错误的校验函数 |
 | 动作记录按位置对应执行器（现有代码有缺陷） | 节点 1–4 按先首端、后末端的顺序依次对应动作段的执行器，每个位置的压力、ID、泵运行状态取自同一个执行器（规范 §5.4） | 节点 1–3 固定取 `begin_nodes[0..2]`，节点 4 固定取 `end_nodes[0]`；`node1..3_pump_run` 取自 `pump_nodes[0..2]`（只含带泵执行器，与节点位置可能错位），`node4_pump_run` 从不赋值 | `section_proc.js` 的 `add_action_record` |
 
 ## 14. 命令处理

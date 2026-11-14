@@ -1,7 +1,6 @@
 import { controller_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import test, { describe } from "node:test";
-import { Ldata } from "modbus-emulator";
 
 const { LINE, SECTION, NODE, COMMAND, RECORD } = controller_layouts();
 
@@ -52,7 +51,7 @@ describe("controller data blocks", () => {
 	const structs = { LINE, SECTION, NODE, COMMAND, RECORD };
 	for (const [struct_name, struct] of Object.entries(structs)) {
 		test(`${struct_name}: every tag keeps its init_value after construction`, () => {
-			const data = new Ldata(struct_name, struct_name);
+			const data = struct.create_ldata(struct_name);
 			for (const item of struct.items) {
 				const expected = item.type === "Real" ? Math.fround(item.init_value) : item.init_value;
 				assert.equal(data[item.name], expected, `${struct_name}.${item.name}`);

@@ -5,21 +5,18 @@
 // Tests written against this harness only set inputs (actuator memory,
 // HMI writes, driver events), advance time and check outputs, so that they
 // stay valid while the internal scheduling of the controller changes.
-import { register_test_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
+import { get_layout } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { read_config, MAIN_PERIOD } from "../src/config.js";
-import { prepare_controller } from "../src/init.js";
+import { init_controller } from "../src/init.js";
 import { build_runtime } from "../src/runtime.js";
-import { get_layout } from "modbus-emulator";
-import { create_upward } from "../src/upward.js";
 
 export { MAIN_PERIOD };
-
-// the layouts are registered once per process, so every system test shares them
-register_test_layouts();
 
 const FIXTURE_DIR = join(import.meta.dirname, "fixtures/system");
 // local byte where the command block is bound to the actuator (node_proc.js)
@@ -241,7 +238,12 @@ export async function create_system(t) {
 	await load_config();
 	t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
 
-	const controller = await prepare_controller("TC");
+	// like main.js: the data blocks come from the emulator, which loads the
+	// description written here; stopping it gives the block names back
+	const dir = mkdtempSync(join(tmpdir(), "tlms-"));
+	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	const { controller, emulator } = await init_controller("TC", dir);
+	t.after(() => emulator.stop());
 	const drivers = new Map();
 	const get_driver = (key, write_unit) => {
 		if (!drivers.has(key)) drivers.set(key, new Fake_Driver(write_unit));
@@ -255,15 +257,13 @@ export async function create_system(t) {
 	};
 
 	const records = [];
-	// like main.js: the data blocks come from the upward emulator
-	const emulator = create_upward(controller, { registered: true });
 	const record_names = get_layout("RECORD").items.map((item) => item.name);
 	// like Action_Record: the fields of a record, without the words and the index
 	const field_names = get_layout("RECORD").items
 		.filter((item) => item.type.toLowerCase() !== "word" && item.name !== "index")
 		.map((item) => item.name);
 	const action_record = {
-		data: emulator.block(controller.record_block),
+		data: controller.record_data,
 		update_record(fields) {
 			for (const [name, value] of Object.entries(fields)) this.data[name] = value;
 			this.add_record();
@@ -283,7 +283,7 @@ export async function create_system(t) {
 		},
 	};
 
-	const runtime = build_runtime(controller, { get_drivers, action_record, emulator });
+	const runtime = build_runtime(controller, { get_drivers, action_record });
 	// every system test checks the declared dependencies of the rules (doc/design.md 6.5)
 	const undeclared = runtime.scheduler.trace_dependencies();
 	t.after(() => {

@@ -42,10 +42,11 @@ export class MTClient extends Modbus_Client {
 	constructor(options) {
 		const host = typeof options.host === "string" ? options.host : "127.0.0.1";
 		const port = typeof options.port === "number" ? options.port : 502;
-		const rtu = false;
 		const reconnect_time = options?.reconnect_time ?? RECONNECT_TIME;
 		const reconnect_max = options?.reconnect_max ?? RECONNECT_MAX;
-		super(host, { port, rtu, reconnect_time, reconnect_max });
+		// es-modbus selects the transport by the option tcp, an IPv6 host in brackets
+		const tcp = `${host.includes(":") ? `[${host}]` : host}:${port}`;
+		super({ tcp, reconnect_time, reconnect_max });
 		this.conn_str = `modbus://${host}:${port}`;
 		this.host = host;
 		this.port = port;

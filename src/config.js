@@ -139,6 +139,7 @@ function add_conf(doc) {
 export async function read_config(work_path) {
 	const docs = [];
 	for (const file of await readdir(work_path)) {
+		// only the top level: the emulator description is in a subdirectory (doc/design.md 4.4)
 		if (/^.*\.ya?ml$/i.test(file)) {
 			const filename = posix.join(work_path, file);
 			const gcl = new GCL();

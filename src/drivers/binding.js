@@ -2,7 +2,6 @@
 // Not part of the data layer component: it exchanges the device-ordered
 // IO buffer with the data block per tag (Ltag load / store).
 import { Buffer } from "node:buffer";
-import { io_index_table } from "modbus-emulator";
 
 /**
  * Tags of a data block exchanged with the device together
@@ -67,7 +66,7 @@ export class Binding {
 			throw new Error(`${data.name}: IO area ${JSON.stringify({ start, remote_start, length })} is not aligned to the write unit ${write_unit}`);
 		}
 		this.#offset = remote_start - start;
-		this.#io_index = io_index_table(data.layout, this.endian);
+		this.#io_index = data.layout.io_index_table(this.endian);
 		this.#items = new Map(data.layout.items.map((item) => [item.name, item]));
 		this.#IO_buffer = Buffer.alloc(data.size, 0);
 		this.connected = Boolean(driver.is_connected);

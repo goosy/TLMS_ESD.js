@@ -1,8 +1,7 @@
-import { create_fake_driver, register_test_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_block, create_fake_driver, register_test_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import test, { describe } from "node:test";
-import { Ldata } from "modbus-emulator";
 import { Binding } from "../src/drivers/binding.js";
 import { Scheduler } from "../src/scan.js";
 import { derive, act, on_delay } from "../src/rules.js";
@@ -36,7 +35,7 @@ const flush = async () => {
 function setup({ layout = "ITEMS", blocks = ["D"], on_error } = {}) {
 	const errors = [];
 	const scheduler = new Scheduler({ period: PERIOD, on_error: on_error ?? ((error, source) => errors.push([error, source])) });
-	const data = blocks.map((name) => new Ldata(layout, name));
+	const data = blocks.map((name) => create_block(layout, name));
 	for (const d of data) scheduler.add_data(d);
 	return { scheduler, data, errors };
 }

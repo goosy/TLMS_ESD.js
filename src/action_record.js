@@ -42,7 +42,7 @@ export class Action_Record {
 	file;
 	/**
 	 * @param {string} name - The name of the record, and of its CSV file.
-	 * @param {import("modbus-emulator").Ldata} data - The data block of the record, from the upward emulator.
+	 * @param {import("modbus-emulator").Ldata} data - The data block of the record, mounted by init_controller.
 	 */
 	constructor(name, data) {
 		this.name = name;

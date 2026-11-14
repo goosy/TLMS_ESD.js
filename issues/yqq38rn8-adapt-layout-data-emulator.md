@@ -1,9 +1,9 @@
 ---
 id: yqq38rn8
 opened: 2026-10-29T16:59:59.000Z
-closed:
+closed: 2026-11-14T07:04:08.981Z
 title: Adapt to layout-data 0.6.0, modbus-emulator 0.3.0 and es-modbus 0.3.0
-status: accepted    # open | accepted | fixed | rejected | wontfix
+status: fixed       # open | accepted | fixed | rejected | wontfix
 labels: []
 remote:
 ---

@@ -1,8 +1,8 @@
 // Generated from src/layouts.yaml. Do not edit.
-import type { Ldata } from "modbus-emulator";
+import type { Ldata } from "layout-data";
 //
 // In JavaScript, a JSDoc cast names the type of the value:
-//   const data = /** @type {import("<this file>").LINE_Ldata} */ (new Ldata("LINE", "data_1"));
+//   const data = /** @type {import("<this file>").LINE_Ldata} */ (get_scope("tlms").get_layout("LINE").create_ldata("data_1"));
 
 /** Tags of the LINE data block. */
 export interface LINE_Tags {

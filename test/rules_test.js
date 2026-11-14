@@ -1,12 +1,11 @@
-import { create_fake_driver, register_test_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_block, create_fake_driver, register_test_layouts } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import test, { describe } from "node:test";
-import { Ldata } from "modbus-emulator";
 import { Binding } from "../src/drivers/binding.js";
 import { Ticker, on_delay, off_delay, derive, act, order_rules, component_bits } from "../src/rules.js";
 
 const uint_items = (tags) => tags.map((tag, i) => ({ name: tag, type: "UInt", offset: i * 16, length: 16, init_value: 0 }));
-// register_layout succeeds once per process: the tag sets of the blocks are registered together
+// the layouts of the test file are loaded in one call: the tag sets of the blocks are registered together
 const TAG_SETS = [
 	["a"],
 	["a", "b"],
@@ -30,7 +29,7 @@ register_test_layouts({
 	...Object.fromEntries(TAG_SETS.map((tags) => [tags.join("_"), uint_items(tags)])),
 });
 
-const block = (name, ...tags) => new Ldata(tags.join("_"), name);
+const block = (name, ...tags) => create_block(tags.join("_"), name);
 
 const noop = () => { };
 const names_of = (rules) => rules.map((rule) => rule.name);
@@ -182,7 +181,7 @@ describe("rule order", () => {
 });
 
 /** A block with a combined word "word" of the bits b0, b1, and a UInt "n". */
-const word_block = (name) => new Ldata("WORD", name);
+const word_block = (name) => create_block("WORD", name);
 
 describe("combined words (design 6.1)", () => {
 	test("the component bits of a combined word; none for other tags", () => {

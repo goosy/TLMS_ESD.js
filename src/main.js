@@ -1,10 +1,9 @@
-import { prepare_controller } from "./init.js";
+import { init_controller } from "./init.js";
 import { read_config } from "./config.js";
 import { Action_Record } from "./action_record.js";
 import { MTClient } from "./drivers/modbusTCP.js";
 import { S7Client } from "./drivers/s7.js";
 import { build_runtime } from "./runtime.js";
-import { create_upward } from "./upward.js";
 import { logger } from "./util.js";
 
 const modbusTCP_clients = {};
@@ -48,23 +47,16 @@ function get_drivers(driver_info) {
 	return { data_driver: null, command_driver: null };
 }
 
-async function run_controller(controller) {
-	// the data blocks are built up front by the upward emulator; the runtime
-	// then makes every write to them request a scan (doc/design.md 3.5)
-	let emulator;
-	try {
-		emulator = create_upward(controller);
-	} catch (e) {
-		for (const error of e.errors ?? [e.message]) logger.error(`invalid upward description: ${error}`);
-		process.exit(1);
-	}
-	const action_record = new Action_Record("action_records", emulator.block(controller.record_block));
+async function run_controller(controller, emulator) {
+	// the data blocks are mounted on the controller by init_controller; the
+	// runtime makes every write to them request a scan (doc/design.md 3.5)
+	const action_record = new Action_Record(controller.record_name, controller.record_data);
 	action_record.records_size = controller.records_size ?? 10;
 	action_record.init();
 
 	let runtime;
 	try {
-		runtime = build_runtime(controller, { get_drivers, action_record, emulator });
+		runtime = build_runtime(controller, { get_drivers, action_record });
 	} catch (e) {
 		// a configuration that cannot be built (e.g. an unaligned IO area): refuse to start
 		logger.error(`cannot build controller ${controller.name}: ${e.message}`);
@@ -90,6 +82,12 @@ process.on("uncaughtException", (error) => {
 
 const controller_name = process.argv[2];
 await read_config(process.cwd());
-const controller = await prepare_controller(controller_name);
-if (controller) await run_controller(controller); // run controller
+let built;
+try {
+	built = await init_controller(controller_name, process.cwd());
+} catch (e) {
+	for (const error of e.errors ?? [e.message]) logger.error(`invalid emulator description: ${error}`);
+	process.exit(1);
+}
+if (built) await run_controller(built.controller, built.emulator);
 else logger.error(`Controller ${controller_name} not found!`);

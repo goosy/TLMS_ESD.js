@@ -1,9 +1,8 @@
-import { create_fake_driver, register_test_layouts, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_block, create_fake_driver, get_layout, register_test_layouts, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import { EventEmitter } from "node:events";
 import test, { describe } from "node:test";
-import { Ldata, get_layout } from "modbus-emulator";
 import { Binding } from "../src/drivers/binding.js";
 import { node_parameters } from "../src/layouts.js";
 
@@ -23,7 +22,7 @@ const SECTION = get_layout("SECTION");
 describe("Binding exchange area", () => {
 	// data bytes [2, 10) map to remote bytes [100, 108)
 	const setup = (driver = create_fake_driver()) => {
-		const data = new Ldata("SAMPLE", "sample");
+		const data = create_block("SAMPLE", "sample");
 		const binding = new Binding(data, driver, { remote_start: 100, start: 2, length: 8, endian: "BE" }, "extra");
 		return { data, driver, binding };
 	};
@@ -50,7 +49,7 @@ describe("Binding exchange area", () => {
 	});
 
 	test("defaults: start 0, remote_start 0, length to the end, endian BE", async () => {
-		const data = new Ldata("SAMPLE", "sample");
+		const data = create_block("SAMPLE", "sample");
 		const driver = create_fake_driver();
 		const binding = new Binding(data, driver);
 		assert.equal(binding.endian, "BE");
@@ -108,7 +107,7 @@ describe("Binding exchange area", () => {
 	test("the connection state follows the driver events; on_update reports data and changes", async () => {
 		const driver = Object.assign(new EventEmitter(), create_fake_driver());
 		const updates = [];
-		const data = new Ldata("SAMPLE", "sample");
+		const data = create_block("SAMPLE", "sample");
 		const binding = new Binding(data, driver, { on_update: (b) => updates.push(b) });
 		assert.equal(binding.connected, true);
 		driver.emit("connfailed", "lost");
@@ -151,8 +150,8 @@ describe("Binding byte order equivalence", () => {
 			for (const write_unit of [1, 2]) {
 				test(`${group_name} ${endian}, write unit ${write_unit}`, async () => {
 					for (let round = 0; round < 20; round++) {
-						const data = new Ldata(struct, "new");
-						const reference = new Ldata(struct, "reference");
+						const data = create_block(struct.name, "new");
+						const reference = create_block(struct.name, "reference");
 						const driver = create_fake_driver(write_unit, 2048);
 						const binding = new Binding(data, driver, { start, length: data.size - start, endian });
 						const group = binding.create_group(...names);

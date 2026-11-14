@@ -1,7 +1,6 @@
-import { create_fake_driver, register_test_layouts, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
+import { create_block, create_fake_driver, register_test_layouts, read_group, write_group } from "./share.js"; // must be first: sets LOG_LEVEL
 import assert from "node:assert/strict";
 import test, { describe } from "node:test";
-import { Ldata } from "modbus-emulator";
 import { Binding } from "../src/drivers/binding.js";
 
 const GROUP_ITEMS = [
@@ -21,7 +20,7 @@ const GROUP_ITEMS = [
 register_test_layouts({ GROUP: GROUP_ITEMS });
 
 const setup = (endian = "BE", options = {}, write_unit = 1) => {
-	const data = new Ldata("GROUP", "group");
+	const data = create_block("GROUP", "group");
 	const driver = create_fake_driver(write_unit);
 	const binding = new Binding(data, driver, { endian, ...options });
 	return { data, driver, binding };
@@ -113,14 +112,14 @@ describe("Binding group write units", () => {
 	});
 
 	test("unaligned IO area throws", () => {
-		const data = new Ldata("GROUP", "group");
+		const data = create_block("GROUP", "group");
 		assert.throws(() => new Binding(data, create_fake_driver(2), { start: 1, length: 4 }), /not aligned/);
 		assert.throws(() => new Binding(data, create_fake_driver(2), { remote_start: 3 }), /not aligned/);
 		assert.throws(() => new Binding(data, create_fake_driver(2), { length: 5 }), /not aligned/);
 	});
 
 	test("odd IO area is accepted with write unit 1", () => {
-		const data = new Ldata("GROUP", "group");
+		const data = create_block("GROUP", "group");
 		assert.doesNotThrow(() => new Binding(data, create_fake_driver(1), { start: 3, remote_start: 7, length: 5 }));
 	});
 });

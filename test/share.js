@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 
 process.env.LOG_LEVEL ??= "off";
-import { get_layout, register_layout } from "modbus-emulator";
-import { layouts_file } from "../src/layouts.js";
+import { create_scope, desc_file, get_scope, yaml } from "modbus-emulator";
+import { LAYOUT_SCOPE, layouts_file } from "../src/layouts.js";
 
 export class Exit_Called extends Error {
 	constructor(code) {
@@ -40,13 +40,29 @@ export async function assert_exits_async(t, fn) {
 
 /**
  * Registers the layouts of the controller and the layouts of the test file
- * (by name, from items) in one call, because register_layout succeeds once
- * per process. A test file calls it once, at its top level.
+ * (by name, from items) in the scope of the controller in one call, because
+ * a scope registers its layouts once. A test file calls it once, at its top
+ * level.
  *
  * @param {Object<string, Object[]>} [layouts] - The items of the layouts of the test file.
  */
 export function register_test_layouts(layouts = {}) {
-	register_layout([layouts_file, { layouts }]);
+	// JSON is YAML: the description of the test layouts is made by yaml
+	const own = yaml(JSON.stringify({ layouts: Object.keys(layouts), item_tables: layouts }));
+	create_scope(LAYOUT_SCOPE).load([desc_file(layouts_file), own]);
+}
+
+/** The registered layout of the name in the scope of the controller. */
+export function get_layout(name) {
+	return get_scope(LAYOUT_SCOPE).get_layout(name);
+}
+
+/** Creates a data block of the registered layout. */
+export function create_block(layout_name, name) {
+	// a layout keeps its data blocks by name: free the name of an earlier block of the test file
+	const layout = get_layout(layout_name);
+	layout.delete_ldata(name);
+	return layout.create_ldata(name);
 }
 
 /** Registers the layouts of the controller and returns them by name. */

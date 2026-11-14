@@ -75,8 +75,8 @@ async function start_server(t) {
 	const data = fake_block(32);
 	const command = fake_block(16);
 	const unit_map = new Unit_Map();
-	unit_map.attach_unit(UNIT, data, 0);
-	unit_map.attach_unit(UNIT, command, 400);
+	unit_map.attach_unit(UNIT, data);
+	unit_map.attach_unit(UNIT, command, { start: 400 });
 	const port = await free_port();
 	const server = create_tcp_server(unit_map, { host: HOST, port });
 	await server.start();
@@ -167,7 +167,7 @@ describe("MTClient read/write", () => {
 	test("addresses registers beyond 9999", async (t) => {
 		const far = fake_block(8);
 		const unit_map = new Unit_Map();
-		unit_map.attach_unit(UNIT, far, 20000); // register 10000
+		unit_map.attach_unit(UNIT, far, { start: 20000 }); // register 10000
 		const port = await free_port();
 		const server = create_tcp_server(unit_map, { host: HOST, port });
 		await server.start();
